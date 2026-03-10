@@ -107,6 +107,7 @@ export const TEAM_FULL_NAMES = {
 
 export const TEAMS_LIST = Object.entries(TEAM_FULL_NAMES)
   .map(([abbrev, name]) => ({ abbrev, name }))
+  .filter((item, idx, arr) => arr.findIndex(t => t.name === item.name) === idx)
   .sort((a, b) => a.name.localeCompare(b.name));
 
 // Display abbreviations — maps raw API abbreviations to preferred display form
