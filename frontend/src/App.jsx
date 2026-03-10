@@ -72,6 +72,8 @@ export default function App() {
 
   // Track whether we're currently handling a popstate event to avoid pushing duplicate history
   const isPopState = React.useRef(false);
+  // Pending scroll restoration — stored in ref so a post-render effect can pick it up
+  const pendingScrollY = React.useRef(null);
 
   const resetToDefault = useCallback(() => {
     setCardData(null);
@@ -124,25 +126,31 @@ export default function App() {
           .then(cd => { setCardData(cd); setLoading(false); })
           .catch(err => { setError(err.message); setLoading(false); });
       }
-      // Restore scroll position — retry until the page is tall enough to scroll to
+      // Store scroll target — a post-render effect will restore it once React finishes
       if (state?.scrollY != null) {
-        const targetY = state.scrollY;
-        let attempts = 0;
-        const tryScroll = () => {
-          window.scrollTo(0, targetY);
-          attempts++;
-          // If we haven't reached the target and the page might still be rendering, retry
-          if (Math.abs(window.scrollY - targetY) > 5 && attempts < 20) {
-            requestAnimationFrame(tryScroll);
-          }
-        };
-        requestAnimationFrame(tryScroll);
+        pendingScrollY.current = state.scrollY;
       }
       setTimeout(() => { isPopState.current = false; }, 0);
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, [date]);
+
+  // Restore scroll position AFTER React re-renders the list view
+  useEffect(() => {
+    if (pendingScrollY.current == null || cardData) return; // wait until card is gone
+    const targetY = pendingScrollY.current;
+    pendingScrollY.current = null;
+    let attempts = 0;
+    const tryScroll = () => {
+      window.scrollTo(0, targetY);
+      attempts++;
+      if (Math.abs(window.scrollY - targetY) > 5 && attempts < 60) {
+        requestAnimationFrame(tryScroll);
+      }
+    };
+    requestAnimationFrame(tryScroll);
+  }, [cardData, page, selectedGame]);
 
   useEffect(() => {
     if (!date) return;  // Wait for smart default date to resolve
