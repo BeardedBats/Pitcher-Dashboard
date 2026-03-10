@@ -207,6 +207,11 @@ export default function App() {
   }, [resultsData, top400Only]);
 
   const openCard = (pitcherId, gamePk) => {
+    // Save scroll position NOW — before setLoading(true) unmounts the table and resets scrollY to 0
+    const current = window.history.state;
+    if (current) {
+      window.history.replaceState({ ...current, scrollY: window.scrollY }, "");
+    }
     setLoading(true); setError(null);
     fetchPitcherCard(date, pitcherId, gamePk)
       .then(cd => {
@@ -243,6 +248,11 @@ export default function App() {
   };
 
   const navigateToGameCard = (gameDate, pitcherId, gamePk) => {
+    // Save scroll position NOW — before setLoading(true) unmounts the content
+    const current = window.history.state;
+    if (current) {
+      window.history.replaceState({ ...current, scrollY: window.scrollY }, "");
+    }
     // Navigate from player page game log to the pitcher card for that game
     setPage("games");
     setDate(gameDate);
