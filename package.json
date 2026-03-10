@@ -1,0 +1,66 @@
+{
+  "name": "pitcher-dashboard",
+  "version": "1.0.0",
+  "description": "Nick's Live Pitcher Data Dashboard",
+  "main": "electron/main.js",
+  "author": "Nick",
+  "license": "MIT",
+  "scripts": {
+    "electron:dev": "electron .",
+    "build:frontend": "cd frontend && npm run build && cd ..",
+    "build:backend:win": "cd backend && pyinstaller --onefile --name backend --add-data \"aggregation.py;.\" --add-data \"data.py;.\" app.py && cd ..",
+    "build:backend:mac": "cd backend && pyinstaller --onefile --name backend --add-data 'aggregation.py:.' --add-data 'data.py:.' app.py && cd ..",
+    "prebuild": "npm run build:frontend",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.nick.pitcher-dashboard",
+    "productName": "Pitcher Dashboard",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "backend/dist/",
+        "to": "backend",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "frontend-build/",
+        "to": "frontend-build",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico",
+      "signAndEditExecutable": false,
+      "sign": null
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.sports"
+    },
+    "dmg": {
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    }
+  }
+}

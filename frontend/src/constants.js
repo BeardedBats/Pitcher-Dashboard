@@ -1,0 +1,223 @@
+export const PITCH_COLORS = {
+  "Four-Seamer": "#FF839B",
+  "Sinker": "#F2B24B",
+  "Cutter": "#C59C9C",
+  "Slider": "#CE66FF",
+  "Sweeper": "#FFAAF7",
+  "Curveball": "#2A98FF",
+  "Changeup": "#6DE95D",
+  "Splitter": "#83D6FF",
+  "Knuckleball": "#B080FF",
+  "Eephus": "#A0A0A0",
+  "Screwball": "#90C890",
+  "Forkball": "#C8A870",
+};
+
+export const PITCH_TYPE_FILTERS = [
+  "Four-Seamer", "Sinker", "Cutter", "Slider", "Sweeper",
+  "Curveball", "Changeup", "Splitter", "Knuckleball",
+];
+
+export const THRESHOLDS = {
+  ivb: { "Four-Seamer": [16, 12] },
+  ext: { _all: [6.9, 5.8] },
+};
+
+export const GRADIENTS = {
+  elite: "linear-gradient(180deg, #FF3838, #FF6C6C)",
+  poor: "linear-gradient(180deg, rgba(77, 185, 251, 0.5), rgba(185, 228, 255, 0.5))",
+};
+
+export const PITCH_DATA_COLUMNS = [
+  { key: "pitcher", label: "Pitcher", align: "left" },
+  { key: "team", label: "Team", align: "left" },
+  { key: "hand", label: "Hand", align: "left" },
+  { key: "opponent", label: "Opp", align: "left" },
+  { key: "pitch_name", label: "Type", align: "left" },
+  { key: "count", label: "#", align: "right" },
+  { key: "velo", label: "Velo", align: "right" },
+  { key: "usage", label: "Usage", align: "right" },
+  { key: "usage_vs_r", label: "Vs R", align: "right" },
+  { key: "usage_vs_l", label: "Vs L", align: "right" },
+  { key: "ext", label: "Ext", align: "right" },
+  { key: "ivb", label: "IVB", align: "right" },
+  { key: "ihb", label: "IHB", align: "right" },
+  { key: "strike_pct", label: "Strike%", align: "right" },
+  { key: "cs_pct", label: "CS%", align: "right" },
+  { key: "swstr_pct", label: "SwStr%", align: "right" },
+  { key: "csw_pct", label: "CSW%", align: "right" },
+];
+
+export const CARD_PITCH_DATA_COLUMNS = [
+  { key: "pitch_name", label: "Type", align: "left" },
+  { key: "count", label: "#", align: "right" },
+  { key: "velo", label: "Velo", align: "right" },
+  { key: "usage", label: "Usage", align: "right" },
+  { key: "usage_vs_r", label: "Vs R", align: "right" },
+  { key: "usage_vs_l", label: "Vs L", align: "right" },
+  { key: "ext", label: "Ext", align: "right" },
+  { key: "ivb", label: "IVB", align: "right" },
+  { key: "ihb", label: "IHB", align: "right" },
+  { key: "strike_pct", label: "Strike%", align: "right" },
+  { key: "cs_pct", label: "CS%", align: "right" },
+  { key: "swstr_pct", label: "SwStr%", align: "right" },
+  { key: "csw_pct", label: "CSW%", align: "right" },
+  { key: "whiffs", label: "Whiffs", align: "right" },
+];
+
+export const PITCHER_RESULTS_COLUMNS = [
+  { key: "pitcher", label: "Pitcher", align: "left" },
+  { key: "team", label: "Team", align: "left" },
+  { key: "hand", label: "Hand", align: "left" },
+  { key: "opponent", label: "Opp", align: "left" },
+  { key: "ip", label: "IP", align: "right" },
+  { key: "er", label: "ER", align: "right" },
+  { key: "hits", label: "H", align: "right" },
+  { key: "bbs", label: "BB", align: "right" },
+  { key: "ks", label: "K", align: "right" },
+  { key: "csw_pct", label: "CSW%", align: "right" },
+  { key: "whiffs", label: "Whfs", align: "right" },
+  { key: "pitches", label: "#", align: "right" },
+  { key: "hrs", label: "HR", align: "right" },
+];
+
+export const TEAM_FULL_NAMES = {
+  // MLB Teams
+  ARI: "Arizona Diamondbacks", AZ: "Arizona Diamondbacks",
+  ATL: "Atlanta Braves", BAL: "Baltimore Orioles",
+  BOS: "Boston Red Sox", CHC: "Chicago Cubs", CWS: "Chicago White Sox",
+  CIN: "Cincinnati Reds", CLE: "Cleveland Guardians", COL: "Colorado Rockies",
+  DET: "Detroit Tigers", HOU: "Houston Astros", KC: "Kansas City Royals",
+  LAA: "Los Angeles Angels", LAD: "Los Angeles Dodgers", MIA: "Miami Marlins",
+  MIL: "Milwaukee Brewers", MIN: "Minnesota Twins", NYM: "New York Mets",
+  NYY: "New York Yankees", OAK: "Oakland Athletics", ATH: "Athletics",
+  PHI: "Philadelphia Phillies",
+  PIT: "Pittsburgh Pirates", SD: "San Diego Padres", SF: "San Francisco Giants",
+  SEA: "Seattle Mariners", STL: "St. Louis Cardinals", TB: "Tampa Bay Rays",
+  TEX: "Texas Rangers", TOR: "Toronto Blue Jays", WSH: "Washington Nationals",
+  // WBC / International Teams
+  USA: "United States", JPN: "Japan", DOM: "Dominican Republic",
+  PUR: "Puerto Rico", KOR: "Korea", CUB: "Cuba", MEX: "Mexico",
+  VEN: "Venezuela", NED: "Netherlands", TPE: "Chinese Taipei",
+  ITA: "Italy", ISR: "Israel", GBR: "Great Britain", AUS: "Australia",
+  PAN: "Panama", CZE: "Czech Republic", NCA: "Nicaragua", COL_WBC: "Colombia",
+  CAN: "Canada", BRA: "Brazil", CHN: "China", NZL: "New Zealand",
+  RSA: "South Africa", ARG: "Argentina", PAK: "Pakistan", IND: "India",
+};
+
+export const TEAMS_LIST = Object.entries(TEAM_FULL_NAMES)
+  .map(([abbrev, name]) => ({ abbrev, name }))
+  .sort((a, b) => a.name.localeCompare(b.name));
+
+// Display abbreviations — maps raw API abbreviations to preferred display form
+export const TEAM_ABBREV_DISPLAY = {
+  KC: "KCR", TB: "TBR", SD: "SDP", SF: "SFG", AZ: "ARI",
+  CWS: "CHW",
+};
+
+export function displayAbbrev(abbr) {
+  return TEAM_ABBREV_DISPLAY[abbr] || abbr;
+}
+
+export const RESULT_COLORS = {
+  // Strikeouts — warm orange
+  strikeout: "#ffc680", strikeout_double_play: "#ffc680",
+  // Home run — soft red
+  home_run: "#ffa3a3",
+  // Walk / HBP — soft red (matches HR)
+  walk: "#ffa3a3", hit_by_pitch: "#ffa3a3", intent_walk: "#ffa3a3",
+  // Hits — soft red (matches HR)
+  single: "#ffa3a3", double: "#ffa3a3", triple: "#ffa3a3",
+  // Outs — bright mint green (Statcast snake_case keys)
+  field_out: "#55e8ff", force_out: "#55e8ff",
+  grounded_into_double_play: "#55e8ff", double_play: "#55e8ff",
+  fielders_choice: "#55e8ff", fielders_choice_out: "#55e8ff",
+  sac_fly: "#55e8ff", sac_bunt: "#55e8ff",
+  field_error: "#55e8ff", triple_play: "#55e8ff",
+  sac_fly_double_play: "#55e8ff",
+  runner_out: "#55e8ff",
+  catcher_interf: "#ffa3a3",
+  // MLB Live API display-name keys (PBP uses these)
+  catcher_interference: "#ffa3a3",
+  groundout: "#55e8ff", flyout: "#55e8ff", lineout: "#55e8ff",
+  pop_out: "#55e8ff",
+  "fielder's_choice": "#55e8ff",
+  grounded_into_dp: "#55e8ff",
+};
+
+// Colors for individual pitch descriptions (called strike, ball, foul, etc.)
+export const PITCH_DESC_COLORS = {
+  called_strike: "#F59E0B",       // Amber
+  swinging_strike: "#EF4444",     // Red
+  swinging_strike_blocked: "#EF4444",
+  ball: "#4ADE80",                // Green
+  foul: "#FACC15",                // Yellow
+  foul_tip: "#FACC15",
+  foul_bunt: "#FACC15",
+  missed_bunt: "#EF4444",
+  hit_into_play: "#60A5FA",       // Blue
+  hit_by_pitch: "#A78BFA",        // Purple
+  pitchout: "#4ADE80",
+};
+
+// Strikezone result-mode color mapping
+export function getSZResultColor(pitch) {
+  const desc = (pitch.description || "").toLowerCase();
+  const event = (pitch.events || "").toLowerCase();
+
+  // Swinging strike (includes blocked and foul tip)
+  if (desc.includes("swinging_strike") || desc === "foul_tip" || desc === "missed_bunt") return "#EF4444";
+  // Called strike
+  if (desc === "called_strike") return "#F59E0B";
+  // Foul (but not foul tip, already handled)
+  if (desc.includes("foul") && desc !== "foul_tip") return "#FACC15";
+  // Ball
+  if (desc.includes("ball") && !desc.includes("in_play")) return "#4ADE80";
+  // In-play events
+  if (event) {
+    if (event === "home_run") return "#FFD700";
+    if (event === "triple") return "#FF6B6B";
+    if (event === "single") return "#60A5FA";
+    if (event === "double") return "#A78BFA";
+    // In-play outs
+    if (event.includes("out") || event.includes("play") || event.includes("force")
+        || event.includes("sac") || event === "fielders_choice" || event === "fielders_choice_out") return "rgba(255,255,255,0.5)";
+  }
+  // HBP
+  if (desc === "hit_by_pitch") return "#A78BFA";
+  return "#888";
+}
+
+export const VELO_THRESHOLDS = {
+  "Four-Seamer": { red: 96, blue: 92 },
+  "Sinker": { red: 96, blue: 92 },
+  "Slider": { red: 88, blue: 84 },
+  "Curveball": { red: 82, blue: 77 },
+  "Changeup": { red: 90, blue: 82 },
+  "Cutter": { red: 90, blue: 87 },
+};
+
+export const IHB_THRESHOLDS = {
+  "Four-Seamer": {
+    R: { red_above: 12, red_below: 4 },
+    L: { red: -16, blue: -14 },
+  },
+  "Sinker": {
+    R: { red: 16.5, blue: 14 },
+    L: { red: -16, blue: -14 },
+  },
+};
+
+export const PITCH_RESULT_SHAPES = {
+  called_strike: "circle-fill",
+  ball: "circle-border",
+  swinging_strike: "square",
+  swinging_strike_blocked: "square",
+  foul: "triangle",
+  foul_tip: "triangle",
+  foul_bunt: "triangle",
+  missed_bunt: "square",
+  hit_into_play: "star",
+  hit_by_pitch: "diamond",
+  pitchout: "circle-border",
+};

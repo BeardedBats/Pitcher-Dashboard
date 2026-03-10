@@ -1,0 +1,15 @@
+node_modules
+frontend/node_modules
+frontend/build
+frontend-build
+dist
+backend/dist
+backend/build
+backend/__pycache__
+backend/*.spec
+.git
+.github
+Old
+*.html
+!frontend/public/index.html
+*.bat
