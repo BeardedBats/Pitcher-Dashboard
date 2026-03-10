@@ -278,6 +278,31 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                       const bbType = !isK ? classifyBattedBall(pa.launch_speed, pa.launch_angle) : null;
                       const bbColor = bbType ? BATTED_BALL_COLORS[bbType] : null;
 
+                      // Detect runs scored by comparing score to previous PA in the full half-inning
+                      let runsScored = 0;
+                      if (pa.away_score != null && pa.home_score != null) {
+                        const curTotal = pa.away_score + pa.home_score;
+                        const allIdx = seg.allPas.indexOf(pa);
+                        if (allIdx > 0) {
+                          const prev = seg.allPas[allIdx - 1];
+                          if (prev.away_score != null && prev.home_score != null) {
+                            runsScored = curTotal - (prev.away_score + prev.home_score);
+                          }
+                        } else if (allIdx === 0 && linescoreData?.innings) {
+                          // First PA of half-inning: compute pre-inning score
+                          let preAway = 0, preHome = 0;
+                          for (const inn of linescoreData.innings) {
+                            if (inn.num < seg.inning) {
+                              preAway += inn.away?.runs || 0;
+                              preHome += inn.home?.runs || 0;
+                            } else if (inn.num === seg.inning && !seg.isTop) {
+                              preAway += inn.away?.runs || 0;
+                            }
+                          }
+                          runsScored = curTotal - (preAway + preHome);
+                        }
+                      }
+
                       const handleClick = () => {
                         setPbpActivePa(paKey);
                         setPbpPitchHover(null);
@@ -291,7 +316,25 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                             <div className="card-pbp-row1">
                               <div className="card-pbp-left">
                                 <span className="card-pbp-batter">{pa.batter}</span>
-                                {pa.rbi > 0 && <span className="card-pbp-rbi">– {pa.rbi} RBI</span>}
+                                {runsScored > 0 && (
+                                  <span className="card-pbp-rbi">
+                                    <span style={{ color: "#fd5dea" }}>- {runsScored} Run{runsScored !== 1 ? "s" : ""} score{runsScored === 1 ? "s" : ""}.{" "}</span>
+                                    {pa.away_score != null && pa.home_score != null && (() => {
+                                      const awayDisp = displayAbbrev(linescoreData.away_team) || linescoreData.away_team;
+                                      const homeDisp = displayAbbrev(linescoreData.home_team) || linescoreData.home_team;
+                                      const pitcherTeam = seg.isTop ? linescoreData.home_team : linescoreData.away_team;
+                                      const awayIsP = linescoreData.away_team === pitcherTeam;
+                                      const homeIsP = linescoreData.home_team === pitcherTeam;
+                                      return (
+                                        <span>
+                                          <span style={{ color: awayIsP ? "#70d4f0" : "#E0E2EC", fontWeight: awayIsP ? 700 : 600 }}>{awayDisp} {pa.away_score}</span>
+                                          <span style={{ color: "rgba(180,184,210,0.6)" }}> - </span>
+                                          <span style={{ color: homeIsP ? "#70d4f0" : "#E0E2EC", fontWeight: homeIsP ? 700 : 600 }}>{homeDisp} {pa.home_score}</span>
+                                        </span>
+                                      );
+                                    })()}
+                                  </span>
+                                )}
                               </div>
                               <span className="card-pbp-result" style={{ color: resultColor }}>{resultLabel}</span>
                             </div>
