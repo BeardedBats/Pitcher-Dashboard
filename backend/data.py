@@ -80,22 +80,30 @@ def _apply_overrides(df):
     required = {"game_pk", "pitcher", "at_bat_number"}
     if not required.issubset(df.columns):
         return df
-    # Build a lookup for fast matching
+    has_pitch_number = "pitch_number" in df.columns
     for key, ov in _overrides.items():
         parts = key.split("_")
         if len(parts) != 4:
             continue
         gpk, pid, abn, pnum = int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])
         mask = (df["game_pk"] == gpk) & (df["pitcher"] == pid) & (df["at_bat_number"] == abn)
-        matching_rows = df.loc[mask]
-        if matching_rows.empty:
-            continue
-        # pitch_number is 1-based within the at-bat
-        indices = matching_rows.index.tolist()
-        if pnum - 1 < len(indices):
-            idx = indices[pnum - 1]
-            df.at[idx, "pitch_type"] = ov["new_type"]
-            df.at[idx, "pitch_name"] = ov["new_name"]
+        if has_pitch_number:
+            # Match by pitch_number column value directly (not positional index)
+            exact_mask = mask & (df["pitch_number"] == pnum)
+            if exact_mask.any():
+                idx = df.loc[exact_mask].index[0]
+                df.at[idx, "pitch_type"] = ov["new_type"]
+                df.at[idx, "pitch_name"] = ov["new_name"]
+        else:
+            # Fallback: positional index (only if pitch_number column missing)
+            matching_rows = df.loc[mask]
+            if matching_rows.empty:
+                continue
+            indices = matching_rows.index.tolist()
+            if pnum - 1 < len(indices):
+                idx = indices[pnum - 1]
+                df.at[idx, "pitch_type"] = ov["new_type"]
+                df.at[idx, "pitch_name"] = ov["new_name"]
     return df
 
 # Load overrides on module import
