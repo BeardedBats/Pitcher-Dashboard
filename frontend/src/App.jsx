@@ -124,9 +124,19 @@ export default function App() {
           .then(cd => { setCardData(cd); setLoading(false); })
           .catch(err => { setError(err.message); setLoading(false); });
       }
-      // Restore scroll position
+      // Restore scroll position — retry until the page is tall enough to scroll to
       if (state?.scrollY != null) {
-        setTimeout(() => window.scrollTo(0, state.scrollY), 50);
+        const targetY = state.scrollY;
+        let attempts = 0;
+        const tryScroll = () => {
+          window.scrollTo(0, targetY);
+          attempts++;
+          // If we haven't reached the target and the page might still be rendering, retry
+          if (Math.abs(window.scrollY - targetY) > 5 && attempts < 20) {
+            requestAnimationFrame(tryScroll);
+          }
+        };
+        requestAnimationFrame(tryScroll);
       }
       setTimeout(() => { isPopState.current = false; }, 0);
     };
