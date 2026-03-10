@@ -174,6 +174,22 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
   const teamBatting = currentIsTop ? data.away_team : data.home_team;
   const teamPitching = currentIsTop ? data.home_team : data.away_team;
 
+  // Compute score at start of this half-inning from linescore data
+  const preHalfScore = useMemo(() => {
+    if (!data.innings) return null;
+    let away = 0, home = 0;
+    for (const inn of data.innings) {
+      if (inn.num < currentInning) {
+        away += inn.away?.runs || 0;
+        home += inn.home?.runs || 0;
+      } else if (inn.num === currentInning && !currentIsTop) {
+        // Bottom of inning: add top-half runs
+        away += inn.away?.runs || 0;
+      }
+    }
+    return { away, home };
+  }, [data.innings, currentInning, currentIsTop]);
+
   // Compute inning stats
   const inningStats = computeInningStats(half.pas, pitcherId);
 
@@ -228,6 +244,17 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
               const isK = isStrikeout(pa.result);
               const lastPitch = pa.pitches && pa.pitches.length > 0 ? pa.pitches[pa.pitches.length - 1] : null;
 
+              // Detect runs scored by comparing total score to previous PA
+              let runsScored = 0;
+              if (pa.away_score != null && pa.home_score != null) {
+                const curTotal = pa.away_score + pa.home_score;
+                if (i > 0 && half.pas[i - 1].away_score != null && half.pas[i - 1].home_score != null) {
+                  runsScored = curTotal - (half.pas[i - 1].away_score + half.pas[i - 1].home_score);
+                } else if (i === 0 && preHalfScore) {
+                  runsScored = curTotal - (preHalfScore.away + preHalfScore.home);
+                }
+              }
+
               return (
                 <div key={i}>
                   {i > 0 && half.pas[i].pitcher !== half.pas[i - 1].pitcher && (
@@ -236,13 +263,13 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                     </div>
                   )}
                   <div className={`pbp-pa${isPitcherPA ? " pbp-pa-hl" : ""}${isActive ? " pbp-pa-active" : ""}`}>
-                    {/* Row 1: Batter name (+ RBI) left, Result right */}
+                    {/* Row 1: Batter name (+ runs scored) left, Result right */}
                     <div className="pbp-pa-top" onClick={() => handlePAClick(i)}>
                       <div className="pbp-pa-left">
                         <span className="pbp-pa-batter">{pa.batter}</span>
-                        {pa.rbi > 0 && (
+                        {runsScored > 0 && (
                           <span className="pbp-pa-rbi">
-                            <span style={{ color: "#fd5dea" }}>- {pa.rbi} Run{pa.rbi !== 1 ? "s" : ""} score{pa.rbi === 1 ? "s" : ""}.{" "}</span>
+                            <span style={{ color: "#fd5dea" }}>- {runsScored} Run{runsScored !== 1 ? "s" : ""} score{runsScored === 1 ? "s" : ""}.{" "}</span>
                             {pa.away_score != null && pa.home_score != null && (() => {
                               const awayDisp = displayAbbrev(data.away_team) || data.away_team;
                               const homeDisp = displayAbbrev(data.home_team) || data.home_team;
