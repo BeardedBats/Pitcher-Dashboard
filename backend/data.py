@@ -1061,6 +1061,8 @@ def get_game_linescore(game_pk, pitcher_id=None):
         result_event = result.get("event", "")
         result_desc = result.get("description", "")
         result_rbi = result.get("rbi", 0)
+        result_home_score = result.get("homeScore")
+        result_away_score = result.get("awayScore")
 
         # Hit data for this PA — could be on PA level or last playEvent
         pa_hit = pa.get("hitData") or {}
@@ -1143,6 +1145,8 @@ def get_game_linescore(game_pk, pitcher_id=None):
             "trajectory": pa_trajectory,
             "hardness": pa_hardness,
             "total_distance": pa_total_distance,
+            "home_score": result_home_score,
+            "away_score": result_away_score,
         }
 
         if key not in half_innings:

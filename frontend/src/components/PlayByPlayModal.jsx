@@ -232,7 +232,7 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                 <div key={i}>
                   {i > 0 && half.pas[i].pitcher !== half.pas[i - 1].pitcher && (
                     <div className="pbp-relief-row">
-                      {half.pas[i - 1].pitcher} relieved by {half.pas[i].pitcher}
+                      {half.pas[i].pitcher} relieved {half.pas[i - 1].pitcher}
                     </div>
                   )}
                   <div className={`pbp-pa${isPitcherPA ? " pbp-pa-hl" : ""}${isActive ? " pbp-pa-active" : ""}`}>
@@ -241,7 +241,23 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                       <div className="pbp-pa-left">
                         <span className="pbp-pa-batter">{pa.batter}</span>
                         {pa.rbi > 0 && (
-                          <span className="pbp-pa-rbi">- {pa.rbi} RBI</span>
+                          <span className="pbp-pa-rbi">
+                            <span style={{ color: "#fd5dea" }}>- {pa.rbi} Run{pa.rbi !== 1 ? "s" : ""} score{pa.rbi === 1 ? "s" : ""}.{" "}</span>
+                            {pa.away_score != null && pa.home_score != null && (() => {
+                              const awayDisp = displayAbbrev(data.away_team) || data.away_team;
+                              const homeDisp = displayAbbrev(data.home_team) || data.home_team;
+                              const pitcherTeam = currentIsTop ? data.home_team : data.away_team;
+                              const awayIsP = data.away_team === pitcherTeam;
+                              const homeIsP = data.home_team === pitcherTeam;
+                              return (
+                                <span>
+                                  <span style={{ color: awayIsP ? "#70d4f0" : "#E0E2EC", fontWeight: awayIsP ? 700 : 600 }}>{awayDisp} {pa.away_score}</span>
+                                  <span style={{ color: "rgba(180,184,210,0.6)" }}> - </span>
+                                  <span style={{ color: homeIsP ? "#70d4f0" : "#E0E2EC", fontWeight: homeIsP ? 700 : 600 }}>{homeDisp} {pa.home_score}</span>
+                                </span>
+                              );
+                            })()}
+                          </span>
                         )}
                       </div>
                       <span className="pbp-pa-result" style={{ color: resultColor }}>{resultLabel}</span>
@@ -331,6 +347,11 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                   isStrikeoutResult={isStrikeout(activePa.result)}
                   lastPitch={activePa.pitches[activePa.pitches.length - 1]}
                   onPitchHover={setPitchHover}
+                  homeScore={activePa.home_score}
+                  awayScore={activePa.away_score}
+                  awayTeam={data.away_team}
+                  homeTeam={data.home_team}
+                  pitcherTeam={teamPitching}
                 />
                 {pitchHover && (() => {
                   const hp = pitchHover.pitch;

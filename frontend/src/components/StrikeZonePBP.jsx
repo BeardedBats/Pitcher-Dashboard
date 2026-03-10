@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { getResultColor } from "../utils/formatting";
+import { displayAbbrev } from "../constants";
 
 const BATTED_BALL_COLORS = {
   "Barrel": "#ffa3a3",
@@ -46,7 +47,7 @@ function saturateColor(hex, factor = 1.3) {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
-export default function StrikeZonePBP({ pitches, pitchColors, result, resultLabel, batter, pitcher, outs, stand, launchSpeed, launchAngle, battedBallType, rbi, isStrikeoutResult, lastPitch, onPitchHover }) {
+export default function StrikeZonePBP({ pitches, pitchColors, result, resultLabel, batter, pitcher, outs, stand, launchSpeed, launchAngle, battedBallType, rbi, isStrikeoutResult, lastPitch, onPitchHover, homeScore, awayScore, awayTeam, homeTeam, pitcherTeam }) {
   const canvasRef = useRef(null);
   const [hoveredPitch, setHoveredPitch] = useState(null);
 
@@ -147,14 +148,34 @@ export default function StrikeZonePBP({ pitches, pitchColors, result, resultLabe
     ctx.fillStyle = "rgba(224, 226, 236, 0.9)";
     ctx.font = "bold 14px 'DM Sans', sans-serif";
     ctx.textAlign = "left";
-    let nameText = batter;
-    if (rbi > 0) nameText += ` - ${rbi} RBI`;
-    ctx.fillText(nameText, HPAD, 10);
+    ctx.fillText(batter, HPAD, 10);
     if (rbi > 0) {
-      // Draw RBI portion in light red
+      // Draw "- X Run(s) scores. AWAY SCORE - HOME SCORE"
       const nameWidth = ctx.measureText(batter + " ").width;
-      ctx.fillStyle = "#ffa3a3";
-      ctx.fillText(`- ${rbi} RBI`, HPAD + nameWidth, 10);
+      const runsText = `- ${rbi} Run${rbi !== 1 ? "s" : ""} score${rbi === 1 ? "s" : ""}.`;
+      ctx.fillStyle = "#fd5dea";
+      ctx.font = "bold 14px 'DM Sans', sans-serif";
+      ctx.fillText(runsText, HPAD + nameWidth, 10);
+      if (awayScore != null && homeScore != null && awayTeam && homeTeam) {
+        const runsWidth = ctx.measureText(runsText + " ").width;
+        const scoreX = HPAD + nameWidth + runsWidth;
+        const awayDisp = displayAbbrev(awayTeam) || awayTeam;
+        const homeDisp = displayAbbrev(homeTeam) || homeTeam;
+        const awayIsP = awayTeam === pitcherTeam;
+        const homeIsP = homeTeam === pitcherTeam;
+        // Away team + score
+        ctx.fillStyle = awayIsP ? "#70d4f0" : "#E0E2EC";
+        ctx.font = `bold 14px 'DM Sans', sans-serif`;
+        ctx.fillText(`${awayDisp} ${awayScore}`, scoreX, 10);
+        const awayW = ctx.measureText(`${awayDisp} ${awayScore} `).width;
+        // Separator
+        ctx.fillStyle = "rgba(180,184,210,0.6)";
+        ctx.fillText("-", scoreX + awayW, 10);
+        const sepW = ctx.measureText("- ").width;
+        // Home team + score
+        ctx.fillStyle = homeIsP ? "#70d4f0" : "#E0E2EC";
+        ctx.fillText(`${homeDisp} ${homeScore}`, scoreX + awayW + sepW, 10);
+      }
     }
 
     if (result) {
@@ -335,7 +356,7 @@ export default function StrikeZonePBP({ pitches, pitchColors, result, resultLabe
         ctx.stroke();
       }
     });
-  }, [pitches, pitchColors, result, resultLabel, batter, pitcher, outs, stand, launchSpeed, launchAngle, battedBallType, hoveredPitch, rbi, isStrikeoutResult, lastPitch]);
+  }, [pitches, pitchColors, result, resultLabel, batter, pitcher, outs, stand, launchSpeed, launchAngle, battedBallType, hoveredPitch, rbi, isStrikeoutResult, lastPitch, homeScore, awayScore, awayTeam, homeTeam, pitcherTeam]);
 
   return (
     <canvas
