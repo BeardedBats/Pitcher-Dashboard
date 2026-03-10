@@ -144,6 +144,7 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
       if (!teamMap[k]) { teamMap[k] = []; teamOrder.push(k); }
       teamMap[k].push(r);
     });
+    teamOrder.sort((a, b) => (TEAM_FULL_NAMES[a] || a).localeCompare(TEAM_FULL_NAMES[b] || b));
     return <div className="team-cards-grid">{teamOrder.map(team => renderTable(teamMap[team], TEAM_FULL_NAMES[team] || team, true))}</div>;
   }
 
