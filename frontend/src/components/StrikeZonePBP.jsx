@@ -144,19 +144,11 @@ export default function StrikeZonePBP({ pitches, pitchColors, result, resultLabe
     const HPAD = 14;
     ctx.textBaseline = "top";
 
-    // Row 1: Hitter name (left) + RBI | Result (right)
+    // Row 1: Hitter name (left) | Result (right)
     ctx.fillStyle = "rgba(224, 226, 236, 0.9)";
     ctx.font = "bold 14px 'DM Sans', sans-serif";
     ctx.textAlign = "left";
-    let nameText = batter;
-    if (rbi > 0) nameText += ` - ${rbi} RBI`;
-    ctx.fillText(nameText, HPAD, 10);
-    if (rbi > 0) {
-      // Draw RBI portion in light red
-      const nameWidth = ctx.measureText(batter + " ").width;
-      ctx.fillStyle = "#ffa3a3";
-      ctx.fillText(`- ${rbi} RBI`, HPAD + nameWidth, 10);
-    }
+    ctx.fillText(batter, HPAD, 10);
 
     if (result) {
       const resultColor = getResultColor(result);
