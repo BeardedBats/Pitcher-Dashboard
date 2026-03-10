@@ -96,7 +96,8 @@ export default function App() {
   // Helper: pushState that auto-saves current scroll position first
   const pushState = useCallback((state, title = "") => {
     const current = window.history.state;
-    if (current) {
+    if (current && current.scrollY == null) {
+      // Only save scrollY if not already captured (e.g. by openCard before loading)
       window.history.replaceState({ ...current, scrollY: window.scrollY }, "");
     }
     window.history.pushState(state, title);
