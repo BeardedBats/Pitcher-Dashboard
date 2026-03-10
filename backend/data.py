@@ -150,10 +150,16 @@ def _assign_teams_vectorized(df):
     """Vectorized pitcher_team/opponent assignment based on inning_topbot."""
     if "inning_topbot" not in df.columns or "home_team" not in df.columns:
         return df
+    is_top = df["inning_topbot"] == "Top"
+    computed_team = np.where(is_top, df["home_team"], df["away_team"])
+    computed_opp = np.where(is_top, df["away_team"], df["home_team"])
     if "pitcher_team" not in df.columns:
-        is_top = df["inning_topbot"] == "Top"
-        df["pitcher_team"] = np.where(is_top, df["home_team"], df["away_team"])
-        df["opponent"] = np.where(is_top, df["away_team"], df["home_team"])
+        df["pitcher_team"] = computed_team
+        df["opponent"] = computed_opp
+    else:
+        # Fill NaN values (e.g. Savant rows after concat with MLB API rows)
+        df["pitcher_team"] = df["pitcher_team"].fillna(pd.Series(computed_team, index=df.index))
+        df["opponent"] = df["opponent"].fillna(pd.Series(computed_opp, index=df.index))
     return df
 
 def _fetch_from_savant(date_str):
