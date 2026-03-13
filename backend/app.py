@@ -105,13 +105,29 @@ def clear(date: str = Query(None)):
     return {"status": "ok", "cleared": date or "all"}
 
 @app.get("/api/pitcher-card")
-def pitcher_card(date: str = Query(...), pitcher_id: int = Query(...), game_pk: int = Query(...)): return get_pitcher_card(date, pitcher_id, game_pk)
+def pitcher_card(date: str = Query(...), pitcher_id: int = Query(...), game_pk: int = Query(...)):
+    agg_key = f"card_{date}_{pitcher_id}_{game_pk}"
+    cached = get_agg_cache(agg_key)
+    if cached is not None:
+        return cached
+    result = get_pitcher_card(date, pitcher_id, game_pk)
+    if result:
+        set_agg_cache(agg_key, result)
+    return result
 
 @app.get("/api/game-linescore")
 def game_linescore(game_pk: int = Query(...)): return get_game_linescore(game_pk)
 
 @app.get("/api/season-averages")
-def season_averages(pitcher_id: int = Query(...), season: int = Query(...)): return get_season_averages(pitcher_id, season)
+def season_averages(pitcher_id: int = Query(...), season: int = Query(...)):
+    agg_key = f"season_avg_{pitcher_id}_{season}"
+    cached = get_agg_cache(agg_key)
+    if cached is not None:
+        return cached
+    result = get_season_averages(pitcher_id, season)
+    if result:
+        set_agg_cache(agg_key, result)
+    return result
 
 @app.get("/api/pitchers-search")
 def pitchers_search(q: str = Query(""), start_date: str = Query("2026-02-20"), end_date: str = Query("")):
@@ -121,6 +137,26 @@ def pitchers_search(q: str = Query(""), start_date: str = Query("2026-02-20"), e
         q_lower = q.lower()
         pitchers = [p for p in pitchers if q_lower in p["name"].lower()]
     return pitchers[:20]
+
+@app.get("/api/resolve-pitcher")
+def resolve_pitcher(name: str = Query(...), start_date: str = Query("2026-02-20"), end_date: str = Query("")):
+    """Resolve a pitcher name to a pitcher_id from cached data. Uses accent-insensitive matching."""
+    import unicodedata
+    end_date = _resolve_end_date(end_date)
+    pitchers = fetch_all_pitchers_list(start_date, end_date)
+
+    def strip_accents(s):
+        return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c)).replace("\u00ad", "")
+
+    name_norm = strip_accents(name).lower()
+    # Try exact match first, then accent-insensitive
+    for p in pitchers:
+        if p["name"].lower() == name.lower():
+            return {"pitcher_id": p["pitcher_id"], "name": p["name"]}
+    for p in pitchers:
+        if strip_accents(p["name"]).lower() == name_norm:
+            return {"pitcher_id": p["pitcher_id"], "name": p["name"]}
+    return {"pitcher_id": None, "name": name}
 
 @app.get("/api/leaderboard")
 def leaderboard(start_date: str = Query("2026-02-20"), end_date: str = Query(""), view: str = Query("results")):
@@ -188,9 +224,31 @@ def player_page(pitcher_id: int = Query(...), start_date: str = Query("2026-02-2
     pdf_vs_r = pdf_prepped[pdf_prepped["stand"] == "R"] if "stand" in pdf_prepped.columns else pdf_prepped.iloc[0:0]
     pitch_summary_vs_l = aggregate_pitch_data_range(pdf_vs_l, prepped=True) if not pdf_vs_l.empty else []
     pitch_summary_vs_r = aggregate_pitch_data_range(pdf_vs_r, prepped=True) if not pdf_vs_r.empty else []
-    results_list = aggregate_pitcher_results_range(pdf)
-    results_summary = results_list[0] if results_list else {}
     game_log = get_pitcher_game_log(df, pitcher_id)
+    # Derive totals from game log so summary always matches displayed rows
+    if game_log:
+        total_pitches = sum(g.get("pitches", 0) for g in game_log)
+        total_ip_thirds = 0
+        for g in game_log:
+            ip_val = g.get("ip", "0.0")
+            parts = str(ip_val).split(".")
+            full = int(parts[0])
+            thirds = int(parts[1]) if len(parts) > 1 else 0
+            total_ip_thirds += full * 3 + thirds
+        results_summary = {
+            "games": len(game_log),
+            "ip": f"{total_ip_thirds // 3}.{total_ip_thirds % 3}",
+            "hits": sum(g.get("hits", 0) for g in game_log),
+            "bbs": sum(g.get("bbs", 0) for g in game_log),
+            "ks": sum(g.get("ks", 0) for g in game_log),
+            "hrs": sum(g.get("hrs", 0) for g in game_log),
+            "er": sum(g.get("er", 0) for g in game_log),
+            "whiffs": sum(g.get("whiffs", 0) for g in game_log),
+            "csw_pct": round(sum(g.get("csw_pct", 0) * g.get("pitches", 0) for g in game_log) / total_pitches, 1) if total_pitches > 0 else 0,
+            "pitches": total_pitches,
+        }
+    else:
+        results_summary = {}
     result = {"info": info, "pitch_summary": pitch_summary, "pitch_summary_vs_l": pitch_summary_vs_l, "pitch_summary_vs_r": pitch_summary_vs_r, "results_summary": results_summary, "game_log": game_log}
     set_agg_cache(agg_key, result)
     return result

@@ -208,7 +208,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                     {sortedLog.map((row, i) => (
                       <tr key={row.game_pk + "-" + i}
                         className="pp-log-row"
-                        onClick={() => onGameClick(row.date, pitcherId, row.game_pk)}
+                        onClick={(e) => onGameClick(row.date, pitcherId, row.game_pk, e)}
                       >
                         {logCols.map((c) => {
                           let val = row[c.key];

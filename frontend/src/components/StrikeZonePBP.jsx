@@ -137,7 +137,7 @@ export default function StrikeZonePBP({ pitches, pitchColors, result, resultLabe
     ctx.scale(dpr, dpr);
 
     // Background
-    ctx.fillStyle = "rgba(25, 27, 45, 1)";
+    ctx.fillStyle = "#2E3150";
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
     // ── Header: Match PBP left panel format ──

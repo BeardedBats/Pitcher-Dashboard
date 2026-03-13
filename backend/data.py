@@ -682,8 +682,15 @@ def set_agg_cache(key, result):
     _agg_cache[key] = (time.time(), result)
 
 
+_pitchers_list_cache = {}  # { "start_end": (timestamp, list) }
+
 def fetch_all_pitchers_list(start_date, end_date):
-    """Get deduplicated list of all pitchers in date range."""
+    """Get deduplicated list of all pitchers in date range. Cached."""
+    cache_key = f"{start_date}_{end_date}"
+    if cache_key in _pitchers_list_cache:
+        ts, result = _pitchers_list_cache[cache_key]
+        if (time.time() - ts) < RANGE_CACHE_TTL:
+            return result
     df = fetch_date_range(start_date, end_date)
     if df.empty:
         return []
@@ -692,7 +699,6 @@ def fetch_all_pitchers_list(start_date, end_date):
         "pitcher_team": lambda x: list(x.unique()),
         "p_throws": "first",
     }).reset_index()
-    # Use to_dict instead of iterrows
     records = grouped.to_dict(orient="records")
     result = [{
         "pitcher_id": int(r["pitcher"]),
@@ -701,6 +707,7 @@ def fetch_all_pitchers_list(start_date, end_date):
         "hand": r["p_throws"],
     } for r in records]
     result.sort(key=lambda r: r["name"])
+    _pitchers_list_cache[cache_key] = (time.time(), result)
     return result
 
 

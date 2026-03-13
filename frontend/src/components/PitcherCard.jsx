@@ -169,7 +169,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
       {/* ===== TOP ROW: Player Info + Box Score ===== */}
       <div className="card-top">
         <div className="card-info">
-          <div className="card-name" onClick={() => onPlayerClick && pitcher_id && onPlayerClick(pitcher_id)} style={onPlayerClick ? { cursor: "pointer" } : {}}>{name}</div>
+          <div className="card-name" onClick={(e) => onPlayerClick && pitcher_id && onPlayerClick(pitcher_id, e)} style={onPlayerClick ? { cursor: "pointer" } : {}}>{name}</div>
           <div className="card-meta">
             {displayAbbrev(team)} · {hand}HP ·{" "}
             {onGameClick ? (
@@ -318,7 +318,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                                 <span className="card-pbp-batter">{pa.batter}</span>
                                 {runsScored > 0 && (
                                   <span className="card-pbp-rbi">
-                                    <span style={{ color: "#fd5dea" }}>- {runsScored} Run{runsScored !== 1 ? "s" : ""} score{runsScored === 1 ? "s" : ""}.{" "}</span>
+                                    <span style={{ color: "#55e8ff" }}>- {runsScored} Run{runsScored !== 1 ? "s" : ""} score{runsScored === 1 ? "s" : ""}.{" "}</span>
                                     {pa.away_score != null && pa.home_score != null && (() => {
                                       const awayDisp = displayAbbrev(linescoreData.away_team) || linescoreData.away_team;
                                       const homeDisp = displayAbbrev(linescoreData.home_team) || linescoreData.home_team;
@@ -327,9 +327,9 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                                       const homeIsP = linescoreData.home_team === pitcherTeam;
                                       return (
                                         <span>
-                                          <span style={{ color: awayIsP ? "#70d4f0" : "#E0E2EC", fontWeight: awayIsP ? 700 : 600 }}>{awayDisp} {pa.away_score}</span>
+                                          <span style={{ color: awayIsP ? "#FFC46A" : "#E0E2EC", fontWeight: awayIsP ? 700 : 600 }}>{awayDisp} {pa.away_score}</span>
                                           <span style={{ color: "rgba(180,184,210,0.6)" }}> - </span>
-                                          <span style={{ color: homeIsP ? "#70d4f0" : "#E0E2EC", fontWeight: homeIsP ? 700 : 600 }}>{homeDisp} {pa.home_score}</span>
+                                          <span style={{ color: homeIsP ? "#FFC46A" : "#E0E2EC", fontWeight: homeIsP ? 700 : 600 }}>{homeDisp} {pa.home_score}</span>
                                         </span>
                                       );
                                     })()}

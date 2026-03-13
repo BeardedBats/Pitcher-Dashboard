@@ -1,16 +1,29 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
+import { TOP_400_NAMES } from "../top400";
 
-const API = window.__BACKEND_PORT__
-  ? `http://localhost:${window.__BACKEND_PORT__}`
-  : process.env.NODE_ENV === "development" ? "http://localhost:8000" : "";
+/**
+ * Client-side search against the Top 400 pitcher list.
+ * Uses Unicode NFKD normalization to strip diacritics so that
+ * "Vasquez" matches "Vásquez" and vice versa.
+ */
+function stripAccents(str) {
+  return str.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/\u00ad/g, "");
+}
 
 export default function SearchBar({ onSelectPlayer }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const timerRef = useRef(null);
+  const [highlightIdx, setHighlightIdx] = useState(-1);
   const wrapperRef = useRef(null);
+
+  // Build searchable list once from the Top 400 set
+  const searchList = useMemo(() => {
+    return Array.from(TOP_400_NAMES).map((name) => ({
+      name,
+      normalized: stripAccents(name).toLowerCase(),
+    }));
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -25,37 +38,42 @@ export default function SearchBar({ onSelectPlayer }) {
   const handleChange = (e) => {
     const val = e.target.value;
     setQuery(val);
-    if (timerRef.current) clearTimeout(timerRef.current);
+    setHighlightIdx(-1);
     if (!val.trim()) {
       setResults([]);
       setOpen(false);
       return;
     }
-    timerRef.current = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(`${API}/api/pitchers-search?q=${encodeURIComponent(val)}`);
-        const data = await res.json();
-        setResults(data);
-        setOpen(true);
-      } catch (err) {
-        console.error("Search error:", err);
-      }
-      setLoading(false);
-    }, 300);
+    const q = stripAccents(val).toLowerCase();
+    const matches = searchList
+      .filter((item) => item.normalized.includes(q))
+      .slice(0, 15);
+    setResults(matches.map((m) => m.name));
+    setOpen(matches.length > 0);
   };
 
-  const handleSelect = (pitcher) => {
+  const handleSelect = (name) => {
     setQuery("");
     setResults([]);
     setOpen(false);
-    onSelectPlayer(pitcher.pitcher_id, pitcher.name);
+    setHighlightIdx(-1);
+    // Pass name instead of pitcher_id — App.jsx navigateToPlayer handles name-based lookup
+    onSelectPlayer(null, name);
   };
 
   const handleKeyDown = (e) => {
     if (e.key === "Escape") {
       setOpen(false);
       e.target.blur();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightIdx((prev) => Math.min(prev + 1, results.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightIdx((prev) => Math.max(prev - 1, 0));
+    } else if (e.key === "Enter" && highlightIdx >= 0 && highlightIdx < results.length) {
+      e.preventDefault();
+      handleSelect(results[highlightIdx]);
     }
   };
 
@@ -72,17 +90,18 @@ export default function SearchBar({ onSelectPlayer }) {
       />
       {open && results.length > 0 && (
         <div className="search-dropdown">
-          {results.map((p) => (
-            <div key={p.pitcher_id} className="search-result" onClick={() => handleSelect(p)}>
-              <span className="search-result-name">{p.name}</span>
-              <span className="search-result-meta">
-                {p.teams.join("/")} · {p.hand === "R" ? "RHP" : "LHP"}
-              </span>
+          {results.map((name, idx) => (
+            <div
+              key={name}
+              className={`search-result${idx === highlightIdx ? " highlighted" : ""}`}
+              onClick={() => handleSelect(name)}
+            >
+              <span className="search-result-name">{name}</span>
             </div>
           ))}
         </div>
       )}
-      {open && results.length === 0 && query.trim() && !loading && (
+      {open && results.length === 0 && query.trim() && (
         <div className="search-dropdown">
           <div className="search-result search-no-results">No pitchers found</div>
         </div>

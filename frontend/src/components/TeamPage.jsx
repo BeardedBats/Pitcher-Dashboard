@@ -137,7 +137,7 @@ export default function TeamPage({ teamAbbrev, onPlayerClick, onBack }) {
                     {cols.map((c) => (
                       <td key={c.key}
                         className={c.key === "pitcher" ? "pitcher-name-cell" : ""}
-                        onClick={c.key === "pitcher" ? () => onPlayerClick(row.pitcher_id, row.pitcher) : undefined}
+                        onClick={c.key === "pitcher" ? (e) => onPlayerClick(row.pitcher_id, row.pitcher, e) : undefined}
                         style={c.key === "pitcher" ? { cursor: "pointer", color: "var(--name)" } : c.key === "pitch_name" ? { color: PITCH_COLORS[row.pitch_name] || "var(--text)" } : {}}
                       >
                         {fmtCell(row, c)}

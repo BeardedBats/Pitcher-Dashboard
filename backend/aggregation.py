@@ -254,8 +254,48 @@ def get_pitcher_card(date_str, pitcher_id, game_pk):
     pitch_table_vs_r = _aggregate_pitch_df(pdf_vs_r, pdf_prepped) if not pdf_vs_r.empty else []
     pitch_table_vs_r = [r for r in pitch_table_vs_r if r["pitcher_id"] == pitcher_id]
 
-    results_data = aggregate_pitcher_results(date_str, game_pk)
-    pitcher_result = next((r for r in results_data if r["pitcher_id"] == pitcher_id), None)
+    # Compute pitcher result inline (avoids re-fetching date data)
+    pdf_r = pdf.copy()
+    pdf_r["is_whiff"] = pdf_r["description"].isin(_WHIFF_DESCS)
+    pdf_r["is_called_strike"] = pdf_r["description"] == "called_strike"
+    total_pitches = len(pdf_r)
+    whiffs_r = int(pdf_r["is_whiff"].sum())
+    called_strikes_r = int(pdf_r["is_called_strike"].sum())
+    events_df_r = pdf_r.dropna(subset=["events"])
+    events_df_r = events_df_r[events_df_r["events"] != ""]
+    ev_col_r = events_df_r["events"] if not events_df_r.empty else pd.Series(dtype=str)
+    hits_r = int(ev_col_r.isin(_HIT_EVENTS).sum())
+    bbs_r = int(ev_col_r.isin(_BB_EVENTS).sum())
+    ks_r = int(ev_col_r.isin(_K_EVENTS).sum())
+    hrs_r = int(ev_col_r.isin(_HR_EVENTS).sum())
+    outs_r = _compute_outs_vectorized(ev_col_r)
+    ip_str_r = f"{outs_r // 3}.{outs_r % 3}"
+    appearance_order_r = int(pdf_r["at_bat_number"].min()) if "at_bat_number" in pdf_r.columns and pdf_r["at_bat_number"].notna().any() else 999
+    home_team_r = pdf_r["home_team"].iloc[0] if "home_team" in pdf_r.columns else ""
+    away_team_r = pdf_r["away_team"].iloc[0] if "away_team" in pdf_r.columns else ""
+    pitcher_result = {
+        "pitcher_id": int(pitcher_id), "game_pk": int(game_pk),
+        "pitcher": name, "team": team, "hand": hand, "opponent": opp,
+        "ip": ip_str_r, "hits": hits_r, "bbs": bbs_r, "ks": ks_r,
+        "whiffs": whiffs_r,
+        "csw_pct": round((called_strikes_r + whiffs_r) / total_pitches * 100, 1) if total_pitches > 0 else 0,
+        "pitches": total_pitches, "hrs": hrs_r,
+        "appearance_order": appearance_order_r,
+        "home_team": home_team_r, "away_team": away_team_r,
+    }
+    # Fetch boxscore for official stats
+    box = get_boxscore_full(game_pk)
+    pbox = box.get(int(pitcher_id)) if box else None
+    if pbox:
+        pitcher_result["er"] = pbox.get("er", 0)
+        if pbox.get("ip") is not None:
+            pitcher_result["ip"] = pbox["ip"]
+        pitcher_result["hits"] = pbox.get("hits", hits_r)
+        pitcher_result["bbs"] = pbox.get("bbs", bbs_r)
+        pitcher_result["ks"] = pbox.get("ks", ks_r)
+        pitcher_result["hrs"] = pbox.get("hrs", hrs_r)
+    else:
+        pitcher_result["er"] = 0
     return {
         "pitcher_id": pitcher_id, "game_pk": game_pk,
         "name": name, "team": team, "hand": hand, "opponent": opp,

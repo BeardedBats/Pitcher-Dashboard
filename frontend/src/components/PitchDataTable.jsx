@@ -363,7 +363,7 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
           <tbody>
             {rows.map((r, i) => (
               <tr key={i} className={onPitcherClick ? "clickable-row" : ""}
-                  onClick={() => onPitcherClick && onPitcherClick(r.pitcher_id, r.game_pk)}>
+                  onClick={(e) => onPitcherClick && onPitcherClick(r.pitcher_id, r.game_pk, e)}>
                 {activeCols.map(c => <td key={c.key} style={{ textAlign: c.align || "left" }}>{renderCell(r, c)}</td>)}
               </tr>
             ))}

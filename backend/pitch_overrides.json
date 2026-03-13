@@ -18,5 +18,17 @@
   "831740_669923_4_3": {
     "new_type": "Cutter",
     "new_name": "Cutter"
+  },
+  "831573_661563_7_1": {
+    "new_type": "CH",
+    "new_name": "Changeup"
+  },
+  "831518_682995_5_5": {
+    "new_type": "FC",
+    "new_name": "Cutter"
+  },
+  "831518_682995_6_3": {
+    "new_type": "FC",
+    "new_name": "Cutter"
   }
 }

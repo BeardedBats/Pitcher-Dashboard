@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { spawn } = require("child_process");
@@ -146,6 +146,45 @@ function createWindow() {
     mainWindow = null;
   });
 }
+
+// Open a new window with a hash route (e.g. #player/12345 or #card/2026-03-08/12345/789)
+function openNewWindow(hash) {
+  const child = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    minWidth: 1000,
+    minHeight: 600,
+    title: "Nick's Live Pitcher Data Dashboard",
+    backgroundColor: "#12131E",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  if (app.isPackaged) {
+    const buildDir = getFrontendBuildDir();
+    const indexPath = path.join(buildDir, "index.html");
+    const originalHtml = fs.readFileSync(indexPath, "utf8");
+    const portScript = `<script>window.__BACKEND_PORT__=${backendPort};</script>`;
+    const modifiedHtml = originalHtml.replace("<head>", `<head>${portScript}`);
+    // Write a unique launch file for each new window to avoid conflicts
+    const launchPath = path.join(buildDir, `_launch_${Date.now()}.html`);
+    fs.writeFileSync(launchPath, modifiedHtml);
+    child.loadFile(launchPath, { hash });
+    // Clean up temp file after load
+    child.webContents.on("did-finish-load", () => {
+      try { fs.unlinkSync(launchPath); } catch (e) { /* ignore */ }
+    });
+  } else {
+    child.loadURL(`http://localhost:3000#${hash}`);
+  }
+}
+
+ipcMain.handle("open-new-window", (_event, hash) => {
+  openNewWindow(hash);
+});
 
 app.whenReady().then(async () => {
   try {

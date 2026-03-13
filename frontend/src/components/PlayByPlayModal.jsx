@@ -269,7 +269,7 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                         <span className="pbp-pa-batter">{pa.batter}</span>
                         {runsScored > 0 && (
                           <span className="pbp-pa-rbi">
-                            <span style={{ color: "#fd5dea" }}>- {runsScored} Run{runsScored !== 1 ? "s" : ""} score{runsScored === 1 ? "s" : ""}.{" "}</span>
+                            <span style={{ color: "#55e8ff" }}>- {runsScored} Run{runsScored !== 1 ? "s" : ""} score{runsScored === 1 ? "s" : ""}.{" "}</span>
                             {pa.away_score != null && pa.home_score != null && (() => {
                               const awayDisp = displayAbbrev(data.away_team) || data.away_team;
                               const homeDisp = displayAbbrev(data.home_team) || data.home_team;
@@ -278,9 +278,9 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                               const homeIsP = data.home_team === pitcherTeam;
                               return (
                                 <span>
-                                  <span style={{ color: awayIsP ? "#70d4f0" : "#E0E2EC", fontWeight: awayIsP ? 700 : 600 }}>{awayDisp} {pa.away_score}</span>
+                                  <span style={{ color: awayIsP ? "#FFC46A" : "#E0E2EC", fontWeight: awayIsP ? 700 : 600 }}>{awayDisp} {pa.away_score}</span>
                                   <span style={{ color: "rgba(180,184,210,0.6)" }}> - </span>
-                                  <span style={{ color: homeIsP ? "#70d4f0" : "#E0E2EC", fontWeight: homeIsP ? 700 : 600 }}>{homeDisp} {pa.home_score}</span>
+                                  <span style={{ color: homeIsP ? "#FFC46A" : "#E0E2EC", fontWeight: homeIsP ? 700 : 600 }}>{homeDisp} {pa.home_score}</span>
                                 </span>
                               );
                             })()}

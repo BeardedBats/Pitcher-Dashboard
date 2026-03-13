@@ -125,7 +125,7 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
           <tbody>
             {rows.map((r, i) => (
               <tr key={i} className="clickable-row"
-                  onClick={() => onPitcherClick && onPitcherClick(r.pitcher_id, r.game_pk)}>
+                  onClick={(e) => onPitcherClick && onPitcherClick(r.pitcher_id, r.game_pk, e)}>
                 {cols.map(c => <td key={c.key} style={{ textAlign: c.align || "left" }}>{renderCell(r, c)}</td>)}
               </tr>
             ))}
