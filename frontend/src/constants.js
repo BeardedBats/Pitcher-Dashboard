@@ -49,20 +49,40 @@ export const PITCH_DATA_COLUMNS = [
 ];
 
 export const CARD_PITCH_DATA_COLUMNS = [
-  { key: "pitch_name", label: "Type", align: "left" },
+  { key: "pitch_name", label: "Type", align: "left", dividerRight: true },
   { key: "count", label: "#", align: "right" },
-  { key: "velo", label: "Velo", align: "right" },
+  { key: "velo", label: "Velo", align: "right", dividerRight: true },
   { key: "usage", label: "Usage", align: "right" },
   { key: "usage_vs_r", label: "Vs R", align: "right" },
-  { key: "usage_vs_l", label: "Vs L", align: "right" },
+  { key: "usage_vs_l", label: "Vs L", align: "right", dividerRight: true },
   { key: "ext", label: "Ext", align: "right" },
   { key: "ivb", label: "IVB", align: "right" },
-  { key: "ihb", label: "IHB", align: "right" },
-  { key: "strike_pct", label: "Strike%", align: "right" },
+  { key: "ihb", label: "IHB", align: "right", dividerRight: true },
   { key: "cs_pct", label: "CS%", align: "right" },
   { key: "swstr_pct", label: "SwStr%", align: "right" },
   { key: "csw_pct", label: "CSW%", align: "right" },
+  { key: "strike_pct", label: "Strike%", align: "right" },
+];
+
+// Results tab columns: Type | # ||| Zone% | O-Swing% ||| Whiffs | CS | CSW% | Strike% | Fouls ||| BBs | Ks ||| BIP | Hits | Outs | HRs ||| Weak% | Hard%
+export const CARD_RESULTS_COLUMNS = [
+  { key: "pitch_name", label: "Type", align: "left", dividerRight: true },
+  { key: "count", label: "#", align: "right", dividerRight: true },
+  { key: "zone_pct", label: "Zone%", align: "right" },
+  { key: "o_swing_pct", label: "O-Swing%", align: "right", dividerRight: true },
   { key: "whiffs", label: "Whiffs", align: "right" },
+  { key: "cs", label: "CS", align: "right" },
+  { key: "csw_pct", label: "CSW%", align: "right" },
+  { key: "strike_pct", label: "Strike%", align: "right" },
+  { key: "fouls", label: "Fouls", align: "right", dividerRight: true },
+  { key: "bbs", label: "BB", align: "right" },
+  { key: "ks", label: "K", align: "right", dividerRight: true },
+  { key: "hits", label: "Hits", align: "right" },
+  { key: "hrs", label: "HRs", align: "right" },
+  { key: "outs_bip", label: "Outs", align: "right" },
+  { key: "bip", label: "BIP", align: "right", dividerRight: true },
+  { key: "weak_pct", label: "Weak%", align: "right" },
+  { key: "hard_pct", label: "Hard%", align: "right" },
 ];
 
 export const PITCHER_RESULTS_COLUMNS = [

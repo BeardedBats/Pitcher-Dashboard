@@ -144,8 +144,8 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
   };
 
   // Color logic for iHB DELTA values (change from season avg)
-  // Four-seamer special: If |prev| < 6 OR |new| < 6 → red for increase, blue for decrease
-  //                      If |prev| > 6 AND |new| > 6 → blue for increase, red for decrease
+  // Four-seamer special: Cut zone (|val| < 6): more cut (negative) = red, less cut (positive) = blue
+  //                      Run zone (|val| > 6): more run (positive) = red, less run (negative) = blue
   // Others: RHP arm-side = Red+/Blue-, LHP arm-side = Red-/Blue+
   const getIhbDeltaColor = (delta, pitchName, hand, prevVal, currentVal) => {
     if (delta == null || isNaN(delta) || delta === 0) return null;
@@ -156,10 +156,12 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
       const absPrev = Math.abs(prevVal);
       const absCur = Math.abs(currentVal);
       if (absPrev < 6 || absCur < 6) {
-        return isPositive ? "#FF839B" : "#55e8ff";
+        // Cut zone: negative delta = more cut = elite (red)
+        return isPositive ? "#55e8ff" : "#FF839B";
       }
       if (absPrev > 6 && absCur > 6) {
-        return isPositive ? "#55e8ff" : "#FF839B";
+        // Run zone: positive delta = more run = elite (red)
+        return isPositive ? "#FF839B" : "#55e8ff";
       }
     }
 
@@ -353,7 +355,9 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
           <thead>
             <tr>
               {activeCols.map(c => (
-                <th key={c.key} style={{ textAlign: c.align || "right", cursor: sortable ? "pointer" : "default" }}
+                <th key={c.key}
+                    className={c.dividerRight ? "col-divider-right" : ""}
+                    style={{ textAlign: c.align || "right", cursor: sortable ? "pointer" : "default" }}
                     onClick={() => handleSort(c.key)}>
                   {c.label}{sortable && sortKey === c.key ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : ""}
                 </th>
@@ -364,7 +368,7 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
             {rows.map((r, i) => (
               <tr key={i} className={onPitcherClick ? "clickable-row" : ""}
                   onClick={(e) => onPitcherClick && onPitcherClick(r.pitcher_id, r.game_pk, e)}>
-                {activeCols.map(c => <td key={c.key} style={{ textAlign: c.align || "left" }}>{renderCell(r, c)}</td>)}
+                {activeCols.map(c => <td key={c.key} className={c.dividerRight ? "col-divider-right" : ""} style={{ textAlign: c.align || "left" }}>{renderCell(r, c)}</td>)}
               </tr>
             ))}
           </tbody>

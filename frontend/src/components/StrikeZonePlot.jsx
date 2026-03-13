@@ -165,7 +165,10 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
       return { label: eventLabel, color: resultColor };
     } else {
       // Non-PA pitch: show description
-      const descLabel = p.description ? p.description.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "";
+      // Normalize foul_tip and swinging_strike_blocked → "Swinging Strike"
+      let rawDesc = p.description || "";
+      if (rawDesc === "foul_tip" || rawDesc === "swinging_strike_blocked") rawDesc = "swinging_strike";
+      const descLabel = rawDesc ? rawDesc.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "";
       const resultColor = PITCH_DESC_COLORS[p.description] || "#ccc";
       return { label: descLabel, color: resultColor };
     }

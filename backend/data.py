@@ -567,8 +567,8 @@ def _transform_range_df(df):
     return df
 
 
-def _fetch_savant_range_raw(start_date, end_date):
-    """Fetch raw CSV from Savant for a date range. Returns raw DataFrame (no transforms)."""
+def _fetch_savant_range_chunk(start_date, end_date):
+    """Fetch a single chunk of CSV from Savant. Returns raw DataFrame."""
     url = SAVANT_RANGE_URL.format(start=start_date, end=end_date)
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
@@ -582,6 +582,34 @@ def _fetch_savant_range_raw(start_date, end_date):
     except Exception as e:
         print(f"Error fetching date range {start_date} to {end_date}: {e}")
         return pd.DataFrame()
+
+
+def _fetch_savant_range_raw(start_date, end_date):
+    """Fetch raw CSV from Savant for a date range, chunking into weekly intervals
+    to avoid the 25,000 row cap per request."""
+    from datetime import datetime, timedelta
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    chunk_days = 5  # ~5 days per chunk keeps well under 25k rows
+    frames = []
+    cur = start_dt
+    while cur <= end_dt:
+        chunk_end = min(cur + timedelta(days=chunk_days - 1), end_dt)
+        cs = cur.strftime("%Y-%m-%d")
+        ce = chunk_end.strftime("%Y-%m-%d")
+        print(f"Fetching Savant chunk {cs} to {ce}...")
+        chunk_df = _fetch_savant_range_chunk(cs, ce)
+        if not chunk_df.empty:
+            frames.append(chunk_df)
+        cur = chunk_end + timedelta(days=1)
+    if not frames:
+        return pd.DataFrame()
+    combined = pd.concat(frames, ignore_index=True)
+    # Deduplicate in case of overlap
+    if "game_pk" in combined.columns and "at_bat_number" in combined.columns and "pitch_number" in combined.columns:
+        combined = combined.drop_duplicates(subset=["game_pk", "at_bat_number", "pitch_number"], keep="first")
+    print(f"Savant range total: {len(combined)} rows across {combined['game_date'].nunique() if 'game_date' in combined.columns else '?'} dates")
+    return combined
 
 
 def _merge_daily_cache(df, start_date, end_date):
@@ -1107,6 +1135,9 @@ def get_game_linescore(game_pk, pitcher_id=None):
             pitch_type_name = PITCH_TYPE_MAP.get(pitch_type_code, pitch_type_code)
             speed = pd_.get("startSpeed")
             desc = det.get("description", "")
+            # Normalize: foul tip and swinging strike (blocked) → Swinging Strike
+            if desc in ("Foul Tip", "Swinging Strike (Blocked)"):
+                desc = "Swinging Strike"
             code = det.get("code", "")
             p_coords = pd_.get("coordinates", {})
             p_breaks = pd_.get("breaks", {})
@@ -1123,8 +1154,8 @@ def get_game_linescore(game_pk, pitcher_id=None):
                 # Location & break for strikezone + hover
                 "plate_x": p_coords.get("pX"),
                 "plate_z": p_coords.get("pZ"),
-                "pfx_x": round(-p_breaks.get("breakHorizontal", 0) / 12, 4) if p_breaks.get("breakHorizontal") is not None else None,
-                "pfx_z": round(p_breaks.get("breakVerticalInduced", 0) / 12, 4) if p_breaks.get("breakVerticalInduced") is not None else None,
+                "pfx_x": round(-p_breaks.get("breakHorizontal", 0), 1) if p_breaks.get("breakHorizontal") is not None else None,
+                "pfx_z": round(p_breaks.get("breakVerticalInduced", 0), 1) if p_breaks.get("breakVerticalInduced") is not None else None,
                 "zone": pd_.get("zone"),
                 # Hit data on last pitch only
                 "launch_speed": pa_ls if is_last_p else None,

@@ -25,7 +25,7 @@
   --hover-tint: rgba(85, 232, 255, 0.04);
   --radius: 10px;
   --radius-sm: 6px;
-  --content-width: 1280px;
+  --content-width: 1130px;
   --font-data: 'Work Sans', sans-serif;
 }
 
@@ -35,7 +35,7 @@ body {
   color: var(--text);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
-  font-size: 15px;
+  font-size: 19px;
 }
 
 /* ======== LAYOUT ======== */
@@ -46,12 +46,13 @@ body {
   max-width: var(--content-width); margin-left: auto; margin-right: auto; flex-wrap: wrap;
 }
 .app-title {
-  font-size: 22px; font-weight: 800;
+  font-size: 26px; font-weight: 800;
   cursor: pointer; user-select: none; transition: opacity 0.2s;
   letter-spacing: -0.02em;
   background: linear-gradient(90deg, #FFC46A 0%, #fb9e2a 100%);
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   background-clip: text;
+  white-space: nowrap;
 }
 .app-title:hover { opacity: 0.8; }
 
@@ -66,15 +67,15 @@ body {
 
 /* ======== GAME TABS ======== */
 .game-tabs {
-  display: flex; flex-wrap: wrap; gap: 10px;
+  display: flex; flex-wrap: wrap; gap: 8px;
   margin-bottom: 18px; padding-bottom: 14px;
   border-bottom: 1px solid var(--border);
   max-width: var(--content-width); margin-left: auto; margin-right: auto;
 }
 .game-tab {
-  min-width: 120px;
+  min-width: 0; flex: 0 1 calc((100% - 56px) / 8);
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  color: var(--text); padding: 6px 14px; font-family: inherit; font-size: 13px;
+  color: var(--text); padding: 6px 10px; font-family: inherit; font-size: 13px;
   font-weight: 500; cursor: pointer; transition: all 0.15s; text-align: center;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   box-sizing: border-box;
@@ -279,7 +280,7 @@ tbody tr.clickable-row:hover { background: var(--hover-tint); }
 .card-gameline-table tbody tr:hover { background: var(--hover-tint); }
 .card-gameline-table tbody td {
   padding: 7px 10px; text-align: center; white-space: nowrap;
-  color: var(--text-bright); font-weight: 600; font-size: 16px; font-family: var(--font-data);
+  color: var(--text-bright); font-weight: 400; font-size: 16px; font-family: var(--font-data);
 }
 .card-pitcher-name {
   text-align: left; color: var(--accent); font-weight: 700; font-size: 15px;
@@ -300,7 +301,7 @@ tbody tr.clickable-row:hover { background: var(--hover-tint); }
 
 /* Metrics header — label + controls on same line */
 .metrics-header {
-  display: flex; align-items: center; gap: 16px; margin-bottom: 10px;
+  display: flex; align-items: flex-end; gap: 16px; margin-bottom: 10px;
 }
 .metrics-header .card-section-label { margin-bottom: 0; }
 .metrics-controls {
@@ -372,6 +373,10 @@ tbody tr.clickable-row:hover { background: var(--hover-tint); }
   transition: color 0.15s, border-color 0.15s;
 }
 .metrics-subnav-btn:hover { color: var(--text); }
+.metrics-subnav-btn.metrics-subnav-disabled {
+  opacity: 0.35; cursor: not-allowed;
+}
+.metrics-subnav-btn.metrics-subnav-disabled:hover { color: var(--text-dim); }
 .metrics-subnav-btn.active {
   color: var(--label);
   border-bottom-color: var(--label);
@@ -470,9 +475,12 @@ tbody tr.clickable-row:hover { background: var(--hover-tint); }
 .card-visuals-section { margin-top: 14px; }
 .sz-mode-select-row { display: flex; justify-content: flex-start; margin-bottom: 8px; }
 .sz-mode-select {
-  background: var(--surface2); color: var(--text); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: 5px 12px; font-size: 13px; font-family: inherit;
+  background: #3d427b; color: var(--text); border: 1px solid transparent;
+  border-radius: var(--radius-sm); padding: 5px 12px; font-size: 12px; font-family: inherit;
   cursor: pointer; outline: none;
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238A8EB0'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 8px center; padding-right: 24px;
 }
 .sz-mode-select:hover { border-color: var(--accent); }
 .sz-mode-select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(85, 232, 255, 0.15); }
@@ -800,8 +808,9 @@ canvas { display: block; border: none; border-radius: var(--radius-sm); }
 
 /* ======== HEADER NAV ======== */
 .header-nav {
-  display: flex; align-items: center; gap: 12px; margin-left: auto;
+  display: flex; align-items: center; gap: 12px; margin-left: 0; flex: 1;
 }
+.header-nav-spacer { flex: 1; }
 
 .nav-link {
   background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -977,3 +986,101 @@ canvas { display: block; border: none; border-radius: var(--radius-sm); }
 .pitcher-name-cell {
   font-weight: 600;
 }
+
+/* ======== PITCH FILTER DROPDOWNS ======== */
+.pf-dropdown { position: relative; display: inline-block; }
+.pf-dropdown-btn {
+  background: #3d427b; color: var(--text); border: 1px solid transparent;
+  border-radius: var(--radius-sm); padding: 5px 12px; font-size: 12px; font-family: inherit;
+  cursor: pointer; outline: none; display: flex; align-items: center; gap: 5px;
+  white-space: nowrap; transition: border-color 0.15s;
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238A8EB0'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 8px center; padding-right: 24px;
+}
+.pf-dropdown-btn:hover { border-color: var(--accent); }
+.pf-dropdown-btn.pf-filtered { border-color: var(--accent); color: var(--accent); }
+.pf-badge {
+  background: var(--accent); color: #1A1C30; font-size: 10px; font-weight: 700;
+  border-radius: 8px; padding: 1px 5px; line-height: 1.3;
+}
+.pf-arrow { font-size: 8px; opacity: 0.6; }
+.pf-menu {
+  position: absolute; top: 100%; left: 0; z-index: 100;
+  background: #3d427b; border: 1px solid rgba(255,255,255,0.1);
+  border-radius: var(--radius-sm); padding: 6px 0; margin-top: 4px;
+  min-width: 170px; max-height: 400px; overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+}
+.pf-menu.pf-multi-col { min-width: 340px; }
+.pf-quick-row {
+  display: flex; gap: 6px; padding: 4px 10px 8px; border-bottom: 1px solid rgba(255,255,255,0.12);
+  flex-wrap: wrap;
+}
+.pf-quick {
+  font-size: 11px; color: var(--accent); cursor: pointer; font-weight: 600;
+  padding: 2px 6px; border-radius: 3px; transition: background 0.12s;
+}
+.pf-quick:hover { background: rgba(85, 232, 255, 0.12); }
+.pf-options { padding: 6px 6px; display: grid; gap: 1px; }
+.pf-multi-col .pf-options { grid-template-columns: repeat(2, 1fr); }
+.pf-option {
+  display: flex; align-items: center; gap: 6px; padding: 4px 6px;
+  cursor: pointer; border-radius: 3px; transition: background 0.1s;
+  font-size: 12px; color: var(--text); user-select: none;
+}
+.pf-option:hover { background: var(--hover-tint); }
+.pf-check {
+  width: 16px; height: 16px; border: 1.5px solid #4272f7;
+  border-radius: 3px; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; flex-shrink: 0; transition: all 0.12s;
+}
+.pf-check.pf-checked {
+  background: var(--accent); border-color: var(--accent); color: #1A1C30; font-weight: 700;
+}
+.pf-color-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.pf-opt-label { white-space: nowrap; }
+.pf-menu-header {
+  padding: 5px 10px 4px; font-size: 10px; font-weight: 600; color: var(--accent);
+  text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.85;
+}
+.filter-pill-group { display: flex; flex-direction: column; gap: 2px; }
+.filter-pill-label {
+  font-size: 9px; font-weight: 600; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  padding-bottom: 2px; text-align: center;
+}
+.filter-controls-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+
+/* ======== PLAYER PAGE — TOTALS ROW ======== */
+/* Column dividers for pitch data tables */
+.col-divider-right {
+  border-right: 2px solid rgba(255,255,255,0.18) !important;
+}
+
+.pp-total-row td {
+  font-weight: 700 !important;
+  background: rgba(255,255,255,0.04) !important;
+  border-top: 2px solid var(--border) !important;
+}
+.pp-total-label { color: var(--text) !important; font-weight: 700 !important; }
+
+/* ======== PLAYER PAGE — Centered card layout (matches card-outer) ======== */
+.pp-outer-centered {
+  display: table; margin: 0 auto;
+}
+.pp-outer-centered > .back-btn { display: block; margin-bottom: 10px; width: fit-content; }
+
+/* Game filter dropdown for player page plots */
+.game-filter-select {
+  background: #3d427b; color: var(--text); border: 1px solid transparent;
+  border-radius: var(--radius-sm); padding: 5px 12px; font-size: 12px; font-family: inherit;
+  cursor: pointer; outline: none;
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238A8EB0'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 8px center; padding-right: 24px;
+}
+.game-filter-select:hover { border-color: var(--accent); }
+.game-filter-select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(85, 232, 255, 0.15); }

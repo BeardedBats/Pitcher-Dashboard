@@ -382,7 +382,6 @@ export default function App() {
   // Header nav component (reused in both header renders)
   const headerNav = (
     <div className="header-nav">
-      <SearchBar onSelectPlayer={(id, name) => navigateToPlayer(id, name)} />
       <button className={`nav-link${page === "leaderboard" ? " active" : ""}`} onClick={navigateToLeaderboard}>
         Leaderboard
       </button>
@@ -396,6 +395,8 @@ export default function App() {
           <option key={t.abbrev} value={t.abbrev}>{t.name}</option>
         ))}
       </select>
+      <div className="header-nav-spacer" />
+      <SearchBar onSelectPlayer={(id, name) => navigateToPlayer(id, name)} />
     </div>
   );
 
@@ -405,7 +406,7 @@ export default function App() {
       {!cardData && (
         <div className="header">
           <h1 className="app-title" onClick={resetToDefault}>Live Pitch Dashboard</h1>
-          {page === "games" && <DatePicker date={date} onChange={setDate} />}
+          <DatePicker date={date} onChange={setDate} />
           {headerNav}
         </div>
       )}
@@ -512,6 +513,7 @@ export default function App() {
         <>
           <div className="header">
             <h1 className="app-title" onClick={resetToDefault}>Live Pitch Dashboard</h1>
+            <DatePicker date={date} onChange={setDate} />
             {headerNav}
           </div>
           {games.length > 0 && (

@@ -249,7 +249,22 @@ def player_page(pitcher_id: int = Query(...), start_date: str = Query("2026-02-2
         }
     else:
         results_summary = {}
-    result = {"info": info, "pitch_summary": pitch_summary, "pitch_summary_vs_l": pitch_summary_vs_l, "pitch_summary_vs_r": pitch_summary_vs_r, "results_summary": results_summary, "game_log": game_log}
+    # Build per-game pitch summaries for game filter in pitch metrics table
+    per_game_summaries = {}
+    for gpk in pdf_prepped["game_pk"].unique():
+        gpdf = pdf_prepped[pdf_prepped["game_pk"] == gpk]
+        per_game_summaries[str(int(gpk))] = {
+            "all": aggregate_pitch_data_range(gpdf, prepped=True),
+            "vs_l": aggregate_pitch_data_range(gpdf[gpdf["stand"] == "L"], prepped=True) if (gpdf["stand"] == "L").any() else [],
+            "vs_r": aggregate_pitch_data_range(gpdf[gpdf["stand"] == "R"], prepped=True) if (gpdf["stand"] == "R").any() else [],
+        }
+
+    # Build raw pitches list for strikezone/movement plots
+    from aggregation import build_pitches_list
+    all_pitches = build_pitches_list(pdf)
+    sz_top = float(pdf["sz_top"].mean()) if "sz_top" in pdf.columns and pdf["sz_top"].notna().any() else 3.5
+    sz_bot = float(pdf["sz_bot"].mean()) if "sz_bot" in pdf.columns and pdf["sz_bot"].notna().any() else 1.5
+    result = {"info": info, "pitch_summary": pitch_summary, "pitch_summary_vs_l": pitch_summary_vs_l, "pitch_summary_vs_r": pitch_summary_vs_r, "per_game_summaries": per_game_summaries, "results_summary": results_summary, "game_log": game_log, "pitches": all_pitches, "sz_top": sz_top, "sz_bot": sz_bot}
     set_agg_cache(agg_key, result)
     return result
 

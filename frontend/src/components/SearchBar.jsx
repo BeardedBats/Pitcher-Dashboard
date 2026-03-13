@@ -82,7 +82,7 @@ export default function SearchBar({ onSelectPlayer }) {
       <input
         type="text"
         className="search-input"
-        placeholder="Search pitchers..."
+        placeholder="Player Search"
         value={query}
         onChange={handleChange}
         onKeyDown={handleKeyDown}

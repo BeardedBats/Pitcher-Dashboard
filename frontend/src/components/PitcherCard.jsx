@@ -3,9 +3,12 @@ import StrikeZonePlot from "./StrikeZonePlot";
 import StrikeZonePBP from "./StrikeZonePBP";
 import MovementPlot from "./MovementPlot";
 import PitchDataTable from "./PitchDataTable";
+import PitchFilterDropdown from "./PitchFilterDropdown";
+import ResultsTable from "./ResultsTable";
 import { PITCH_COLORS, PITCH_DESC_COLORS, RESULT_COLORS, CARD_PITCH_DATA_COLUMNS, displayAbbrev } from "../constants";
 import { getResultColor } from "../utils/formatting";
 import { fetchSeasonAverages } from "../utils/api";
+import { classifyPitchResult, isWeakBIP, classifyBattedBallFull, RESULT_FILTER_OPTIONS, RESULT_QUICK_ACTIONS } from "../utils/pitchFilters";
 
 function ordinal(n) {
   const s = ["th", "st", "nd", "rd"];
@@ -34,26 +37,9 @@ function formatResult(result, trajectory) {
   return result.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
-function classifyBattedBall(launchSpeed, launchAngle) {
-  if (launchSpeed == null || launchAngle == null) return null;
-  const ev = launchSpeed, la = launchAngle;
-  if (ev >= 98) {
-    const laMin = Math.max(8, 26 - (ev - 98) * 1.5);
-    const laMax = Math.min(50, 30 + (ev - 98) * 1.3);
-    if (la >= laMin && la <= laMax) return "Barrel";
-  }
-  if (ev >= 95 && la >= 10 && la <= 50) return "Solid";
-  if (la < 10) return "Poorly/Topped";
-  if (ev >= 80 && la >= 10 && la <= 25) return "Flare/Burner";
-  if (la > 50) return "Poorly/Under";
-  if (la > 25 && ev < 80) return "Poorly/Under";
-  if (ev < 80) return "Poorly/Weak";
-  if (ev >= 95) return "Solid";
-  return "Flare/Burner";
-}
-
 const BATTED_BALL_COLORS = {
-  "Barrel": "#ffa3a3", "Solid": "#F59E0B", "Flare/Burner": "#8feaff",
+  "Barrel": "#ffa3a3", "Solid": "#F59E0B", "Burner": "#F59E0B",
+  "Flare": "#8feaff",
   "Poorly/Under": "#65ff9c", "Poorly/Topped": "#65ff9c", "Poorly/Weak": "#65ff9c",
 };
 
@@ -106,23 +92,26 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
   const [pbpExpanded, setPbpExpanded] = useState({});
   const [pbpPitchHover, setPbpPitchHover] = useState(null);
 
-  // Show change toggle
-  const [showChange, setShowChange] = useState(true);
   const [seasonAvgs, setSeasonAvgs] = useState(null);
   const [loadingAvgs, setLoadingAvgs] = useState(false);
+
+  // Pitch-type filter for plots (null = all selected on init)
+  const [pitchTypeFilter, setPitchTypeFilter] = useState(null);
+  // Pitch-result filter for plots (null = all selected on init)
+  const [resultFilter, setResultFilter] = useState(null);
 
   // Determine which season to compare against
   const currentYear = date ? parseInt(date.slice(0, 4)) : new Date().getFullYear();
   const prevSeason = currentYear - 1;
 
   useEffect(() => {
-    if (showChange && !seasonAvgs && pitcher_id) {
+    if (!seasonAvgs && pitcher_id) {
       setLoadingAvgs(true);
       fetchSeasonAverages(pitcher_id, prevSeason)
         .then(avgs => { setSeasonAvgs(avgs); setLoadingAvgs(false); })
         .catch(() => { setSeasonAvgs({}); setLoadingAvgs(false); });
     }
-  }, [showChange, seasonAvgs, pitcher_id, prevSeason]);
+  }, [seasonAvgs, pitcher_id, prevSeason]);
 
   // Select correct pitch table based on batter filter
   const activePitchTable = useMemo(() => {
@@ -156,13 +145,46 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
     return { segments, totalPAs };
   }, [linescoreData, pitcher_id]);
 
-  // Filter pitches for plots when batter hand filter is active
+  // Available pitch types in this game (for filter options)
+  const availablePitchTypes = useMemo(() => {
+    if (!pitches) return [];
+    const types = new Set(pitches.map(p => p.pitch_name).filter(Boolean));
+    return [...types].sort();
+  }, [pitches]);
+
+  // Lazy-init pitch type filter to all types
+  const effectivePitchTypeFilter = useMemo(() => {
+    if (pitchTypeFilter === null) return new Set(availablePitchTypes);
+    return pitchTypeFilter;
+  }, [pitchTypeFilter, availablePitchTypes]);
+
+  // Lazy-init result filter to all options
+  const effectiveResultFilter = useMemo(() => {
+    if (resultFilter === null) return new Set(RESULT_FILTER_OPTIONS);
+    return resultFilter;
+  }, [resultFilter]);
+
+  // Filter pitches for plots: batter hand + pitch type + result
   const filteredPitches = useMemo(() => {
     if (!pitches) return [];
-    if (batterFilter === "L") return pitches.filter(p => p.stand === "L");
-    if (batterFilter === "R") return pitches.filter(p => p.stand === "R");
-    return pitches;
-  }, [pitches, batterFilter]);
+    let fp = pitches;
+    if (batterFilter === "L") fp = fp.filter(p => p.stand === "L");
+    else if (batterFilter === "R") fp = fp.filter(p => p.stand === "R");
+    // Apply pitch type filter
+    if (pitchTypeFilter !== null) {
+      fp = fp.filter(p => effectivePitchTypeFilter.has(p.pitch_name));
+    }
+    // Apply result filter
+    if (resultFilter !== null) {
+      fp = fp.filter(p => {
+        const cat = classifyPitchResult(p);
+        // "Weak BIP" is a virtual category — check separately
+        if (effectiveResultFilter.has("Weak BIP") && isWeakBIP(p)) return true;
+        return effectiveResultFilter.has(cat) || (cat === "Other");
+      });
+    }
+    return fp;
+  }, [pitches, batterFilter, pitchTypeFilter, effectivePitchTypeFilter, resultFilter, effectiveResultFilter]);
 
   return (
     <div className="card">
@@ -218,24 +240,26 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
             <button className={`metrics-subnav-btn${metricsView === "pitch-data" ? " active" : ""}`} onClick={() => setMetricsView("pitch-data")}>
               Pitch Type Metrics
             </button>
+            <button className={`metrics-subnav-btn${metricsView === "results" ? " active" : ""}`} onClick={() => setMetricsView("results")}>
+              Results
+            </button>
             {pitcherPBP && (
               <button className={`metrics-subnav-btn${metricsView === "play-by-play" ? " active" : ""}`} onClick={() => setMetricsView("play-by-play")}>
                 Play-by-Play
               </button>
             )}
           </div>
-          {metricsView === "pitch-data" && (
+          {(metricsView === "pitch-data" || metricsView === "results") && (
             <div className="metrics-controls">
-              <select className="batter-filter-select" value={batterFilter}
-                onChange={e => setBatterFilter(e.target.value)}>
-                <option value="all">Vs All</option>
-                <option value="L">vs. LHB</option>
-                <option value="R">vs. RHB</option>
-              </select>
-              <label className="change-toggle">
-                <input type="checkbox" checked={showChange} onChange={e => setShowChange(e.target.checked)} />
-                <span>Show Change</span>
-              </label>
+              <div className="filter-pill-group">
+                <span className="filter-pill-label">LHB/RHB</span>
+                <select className="game-filter-select" value={batterFilter}
+                  onChange={e => setBatterFilter(e.target.value)}>
+                  <option value="all">vs. All</option>
+                  <option value="L">vs LHB</option>
+                  <option value="R">vs RHB</option>
+                </select>
+              </div>
             </div>
           )}
         </div>
@@ -244,9 +268,14 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
             <PitchDataTable data={activePitchTable} columns={CARD_PITCH_DATA_COLUMNS}
               splitByTeam={false} spOnly={false} pitcherHand={hand}
               sortable={false}
-              showChange={showChange} seasonAvgs={seasonAvgs}
+              showChange={true} seasonAvgs={seasonAvgs}
               batterFilter={batterFilter} />
             {loadingAvgs && <div className="loading-avgs">Loading season averages...</div>}
+          </div>
+        )}
+        {metricsView === "results" && (
+          <div className="metrics-card">
+            <ResultsTable pitches={pitches} batterFilter={batterFilter} gameFilter="all" />
           </div>
         )}
         {metricsView === "play-by-play" && pitcherPBP && (() => {
@@ -275,7 +304,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                       const resultColor = getResultColor(pa.result);
                       const isK = isStrikeout(pa.result);
                       const lastPitch = pa.pitches?.length > 0 ? pa.pitches[pa.pitches.length - 1] : null;
-                      const bbType = !isK ? classifyBattedBall(pa.launch_speed, pa.launch_angle) : null;
+                      const bbType = !isK ? classifyBattedBallFull(pa.launch_speed, pa.launch_angle) : null;
                       const bbColor = bbType ? BATTED_BALL_COLORS[bbType] : null;
 
                       // Detect runs scored by comparing score to previous PA in the full half-inning
@@ -510,12 +539,36 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
 
       {/* ===== VISUALS: Strike zones side by side + Movement ===== */}
       <div className="card-visuals-section">
-        <div className="sz-mode-select-row">
-          <select className="sz-mode-select" value={szColorMode} onChange={e => setSzColorMode(e.target.value)}>
-            <option value="pitch-type">Pitch Types</option>
-            <option value="pitch-result">Pitch Results</option>
-            <option value="pa-result">PA Results</option>
-          </select>
+        <div className="sz-mode-select-row filter-controls-row">
+          <div className="filter-pill-group">
+            <span className="filter-pill-label">Plot Display</span>
+            <select className="sz-mode-select" value={szColorMode} onChange={e => setSzColorMode(e.target.value)}>
+              <option value="pitch-type">Pitch Types</option>
+              <option value="pitch-result">Pitch Results</option>
+              <option value="pa-result">PA Results</option>
+            </select>
+          </div>
+          <div className="filter-pill-group">
+            <span className="filter-pill-label">Pitch Filter</span>
+            <PitchFilterDropdown
+              label="Pitch Types"
+              options={availablePitchTypes}
+              selected={effectivePitchTypeFilter}
+              onChange={setPitchTypeFilter}
+              colorMap={PITCH_COLORS}
+            />
+          </div>
+          <div className="filter-pill-group">
+            <span className="filter-pill-label">Result Filter</span>
+            <PitchFilterDropdown
+              label="Results"
+              options={RESULT_FILTER_OPTIONS}
+              selected={effectiveResultFilter}
+              onChange={setResultFilter}
+              columns={2}
+              quickActions={RESULT_QUICK_ACTIONS}
+            />
+          </div>
         </div>
         <div className="card-visuals">
           <div className="card-sz-pair">

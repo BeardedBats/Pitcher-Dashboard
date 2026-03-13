@@ -180,6 +180,57 @@ def aggregate_pitcher_results(date_str, game_pk=None):
     results.sort(key=lambda r: (r["team"], r["appearance_order"]))
     return results
 
+def build_pitches_list(pdf):
+    """Build JSON-safe list of pitch dicts from a pitcher DataFrame.
+    Converts pfx to inches and sanitizes NaN→None."""
+    _pitch_cols = ["pitch_type", "pitch_name", "plate_x", "plate_z", "pfx_x", "pfx_z",
+                   "release_speed", "stand", "description", "zone", "at_bat_number",
+                   "pitch_number", "outs_when_up", "batter_name", "events",
+                   "launch_speed", "launch_angle", "hc_x", "hc_y", "release_extension",
+                   "inning", "inning_topbot", "balls", "strikes", "on_1b", "on_2b", "on_3b",
+                   "game_pk", "game_date"]
+    available_cols = [c for c in _pitch_cols if c in pdf.columns]
+    pitch_df = pdf[available_cols].copy()
+    if "pfx_x" in pitch_df.columns:
+        pitch_df["pfx_x"] = pitch_df["pfx_x"] * 12
+    if "pfx_z" in pitch_df.columns:
+        pitch_df["pfx_z"] = pitch_df["pfx_z"] * 12
+    pitches_raw = pitch_df.to_dict(orient="records")
+    pitches = []
+    _int_fields = {"zone", "at_bat_number", "pitch_number", "outs_when_up", "inning", "balls", "strikes", "game_pk"}
+    _float_fields = {"plate_x", "plate_z", "pfx_x", "pfx_z", "release_speed", "launch_speed", "launch_angle", "hc_x", "hc_y", "release_extension"}
+    _bool_fields = {"on_1b", "on_2b", "on_3b"}
+    _str_defaults = {"pitch_name": "Unclassified", "description": "", "events": "", "batter_name": "", "stand": "", "pitch_type": "", "game_date": ""}
+    for row in pitches_raw:
+        for k in list(row.keys()):
+            v = row[k]
+            if v is None:
+                continue
+            try:
+                if isinstance(v, float) and np.isnan(v):
+                    row[k] = None
+            except (TypeError, ValueError):
+                pass
+        for f, default in _str_defaults.items():
+            if row.get(f) is None:
+                row[f] = default
+        for f in _int_fields:
+            v = row.get(f)
+            if v is not None:
+                row[f] = int(v)
+        for f in _float_fields:
+            v = row.get(f)
+            if v is not None:
+                row[f] = float(v)
+        for f in _bool_fields:
+            row[f] = bool(row.get(f) or False)
+        # Ensure game_date is a string
+        if "game_date" in row and row["game_date"]:
+            row["game_date"] = str(row["game_date"])[:10]
+        pitches.append(row)
+    return pitches
+
+
 def get_pitcher_card(date_str, pitcher_id, game_pk):
     df = fetch_date(date_str)
     if df.empty: return {}
@@ -445,6 +496,15 @@ def aggregate_pitch_data_range(df, prepped=False):
     # Pre-compute pitcher totals as a dict for O(1) lookup
     pitcher_totals = df.groupby("pitcher").size().to_dict()
 
+    # Pre-compute pitcher totals by batter hand for usage_vs_r / usage_vs_l
+    has_stand = "stand" in df.columns
+    pitcher_vs_r_totals = {}
+    pitcher_vs_l_totals = {}
+    if has_stand:
+        for pid, sdf in df.groupby("pitcher"):
+            pitcher_vs_r_totals[pid] = int((sdf["stand"] == "R").sum())
+            pitcher_vs_l_totals[pid] = int((sdf["stand"] == "L").sum())
+
     results = []
     grouped = df.groupby(["pitcher", "player_name", "p_throws", "pitch_name", "pitch_type"])
     for (pitcher_id, name, hand, pitch_name, pitch_type), gdf in grouped:
@@ -460,6 +520,12 @@ def aggregate_pitch_data_range(df, prepped=False):
         strikes = int(gdf["is_strike"].sum())
         o_swings = int(gdf.loc[~gdf["in_zone"], "is_swing"].sum()) if out_zone > 0 else 0
 
+        # Usage split by batter hand
+        vs_r_count = int((gdf["stand"] == "R").sum()) if has_stand else 0
+        vs_l_count = int((gdf["stand"] == "L").sum()) if has_stand else 0
+        pitcher_vs_r_total = pitcher_vs_r_totals.get(pitcher_id, 0)
+        pitcher_vs_l_total = pitcher_vs_l_totals.get(pitcher_id, 0)
+
         row = {
             "pitcher_id": int(pitcher_id),
             "pitcher": name,
@@ -470,6 +536,8 @@ def aggregate_pitch_data_range(df, prepped=False):
             "count": total,
             "velo": round(gdf["release_speed"].mean(), 1) if gdf["release_speed"].notna().any() else None,
             "usage": round(total / pitcher_total * 100, 1) if pitcher_total > 0 else 0,
+            "usage_vs_r": round(vs_r_count / pitcher_vs_r_total * 100, 1) if pitcher_vs_r_total > 0 else 0,
+            "usage_vs_l": round(vs_l_count / pitcher_vs_l_total * 100, 1) if pitcher_vs_l_total > 0 else 0,
             "ext": round(gdf["release_extension"].mean(), 1) if gdf["release_extension"].notna().any() else None,
             "ivb": round(gdf["pfx_z"].mean() * 12, 1) if gdf["pfx_z"].notna().any() else None,
             "ihb": round(gdf["pfx_x"].mean() * 12, 1) if gdf["pfx_x"].notna().any() else None,
