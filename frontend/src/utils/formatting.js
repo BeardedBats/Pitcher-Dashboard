@@ -63,6 +63,33 @@ export function getVeloEmphasis(pitchName, velo) {
   return null;
 }
 
+// Savant batted ball classification based on launch speed/angle
+export function classifyBattedBall(launchSpeed, launchAngle) {
+  if (launchSpeed == null || launchAngle == null) return null;
+  const ev = launchSpeed, la = launchAngle;
+  if (ev >= 98) {
+    const laMin = Math.max(8, 26 - (ev - 98) * 1.5);
+    const laMax = Math.min(50, 30 + (ev - 98) * 1.3);
+    if (la >= laMin && la <= laMax) return "Barrel";
+  }
+  if (ev >= 95 && la >= 10 && la <= 50) return "Solid";
+  if (la < 10) return "Poorly/Topped";
+  if (ev >= 80 && la >= 10 && la <= 25) return "Flare/Burner";
+  if (la > 50) return "Poorly/Under";
+  if (la > 25 && ev < 80) return "Poorly/Under";
+  if (ev < 80) return "Poorly/Weak";
+  if (ev >= 95) return "Solid";
+  return "Flare/Burner";
+}
+
+// Hard BIP vs Weak BIP from Savant tag + launch angle
+export function getBIPQuality(tag, launchAngle) {
+  if (!tag) return null;
+  if (tag === "Barrel" || tag === "Solid") return "Hard BIP";
+  if (tag === "Flare/Burner") return launchAngle < 11 ? "Hard BIP" : "Weak BIP";
+  return "Weak BIP"; // Poorly/*
+}
+
 export function getIHBEmphasis(pitchName, ihb, hand) {
   // ihb is the DISPLAY value (already negated from pfx_x)
   if (ihb == null || !pitchName || !hand) return null;

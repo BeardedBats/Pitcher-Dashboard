@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import { PITCH_COLORS, PITCH_DESC_COLORS } from "../constants";
-import { getSprayDirection, getResultColor } from "../utils/formatting";
+import { getSprayDirection, getResultColor, classifyBattedBall, getBIPQuality } from "../utils/formatting";
 
 const W = 345, H = 345;
 const PAD = { top: 16, right: 16, bottom: 16, left: 16 };
@@ -152,10 +152,20 @@ export default function MovementPlot({ pitches, hand, onReclassify }) {
       // PA-ending pitch: show event
       const eventLabel = p.events.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
       const resultColor = getResultColor(p.events);
+      // Strikeout: prefix with Called Strike or Swinging Strike
+      const rLower = p.events.toLowerCase();
+      if (rLower === "strikeout" || rLower === "strikeout_double_play") {
+        const desc = (p.description || "").toLowerCase();
+        const prefix = desc.includes("called") ? "Called Strike" : "Swinging Strike";
+        return { label: `${prefix} - ${eventLabel}`, color: resultColor };
+      }
       return { label: eventLabel, color: resultColor };
     } else {
       // Non-PA pitch: show description
-      const descLabel = p.description ? p.description.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "";
+      // Normalize foul_tip and swinging_strike_blocked → "Swinging Strike"
+      let rawDesc = p.description || "";
+      if (rawDesc === "foul_tip" || rawDesc === "swinging_strike_blocked") rawDesc = "swinging_strike";
+      const descLabel = rawDesc ? rawDesc.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "";
       const resultColor = PITCH_DESC_COLORS[p.description] || "#ccc";
       return { label: descLabel, color: resultColor };
     }
@@ -229,6 +239,18 @@ export default function MovementPlot({ pitches, hand, onReclassify }) {
                   {isPA && p.hc_x != null && <span> {getSprayDirection(p.hc_x, p.hc_y)}</span>}
                 </div>
               )}
+
+              {/* Line 7: BIP quality + Savant batted ball tag */}
+              {isPA && p.launch_speed != null && p.launch_angle != null && (() => {
+                const tag = classifyBattedBall(p.launch_speed, p.launch_angle);
+                if (!tag) return null;
+                const quality = getBIPQuality(tag, p.launch_angle);
+                return (
+                  <div className="pt-row" style={{ fontSize: "0.85em", color: "rgba(180,184,210,0.7)" }}>
+                    {quality} — {tag}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* RIGHT COLUMN: Mini Strikezone SVG */}
@@ -270,6 +292,16 @@ export default function MovementPlot({ pitches, hand, onReclassify }) {
                   stroke="rgba(160,164,190,0.35)"
                   strokeWidth="0.8"
                 />
+
+                {/* Batter side label (LHB/RHB) */}
+                {(() => {
+                  const isLeft = p.stand === "L";
+                  const lx = isLeft ? 6 : 59;
+                  const letters = isLeft ? ["L", "H", "B"] : ["R", "H", "B"];
+                  return letters.map((ch, i) => (
+                    <text key={i} x={lx} y={33 + i * 10} fill="rgba(150,155,185,0.28)" fontSize="7" fontWeight="bold" textAnchor="middle" dominantBaseline="middle" fontFamily="'DM Sans', sans-serif">{ch}</text>
+                  ));
+                })()}
 
                 {/* Pitch location dot */}
                 {(() => {

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { PITCH_COLORS, PITCH_DESC_COLORS, displayAbbrev } from "../constants";
-import { getResultColor } from "../utils/formatting";
+import { getResultColor, classifyBattedBall, getBIPQuality } from "../utils/formatting";
 import StrikeZonePBP from "./StrikeZonePBP";
 
 const TYPE_TO_NAME = {
@@ -416,16 +416,38 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                               {hp.release_extension != null && ` · Ext ${hp.release_extension.toFixed(1)}ft`}
                             </div>
                           )}
-                          {descLabel && (
-                            <div className="pt-row" style={{ color: descColor, fontWeight: 500, fontSize: "0.85em" }}>
-                              {descLabel}
-                              {paResultLabel && (
-                                <span style={{ color: getResultColor(paResultRaw), marginLeft: 6 }}>
-                                  ({paResultLabel}{hp.launch_speed != null ? ` | ${hp.launch_speed.toFixed(1)} EV` : ""}{hp.launch_angle != null ? `, ${hp.launch_angle.toFixed(0)}° LA` : ""})
-                                </span>
-                              )}
-                            </div>
-                          )}
+                          {descLabel && (() => {
+                            // Strikeout: prefix with Called Strike or Swinging Strike
+                            const isK = paResultRaw && (paResultRaw.toLowerCase() === "strikeout" || paResultRaw.toLowerCase() === "strikeout_double_play");
+                            let displayResult = paResultLabel;
+                            if (isK && paResultLabel) {
+                              const descLower = (hp.desc || "").toLowerCase();
+                              const prefix = descLower.includes("called") ? "Called Strike" : "Swinging Strike";
+                              displayResult = `${prefix} - ${paResultLabel}`;
+                            }
+                            return (
+                              <div className="pt-row" style={{ color: descColor, fontWeight: 500, fontSize: "0.85em" }}>
+                                {descLabel}
+                                {displayResult && (
+                                  <span style={{ color: getResultColor(paResultRaw), marginLeft: 6 }}>
+                                    ({displayResult}{hp.launch_speed != null ? ` | ${hp.launch_speed.toFixed(1)} EV` : ""}{hp.launch_angle != null ? `, ${hp.launch_angle.toFixed(0)}° LA` : ""})
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+                          {/* BIP quality + Savant batted ball tag */}
+                          {isLastPitch && hp.launch_speed != null && hp.launch_angle != null && (() => {
+                            const tag = classifyBattedBall(hp.launch_speed, hp.launch_angle);
+                            if (!tag) return null;
+                            const quality = getBIPQuality(tag, hp.launch_angle);
+                            return (
+                              <div className="pt-row" style={{ fontSize: "0.85em", color: "rgba(180,184,210,0.7)" }}>
+                                {quality} — {tag}
+                              </div>
+                            );
+                          })()}
                         </div>
                         {hp.plate_x != null && hp.plate_z != null && (
                           <svg width="65" height="103" viewBox="0 0 65 103" style={{ flexShrink: 0 }}>
@@ -437,6 +459,15 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                               <line key={"h" + i} x1="12" y1={17 + (i * 50) / 3} x2="53" y2={17 + (i * 50) / 3} stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
                             ))}
                             <polygon points="32.5,87 42,92 42,99 23,99 23,92" fill="rgba(140,145,175,0.22)" stroke="rgba(160,164,190,0.35)" strokeWidth="0.8" />
+                            {/* Batter side label (LHB/RHB) */}
+                            {(() => {
+                              const isLeft = (activePa.stand || "R") === "L";
+                              const lx = isLeft ? 6 : 59;
+                              const letters = isLeft ? ["L", "H", "B"] : ["R", "H", "B"];
+                              return letters.map((ch, i) => (
+                                <text key={i} x={lx} y={33 + i * 10} fill="rgba(150,155,185,0.28)" fontSize="7" fontWeight="bold" textAnchor="middle" dominantBaseline="middle" fontFamily="'DM Sans', sans-serif">{ch}</text>
+                              ));
+                            })()}
                             <circle
                               cx={12 + ((-hp.plate_x + 0.83) / 1.66) * 41}
                               cy={17 + ((3.5 - hp.plate_z) / 2.0) * 50}
