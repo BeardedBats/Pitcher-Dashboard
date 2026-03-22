@@ -1,5 +1,22 @@
 {
-  "buildCommand": "cd frontend && npm install && npm run build && mkdir -p ../public && cp -r build/* ../public/",
+  "builds": [
+    {
+      "src": "index.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "frontend/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "build"
+      }
+    }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "index.py" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/frontend/$1" }
+  ],
   "crons": [
     { "path": "/api/cron/warmup", "schedule": "0 10 * * *" },
     { "path": "/api/cron/warmup", "schedule": "0 22 * * *" },
