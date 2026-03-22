@@ -1,10 +1,5 @@
 {
   "buildCommand": "cd frontend && npm install && npm run build && mkdir -p ../public && cp -r build/* ../public/",
-  "functions": {
-    "index.py": {
-      "maxDuration": 60
-    }
-  },
   "crons": [
     { "path": "/api/cron/warmup", "schedule": "0 10 * * *" },
     { "path": "/api/cron/warmup", "schedule": "0 22 * * *" },
