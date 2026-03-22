@@ -1,6 +1,11 @@
 [project]
 name = "pitcher-dashboard"
 version = "1.0.0"
-
-[tool.vercel.scripts]
-build = "cd frontend && npm install && npm run build && mkdir -p ../public && cp -r build/* ../public/"
+dependencies = [
+    "fastapi",
+    "pandas",
+    "numpy",
+    "requests",
+    "upstash-redis",
+    "tzdata",
+]
