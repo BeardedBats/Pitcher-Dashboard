@@ -18,3 +18,8 @@ boxscore-mockup.html
 velocity-range-mockup.html
 api/
 .github/
+/package.json
+/package-lock.json
+Dockerfile
+railway.toml
+render.yaml
