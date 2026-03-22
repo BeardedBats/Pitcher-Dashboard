@@ -15,7 +15,8 @@
   "routes": [
     { "src": "/api/(.*)", "dest": "index.py" },
     { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/index.html" }
+    { "src": "^/$", "dest": "/frontend/index.html" },
+    { "src": "/(.*)", "dest": "/frontend/$1" }
   ],
   "crons": [
     { "path": "/api/cron/warmup", "schedule": "0 10 * * *" },
