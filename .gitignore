@@ -1,6 +1,7 @@
 node_modules/
 dist/
 output/
+public/
 frontend-build/
 frontend/build/
 backend/dist/

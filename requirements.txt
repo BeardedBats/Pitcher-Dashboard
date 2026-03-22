@@ -1,0 +1,5 @@
+fastapi
+pandas
+numpy
+requests
+upstash-redis
