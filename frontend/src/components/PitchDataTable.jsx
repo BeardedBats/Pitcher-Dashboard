@@ -3,6 +3,7 @@ import { PITCH_COLORS, PITCH_DATA_COLUMNS, TEAM_FULL_NAMES, displayAbbrev } from
 
 const TEAM_SPLIT_HIDE = ["team", "opponent"];
 import { getCellHighlight, fmt, fmtPct, fmtInt, getVeloEmphasis, getIHBEmphasis } from "../utils/formatting";
+import { isTop400 } from "../top400";
 
 const DELTA_KEYS = ["velo", "usage", "usage_vs_r", "usage_vs_l", "ihb", "ext", "ivb"];
 const DELTA_THRESHOLDS = {
@@ -59,13 +60,15 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
       return [...filtered].sort((a, b) => {
         let av = a[sortKey], bv = b[sortKey];
         if (av == null) return 1; if (bv == null) return -1;
+        // Sort team column by full name, not abbreviation
+        if (sortKey === "team") { av = TEAM_FULL_NAMES[av] || av; bv = TEAM_FULL_NAMES[bv] || bv; }
         if (typeof av === "string") return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
         return sortDir === "asc" ? av - bv : bv - av;
       });
     }
     if (!sortable) return filtered;
     return [...filtered].sort((a, b) => {
-      if (a.team !== b.team) return a.team.localeCompare(b.team);
+      if (a.team !== b.team) return (TEAM_FULL_NAMES[a.team] || a.team).localeCompare(TEAM_FULL_NAMES[b.team] || b.team);
       if (a.appearance_order !== b.appearance_order) return a.appearance_order - b.appearance_order;
       return (a.pitch_name || "").localeCompare(b.pitch_name || "");
     });
@@ -73,6 +76,34 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
 
   const pctKeys = ["usage", "usage_vs_r", "usage_vs_l", "strike_pct", "cs_pct", "swstr_pct", "csw_pct"];
   const gradientKeys = ["ivb", "ext"];
+  const HYPHEN_TOTAL_KEYS = new Set(["velo", "usage", "ivb", "ihb", "ext"]);
+
+  // Compute totals row from data (weighted averages for pct columns)
+  const computeTotals = (rows) => {
+    if (!rows || rows.length === 0) return null;
+    let totalCount = 0, totalVsR = 0, totalVsL = 0;
+    let totalStrikes = 0, totalCS = 0, totalWhiffs = 0, totalCSW = 0;
+    for (const r of rows) {
+      const n = r.count || 0;
+      totalCount += n;
+      totalVsR += r.count_vs_r || 0;
+      totalVsL += r.count_vs_l || 0;
+      if (r.strike_pct != null) totalStrikes += (r.strike_pct / 100) * n;
+      if (r.cs_pct != null) totalCS += (r.cs_pct / 100) * n;
+      if (r.swstr_pct != null) totalWhiffs += (r.swstr_pct / 100) * n;
+      if (r.csw_pct != null) totalCSW += (r.csw_pct / 100) * n;
+    }
+    return {
+      pitch_name: "Total",
+      count: totalCount,
+      usage_vs_r: totalCount > 0 ? Math.round((totalVsR / totalCount) * 100) : 0,
+      usage_vs_l: totalCount > 0 ? Math.round((totalVsL / totalCount) * 100) : 0,
+      strike_pct: totalCount > 0 ? Math.round((totalStrikes / totalCount) * 100) : 0,
+      cs_pct: totalCount > 0 ? Math.round((totalCS / totalCount) * 100) : 0,
+      swstr_pct: totalCount > 0 ? Math.round((totalWhiffs / totalCount) * 100) : 0,
+      csw_pct: totalCount > 0 ? Math.round((totalCSW / totalCount) * 100) : 0,
+    };
+  };
 
   const dim = (val) => (val === "--" || val === "-") ? <span style={{ color: "rgb(180, 185, 219)" }}>{val}</span> : val;
 
@@ -226,7 +257,7 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
     const v = row[col.key];
     if (col.key === "pitcher") {
       if (!v) return <span className="pitcher-name" style={{ color: "rgb(180, 185, 219)" }}>--</span>;
-      const isTop = top400Names && top400Names.has(v);
+      const isTop = top400Names && isTop400(v);
       const nameClass = top400Names ? (isTop ? "pitcher-name pitcher-top400" : "pitcher-name") : "pitcher-name";
       return <span className={nameClass}>{v}</span>;
     }
@@ -367,10 +398,34 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
           <tbody>
             {rows.map((r, i) => (
               <tr key={i} className={onPitcherClick ? "clickable-row" : ""}
-                  onClick={(e) => onPitcherClick && onPitcherClick(r.pitcher_id, r.game_pk, e)}>
+                  onClick={(e) => onPitcherClick && onPitcherClick(r.pitcher_id, r.game_pk, e)}
+                  onMouseDown={(e) => { if (e.button === 1 && onPitcherClick) { e.preventDefault(); onPitcherClick(r.pitcher_id, r.game_pk, e); } }}>
                 {activeCols.map(c => <td key={c.key} className={c.dividerRight ? "col-divider-right" : ""} style={{ textAlign: c.align || "left" }}>{renderCell(r, c)}</td>)}
               </tr>
             ))}
+            {(() => {
+              const t = computeTotals(rows);
+              if (!t) return null;
+              return (
+                <tr className="pp-total-row">
+                  {activeCols.map(c => {
+                    let val;
+                    if (c.key === "pitch_name") val = <span className="pp-total-label">Total</span>;
+                    else if (HYPHEN_TOTAL_KEYS.has(c.key)) val = "—";
+                    else if (c.key === "count") val = t.count;
+                    else if (pctKeys.includes(c.key) && t[c.key] != null) val = t[c.key] + "%";
+                    else val = t[c.key] != null ? t[c.key] : "—";
+                    return (
+                      <td key={c.key}
+                          className={c.dividerRight ? "col-divider-right" : ""}
+                          style={{ textAlign: c.align || "left" }}>
+                        {val}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })()}
           </tbody>
         </table>
         </div>
@@ -388,6 +443,7 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
       if (!teamMap[k]) { teamMap[k] = []; teamOrder.push(k); }
       teamMap[k].push(r);
     });
+    teamOrder.sort((a, b) => (TEAM_FULL_NAMES[a] || a).localeCompare(TEAM_FULL_NAMES[b] || b));
     return <div className="team-cards-grid">{teamOrder.map(team => renderTable(teamMap[team], TEAM_FULL_NAMES[team] || team, true))}</div>;
   }
 

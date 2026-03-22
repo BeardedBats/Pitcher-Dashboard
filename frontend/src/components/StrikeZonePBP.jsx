@@ -1,14 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
-import { getResultColor } from "../utils/formatting";
 import { displayAbbrev } from "../constants";
+import { getTooltipResult } from "../utils/pitchFilters";
 
 const BATTED_BALL_COLORS = {
   "Barrel": "#ffa3a3",
   "Solid": "#F59E0B",
+  "Burner": "#F59E0B",
   "Flare/Burner": "#8feaff",
-  "Poorly/Under": "#65ff9c",
-  "Poorly/Topped": "#65ff9c",
-  "Poorly/Weak": "#65ff9c",
+  "Flare": "#8feaff",
+  "Under": "#65ff9c",
+  "Topped": "#65ff9c",
+  "Poor": "#65ff9c",
 };
 
 // PBP-only circle color overrides (don't affect text, tables, or other plots)
@@ -105,8 +107,11 @@ export default function StrikeZonePBP({ pitches, pitchColors, result, resultLabe
     let minDist = hitRadius;
     pitches.forEach((pitch, idx) => {
       if (pitch.plate_x == null || pitch.plate_z == null) return;
-      const cx = toX(pitch.plate_x);
-      const cy = toY(pitch.plate_z);
+      const rawCx = toX(pitch.plate_x);
+      const rawCy = toY(pitch.plate_z);
+      // Use clamped (display) coordinates for OOB pitches so hover matches drawn position
+      const cx = Math.max(PLOT_LEFT, Math.min(PLOT_RIGHT, rawCx));
+      const cy = Math.max(PLOT_TOP, Math.min(PLOT_BOT, rawCy));
       const dist = Math.sqrt((clientX - cx) ** 2 + (clientY - cy) ** 2);
       if (dist < minDist) {
         minDist = dist;
@@ -115,7 +120,7 @@ export default function StrikeZonePBP({ pitches, pitchColors, result, resultLabe
     });
     if (nearest) {
       setHoveredPitch(nearest.index);
-      if (onPitchHover) onPitchHover({ pitch: nearest.pitch, x: nearest.x, y: nearest.y });
+      if (onPitchHover) onPitchHover({ pitch: nearest.pitch, x: nearest.x, y: nearest.y, clientX: e.clientX, clientY: e.clientY });
     } else {
       setHoveredPitch(null);
       if (onPitchHover) onPitchHover(null);
@@ -140,26 +145,37 @@ export default function StrikeZonePBP({ pitches, pitchColors, result, resultLabe
     ctx.fillStyle = "#2E3150";
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-    // ── Header: Match PBP left panel format ──
+    // ── Header: Match tooltip color scheme ──
     const HPAD = 14;
     ctx.textBaseline = "top";
 
-    // Row 1: Hitter name (left) | Result (right)
+    // Compute result using tooltip system for consistent colors
+    const lp = pitches[pitches.length - 1];
+    const tooltipResult = result ? getTooltipResult({}, {
+      desc: lp?.desc || "",
+      paResult: result,
+      isLastPitch: true,
+      launchAngle: launchAngle,
+    }) : null;
+
+    // Row 1: Hitter name (left) | Result + K symbol (right)
     ctx.fillStyle = "rgba(224, 226, 236, 0.9)";
     ctx.font = "bold 14px 'DM Sans', sans-serif";
     ctx.textAlign = "left";
     ctx.fillText(batter, HPAD, 10);
 
-    if (result) {
-      const resultColor = getResultColor(result);
-      const displayResult = resultLabel || result;
-      ctx.fillStyle = resultColor;
+    if (tooltipResult) {
+      ctx.fillStyle = tooltipResult.color;
       ctx.font = "bold 14px 'DM Sans', sans-serif";
       ctx.textAlign = "right";
-      ctx.fillText(displayResult, WIDTH - HPAD, 10);
+      let resultText = tooltipResult.label;
+      if (tooltipResult.isK) {
+        resultText += tooltipResult.isCalledStrikeThree ? " (Ꝁ)" : " (K)";
+      }
+      ctx.fillText(resultText, WIDTH - HPAD, 10);
     }
 
-    // Row 2: vs Pitcher (left) | MPH + Pitch Type (right, all at-bats)
+    // Row 2: vs Pitcher left, MPH + Pitch Type right
     ctx.font = "12px 'DM Sans', sans-serif";
     ctx.fillStyle = "rgba(180, 184, 210, 0.6)";
     ctx.textAlign = "left";
@@ -179,6 +195,7 @@ export default function StrikeZonePBP({ pitches, pitchColors, result, resultLabe
       ctx.font = "bold 12px 'DM Sans', sans-serif";
       ctx.fillText(typeText, WIDTH - HPAD, 30);
     }
+    const row2Y = 48;
 
     // Row 3: EV/LA + batted ball type (for balls in play), or final count
     if (!isStrikeoutResult && launchSpeed != null) {
@@ -187,21 +204,20 @@ export default function StrikeZonePBP({ pitches, pitchColors, result, resultLabe
       if (launchAngle != null) evlaText += ` · ${Math.round(launchAngle)}° LA`;
       ctx.fillStyle = "rgba(180, 184, 210, 0.55)";
       ctx.font = "italic 11px 'DM Sans', sans-serif";
-      ctx.fillText(evlaText, HPAD, 48);
+      ctx.fillText(evlaText, HPAD, row2Y);
 
       if (battedBallType) {
         ctx.fillStyle = BATTED_BALL_COLORS[battedBallType] || "rgba(180,184,210,0.6)";
         ctx.font = "bold 11px 'DM Sans', sans-serif";
         ctx.textAlign = "right";
-        ctx.fillText(battedBallType, WIDTH - HPAD, 48);
+        ctx.fillText(battedBallType, WIDTH - HPAD, row2Y);
       }
-    } else if (result && !launchSpeed) {
-      const lp = pitches[pitches.length - 1];
+    } else if (result && !launchSpeed && !isStrikeoutResult) {
       if (lp?.count) {
         ctx.fillStyle = "rgba(180, 184, 210, 0.55)";
         ctx.font = "italic 11px 'DM Sans', sans-serif";
         ctx.textAlign = "left";
-        ctx.fillText(`Final count: ${lp.count}`, HPAD, 48);
+        ctx.fillText(`Final count: ${lp.count}`, HPAD, row2Y);
       }
     }
 

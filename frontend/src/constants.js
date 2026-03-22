@@ -7,10 +7,10 @@ export const PITCH_COLORS = {
   "Curveball": "#2A98FF",
   "Changeup": "#6DE95D",
   "Splitter": "#83D6FF",
-  "Knuckleball": "#B080FF",
+  "Knuckleball": "#A0A0A0",
   "Eephus": "#A0A0A0",
   "Screwball": "#90C890",
-  "Forkball": "#C8A870",
+  "Forkball": "#78E0AE",
 };
 
 export const PITCH_TYPE_FILTERS = [
@@ -68,13 +68,13 @@ export const CARD_PITCH_DATA_COLUMNS = [
 export const CARD_RESULTS_COLUMNS = [
   { key: "pitch_name", label: "Type", align: "left", dividerRight: true },
   { key: "count", label: "#", align: "right", dividerRight: true },
-  { key: "zone_pct", label: "Zone%", align: "right" },
-  { key: "o_swing_pct", label: "O-Swing%", align: "right", dividerRight: true },
   { key: "whiffs", label: "Whiffs", align: "right" },
   { key: "cs", label: "CS", align: "right" },
   { key: "csw_pct", label: "CSW%", align: "right" },
   { key: "strike_pct", label: "Strike%", align: "right" },
-  { key: "fouls", label: "Fouls", align: "right", dividerRight: true },
+  { key: "fouls", label: "Fouls", align: "right" },
+  { key: "zone_pct", label: "Zone%", align: "right" },
+  { key: "o_swing_pct", label: "O-Swing%", align: "right", dividerRight: true },
   { key: "bbs", label: "BB", align: "right" },
   { key: "ks", label: "K", align: "right", dividerRight: true },
   { key: "hits", label: "Hits", align: "right" },
@@ -208,6 +208,23 @@ export function getSZResultColor(pitch) {
   if (desc === "hit_by_pitch") return "#A78BFA";
   return "#888";
 }
+
+// Batted ball type colors for tooltips
+export const BATTED_BALL_COLORS = {
+  "Barrel": "#ffa3a3",
+  "Solid": "#F59E0B",
+  "Burner": "#F59E0B",
+  "Flare": "#65ff9c",
+  "Topped": "#65ff9c",
+  "Under": "#65ff9c",
+  "Poor": "#65ff9c",
+};
+
+// BIP quality colors
+export const BIP_QUALITY_COLORS = {
+  "Hard BIP": "#F59E0B",
+  "Weak BIP": "#65ff9c",
+};
 
 export const VELO_THRESHOLDS = {
   "Four-Seamer": { red: 96, blue: 92 },

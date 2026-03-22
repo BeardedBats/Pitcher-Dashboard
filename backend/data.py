@@ -8,9 +8,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 import requests
+from redis_cache import redis_get, redis_set, redis_delete, redis_delete_pattern, redis_available
 
 _cache = {}          # { date_str: (timestamp, dataframe) }
 _season_cache = {}
+_batter_name_cache = {}  # { batter_id: "Full Name" }
 LIVE_CACHE_TTL = 60  # seconds — refresh live data every 60s
 
 # ── Warmup / pre-fetch state ──
@@ -23,20 +25,31 @@ _overrides = {}  # { "gamePk_pitcherId_atBat_pitchNum": {"original":"FF","new":"
 
 def _load_overrides():
     global _overrides
+    # Try Redis first
+    val = redis_get("overrides")
+    if val is not None:
+        _overrides = val
+        return _overrides
+    # Fall back to local file
     if os.path.exists(OVERRIDES_PATH):
         try:
             with open(OVERRIDES_PATH, "r") as f:
                 _overrides = json.load(f)
+            # Migrate to Redis
+            redis_set("overrides", _overrides)
         except Exception:
             _overrides = {}
     return _overrides
 
 def _save_overrides():
+    # Save to Redis (primary)
+    redis_set("overrides", _overrides)
+    # Also save to local file (works locally, may fail on serverless)
     try:
         with open(OVERRIDES_PATH, "w") as f:
             json.dump(_overrides, f, indent=2)
-    except Exception as e:
-        print(f"Error saving overrides: {e}")
+    except Exception:
+        pass
 
 def save_pitch_override(game_pk, pitcher_id, at_bat_number, pitch_number, new_pitch_type):
     """Save a pitch reclassification override.
@@ -153,6 +166,40 @@ def _fix_names_vectorized(series):
     if parts.shape[1] >= 2:
         fixed[mask] = parts[1] + " " + parts[0]
     return fixed
+
+def _resolve_batter_names(batter_ids):
+    """Resolve a Series of numeric batter IDs to full names via MLB Stats API.
+    Uses a persistent cache to minimize API calls."""
+    global _batter_name_cache
+    # Hydrate from Redis if L1 is empty
+    if not _batter_name_cache:
+        redis_names = redis_get("batter_names")
+        if redis_names:
+            _batter_name_cache = {int(k): v for k, v in redis_names.items()}
+    unique_ids = set(int(x) for x in batter_ids.dropna().unique() if pd.notna(x) and int(x) > 0)
+    missing = unique_ids - set(_batter_name_cache.keys())
+    if missing:
+        # MLB Stats API supports comma-separated person IDs
+        # Batch in groups of 100 to avoid URL length issues
+        missing_list = list(missing)
+        for i in range(0, len(missing_list), 100):
+            batch = missing_list[i:i+100]
+            ids_str = ",".join(str(x) for x in batch)
+            try:
+                url = f"https://statsapi.mlb.com/api/v1/people?personIds={ids_str}"
+                resp = requests.get(url, timeout=15)
+                resp.raise_for_status()
+                for person in resp.json().get("people", []):
+                    _batter_name_cache[person["id"]] = person.get("fullName", "")
+            except Exception:
+                pass  # fail silently, names just stay empty
+        # Fill any still-missing with empty string
+        for bid in missing:
+            if bid not in _batter_name_cache:
+                _batter_name_cache[bid] = ""
+        # Persist to Redis
+        redis_set("batter_names", {str(k): v for k, v in _batter_name_cache.items()})
+    return batter_ids.map(lambda x: _batter_name_cache.get(int(x), "") if pd.notna(x) and int(x) > 0 else "")
 
 def _assign_teams_vectorized(df):
     """Vectorized pitcher_team/opponent assignment based on inning_topbot."""
@@ -487,6 +534,15 @@ def fetch_date(date_str):
         return pd.DataFrame()
 
     df = df.copy()
+    # Resolve batter IDs to names where batter_name is missing/empty
+    if "batter" in df.columns:
+        if "batter_name" not in df.columns:
+            df["batter_name"] = _resolve_batter_names(df["batter"])
+        else:
+            missing_mask = df["batter_name"].isna() | (df["batter_name"].astype(str).str.strip() == "") | (df["batter_name"].astype(str) == "nan")
+            if missing_mask.any():
+                resolved = _resolve_batter_names(df.loc[missing_mask, "batter"])
+                df.loc[missing_mask, "batter_name"] = resolved.values
     if "player_name" in df.columns:
         df["player_name"] = _fix_names_vectorized(df["player_name"])
     # Always map pitch_name from pitch_type codes for consistent naming
@@ -698,16 +754,22 @@ def prefetch_boxscores(df):
 
 
 def get_agg_cache(key):
-    """Get a cached aggregation result if fresh."""
+    """Get a cached aggregation result. Checks L1 (dict) then L2 (Redis)."""
     if key in _agg_cache:
         ts, result = _agg_cache[key]
         if (time.time() - ts) < AGG_CACHE_TTL:
             return result
+    # L2: Redis
+    val = redis_get(f"agg:{key}")
+    if val is not None:
+        _agg_cache[key] = (time.time(), val)
+        return val
     return None
 
 def set_agg_cache(key, result):
-    """Store an aggregation result in cache."""
+    """Store an aggregation result in L1 (dict) and L2 (Redis)."""
     _agg_cache[key] = (time.time(), result)
+    redis_set(f"agg:{key}", result)
 
 
 _pitchers_list_cache = {}  # { "start_end": (timestamp, list) }
@@ -719,6 +781,11 @@ def fetch_all_pitchers_list(start_date, end_date):
         ts, result = _pitchers_list_cache[cache_key]
         if (time.time() - ts) < RANGE_CACHE_TTL:
             return result
+    # L2: Redis
+    redis_val = redis_get(f"pitchers:{cache_key}")
+    if redis_val is not None:
+        _pitchers_list_cache[cache_key] = (time.time(), redis_val)
+        return redis_val
     df = fetch_date_range(start_date, end_date)
     if df.empty:
         return []
@@ -736,6 +803,7 @@ def fetch_all_pitchers_list(start_date, end_date):
     } for r in records]
     result.sort(key=lambda r: r["name"])
     _pitchers_list_cache[cache_key] = (time.time(), result)
+    redis_set(f"pitchers:{cache_key}", result)
     return result
 
 
@@ -752,7 +820,7 @@ def _get_default_end_date():
     return datetime.now(et).strftime("%Y-%m-%d")
 
 
-def warmup_range_data(start_date="2026-02-20", end_date=None):
+def warmup_range_data(start_date="2026-02-10", end_date=None):
     """Pre-fetch and warm all caches for the standard date range.
     Called on server startup in a background thread."""
     global _warmup_status
@@ -823,7 +891,7 @@ def warmup_range_data(start_date="2026-02-20", end_date=None):
             _warmup_status["progress"] = f"Error: {e}"
 
 
-def start_warmup(start_date="2026-02-20", end_date=None):
+def start_warmup(start_date="2026-02-10", end_date=None):
     """Kick off warmup in a background thread."""
     t = threading.Thread(target=warmup_range_data, args=(start_date, end_date), daemon=True)
     t.start()
@@ -840,16 +908,21 @@ def clear_cache(date_str=None):
     if date_str:
         _cache.pop(date_str, None)
         _schedule_cache.pop(date_str, None)
+        redis_delete(f"schedule:{date_str}")
         # Clear daily agg caches for this date
         for k in list(_agg_cache.keys()):
             if date_str in k:
                 _agg_cache.pop(k, None)
+                redis_delete(f"agg:{k}")
     else:
         _cache.clear()
         _season_cache.clear()
         _range_cache.clear()
         _agg_cache.clear()
         _schedule_cache.clear()
+        # Clear Redis aggregation and schedule keys
+        redis_delete_pattern("agg:*")
+        redis_delete_pattern("schedule:*")
 
 MLB_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&sportId=51&gameType=S&gameType=R&gameType=E&gameType=W&gameType=D&gameType=L&gameType=F&startDate={date}&endDate={date}&hydrate=team"
 
@@ -884,6 +957,11 @@ def _get_mlb_schedule(date_str):
         ts, games = _schedule_cache[date_str]
         if time.time() - ts < SCHEDULE_CACHE_TTL:
             return games
+    # L2: Redis
+    redis_val = redis_get(f"schedule:{date_str}")
+    if redis_val is not None:
+        _schedule_cache[date_str] = (time.time(), redis_val)
+        return redis_val
     try:
         url = MLB_SCHEDULE_URL.format(date=date_str)
         resp = requests.get(url, timeout=15)
@@ -904,6 +982,7 @@ def _get_mlb_schedule(date_str):
                     "status": g["status"]["detailedState"],
                 })
         _schedule_cache[date_str] = (time.time(), games)
+        redis_set(f"schedule:{date_str}", games)
         return games
     except Exception as e:
         print(f"MLB Schedule API error: {e}")
@@ -963,9 +1042,16 @@ _boxscore_cache = {}
 
 def _get_boxscore_stats(game_pk):
     """Fetch pitching stats per pitcher from MLB Stats API boxscore.
-    Returns dict: { pitcher_id: { 'er': int, 'ip': str, 'hits': int, 'bbs': int, 'ks': int, 'hrs': int } }"""
+    Returns dict: { pitcher_id: { 'er': int, 'runs': int, 'ip': str, 'hits': int, 'bbs': int, 'ks': int, 'hrs': int, 'batters_faced': int } }"""
     if game_pk in _boxscore_cache:
         return _boxscore_cache[game_pk]
+    # L2: Redis
+    redis_val = redis_get(f"boxscore:{game_pk}")
+    if redis_val is not None:
+        # Redis stores string keys; convert back to int keys
+        converted = {int(k): v for k, v in redis_val.items()}
+        _boxscore_cache[game_pk] = converted
+        return converted
     try:
         url = f"https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live"
         resp = requests.get(url, timeout=10)
@@ -979,21 +1065,29 @@ def _get_boxscore_stats(game_pk):
                 pinfo = team.get("players", {}).get(f"ID{pid}", {})
                 stats = pinfo.get("stats", {}).get("pitching", {})
                 er = stats.get("earnedRuns")
+                runs = stats.get("runs")
                 ip = stats.get("inningsPitched")
                 hits = stats.get("hits")
                 bbs = stats.get("baseOnBalls")
                 ks = stats.get("strikeOuts")
                 hrs = stats.get("homeRuns")
+                bf = stats.get("battersFaced")
+                gs = stats.get("gamesStarted")
                 if er is not None or ip is not None:
                     stats_map[pid] = {
                         "er": er if er is not None else 0,
+                        "runs": runs if runs is not None else 0,
                         "ip": ip,
                         "hits": hits if hits is not None else 0,
                         "bbs": bbs if bbs is not None else 0,
                         "ks": ks if ks is not None else 0,
                         "hrs": hrs if hrs is not None else 0,
+                        "batters_faced": bf if bf is not None else 0,
+                        "games_started": gs if gs is not None else 0,
                     }
         _boxscore_cache[game_pk] = stats_map
+        # Store in Redis with string keys (JSON requirement)
+        redis_set(f"boxscore:{game_pk}", {str(k): v for k, v in stats_map.items()})
         return stats_map
     except Exception as e:
         print(f"Error fetching boxscore for game {game_pk}: {e}")
@@ -1023,12 +1117,18 @@ def _get_game_feed(game_pk):
     """Fetch and cache the full MLB Stats API game feed."""
     if game_pk in _feed_cache:
         return _feed_cache[game_pk]
+    # L2: Redis (game feeds are large; only cache completed games)
+    redis_val = redis_get(f"feed:{game_pk}")
+    if redis_val is not None:
+        _feed_cache[game_pk] = redis_val
+        return redis_val
     try:
         url = MLB_GAME_FEED_URL.format(game_pk=game_pk)
         resp = requests.get(url, timeout=15)
         resp.raise_for_status()
         data = resp.json()
         _feed_cache[game_pk] = data
+        redis_set(f"feed:{game_pk}", data)
         return data
     except Exception as e:
         print(f"Error fetching game feed for {game_pk}: {e}")

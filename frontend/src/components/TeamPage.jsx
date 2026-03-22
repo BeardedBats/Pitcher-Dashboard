@@ -31,8 +31,8 @@ export default function TeamPage({ teamAbbrev, onPlayerClick, onBack }) {
 
     fetch(`${API}/api/team-pitchers?team=${encodeURIComponent(teamAbbrev)}&view=${view}`)
       .then((r) => r.json())
-      .then((d) => { if (!cancelled) { setData(d); setLoading(false); } })
-      .catch(() => { if (!cancelled) setLoading(false); });
+      .then((d) => { if (!cancelled) { cancelled = true; clearTimeout(pollTimer); setData(d); setLoading(false); } })
+      .catch(() => { if (!cancelled) { cancelled = true; clearTimeout(pollTimer); setLoading(false); } });
 
     return () => { cancelled = true; clearTimeout(pollTimer); };
   }, [teamAbbrev, view]);
@@ -138,6 +138,7 @@ export default function TeamPage({ teamAbbrev, onPlayerClick, onBack }) {
                       <td key={c.key}
                         className={c.key === "pitcher" ? "pitcher-name-cell" : ""}
                         onClick={c.key === "pitcher" ? (e) => onPlayerClick(row.pitcher_id, row.pitcher, e) : undefined}
+                        onMouseDown={c.key === "pitcher" ? (e) => { if (e.button === 1) { e.preventDefault(); onPlayerClick(row.pitcher_id, row.pitcher, e); } } : undefined}
                         style={c.key === "pitcher" ? { cursor: "pointer", color: "var(--name)" } : c.key === "pitch_name" ? { color: PITCH_COLORS[row.pitch_name] || "var(--text)" } : {}}
                       >
                         {fmtCell(row, c)}

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { PITCH_COLORS, PITCH_DESC_COLORS, displayAbbrev } from "../constants";
+import { PITCH_COLORS, PITCH_DESC_COLORS, BATTED_BALL_COLORS, BIP_QUALITY_COLORS, displayAbbrev } from "../constants";
 import { getResultColor, classifyBattedBall, getBIPQuality } from "../utils/formatting";
+import { getTooltipResult } from "../utils/pitchFilters";
 import StrikeZonePBP from "./StrikeZonePBP";
 
 const TYPE_TO_NAME = {
@@ -15,41 +16,7 @@ function ordinal(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-// Classify batted ball using Savant's launch speed/angle buckets
-function classifyBattedBall(launchSpeed, launchAngle) {
-  if (launchSpeed == null || launchAngle == null) return null;
-  const ev = launchSpeed;
-  const la = launchAngle;
-  // Barrel: EV >= 98 and LA in sweet spot (widens with higher EV)
-  if (ev >= 98) {
-    const laMin = Math.max(8, 26 - (ev - 98) * 1.5);
-    const laMax = Math.min(50, 30 + (ev - 98) * 1.3);
-    if (la >= laMin && la <= laMax) return "Barrel";
-  }
-  // Solid: EV >= 95, LA 10-50 (not barrel)
-  if (ev >= 95 && la >= 10 && la <= 50) return "Solid";
-  // Poorly/Topped: low LA grounders (< 10°) regardless of EV
-  if (la < 10) return "Poorly/Topped";
-  // Flare/Burner: moderate-to-high EV with low-moderate LA
-  if (ev >= 80 && la >= 10 && la <= 25) return "Flare/Burner";
-  // Poorly/Under: high LA popups
-  if (la > 50) return "Poorly/Under";
-  if (la > 25 && ev < 80) return "Poorly/Under";
-  // Poorly/Weak: low EV
-  if (ev < 80) return "Poorly/Weak";
-  // Fallback for remaining cases
-  if (ev >= 95) return "Solid";
-  return "Flare/Burner";
-}
-
-const BATTED_BALL_COLORS = {
-  "Barrel": "#ffa3a3",
-  "Solid": "#F59E0B",
-  "Flare/Burner": "#8feaff",
-  "Poorly/Under": "#65ff9c",
-  "Poorly/Topped": "#65ff9c",
-  "Poorly/Weak": "#65ff9c",
-};
+// BATTED_BALL_COLORS and BIP_QUALITY_COLORS imported from constants.js
 
 function formatResult(result, trajectory) {
   if (!result) return "";
@@ -239,10 +206,18 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
               const isPitcherPA = pitcherId && pa.pitcher_id === pitcherId;
               const isExpanded = expanded[i];
               const isActive = activePaIndex === i;
-              const resultLabel = formatResult(pa.result, pa.trajectory);
-              const resultColor = getResultColor(pa.result);
               const isK = isStrikeout(pa.result);
               const lastPitch = pa.pitches && pa.pitches.length > 0 ? pa.pitches[pa.pitches.length - 1] : null;
+
+              // Use tooltip result system for consistent colors
+              const paResult = getTooltipResult({}, {
+                desc: lastPitch?.desc || "",
+                paResult: pa.result,
+                isLastPitch: true,
+                launchAngle: pa.launch_angle,
+              });
+              const resultLabel = paResult.label;
+              const resultColor = paResult.color;
 
               // Detect runs scored by comparing total score to previous PA
               let runsScored = 0;
@@ -269,26 +244,34 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                         <span className="pbp-pa-batter">{pa.batter}</span>
                         {runsScored > 0 && (
                           <span className="pbp-pa-rbi">
-                            <span style={{ color: "#55e8ff" }}>- {runsScored} Run{runsScored !== 1 ? "s" : ""} score{runsScored === 1 ? "s" : ""}.{" "}</span>
+                            <span style={{ color: "#FF5EDC" }}>- {runsScored} Run{runsScored !== 1 ? "s" : ""} score{runsScored === 1 ? "s" : ""}.{" "}</span>
                             {pa.away_score != null && pa.home_score != null && (() => {
                               const awayDisp = displayAbbrev(data.away_team) || data.away_team;
                               const homeDisp = displayAbbrev(data.home_team) || data.home_team;
-                              const pitcherTeam = currentIsTop ? data.home_team : data.away_team;
-                              const awayIsP = data.away_team === pitcherTeam;
-                              const homeIsP = data.home_team === pitcherTeam;
+                              const battingTeam = currentIsTop ? data.away_team : data.home_team;
+                              const awayScored = data.away_team === battingTeam;
+                              const homeScored = data.home_team === battingTeam;
                               return (
                                 <span>
-                                  <span style={{ color: awayIsP ? "#FFC46A" : "#E0E2EC", fontWeight: awayIsP ? 700 : 600 }}>{awayDisp} {pa.away_score}</span>
+                                  <span style={{ color: awayScored ? "#FFC46A" : "#E0E2EC", fontWeight: awayScored ? 700 : 600 }}>{awayDisp} {pa.away_score}</span>
                                   <span style={{ color: "rgba(180,184,210,0.6)" }}> - </span>
-                                  <span style={{ color: homeIsP ? "#FFC46A" : "#E0E2EC", fontWeight: homeIsP ? 700 : 600 }}>{homeDisp} {pa.home_score}</span>
+                                  <span style={{ color: homeScored ? "#FFC46A" : "#E0E2EC", fontWeight: homeScored ? 700 : 600 }}>{homeDisp} {pa.home_score}</span>
                                 </span>
                               );
                             })()}
                           </span>
                         )}
                       </div>
-                      <span className="pbp-pa-result" style={{ color: resultColor }}>{resultLabel}</span>
+                      <span className="pbp-pa-result" style={{ color: resultColor }}>
+                        {resultLabel}
+                        {paResult.isK && (
+                          paResult.isCalledStrikeThree
+                            ? <span style={{ marginLeft: 3 }}>(<span style={{ display: "inline-block", transform: "scaleX(-1)" }}>K</span>)</span>
+                            : <span style={{ marginLeft: 3 }}>(K)</span>
+                        )}
+                      </span>
                     </div>
+
 
                     {/* Row 2: vs Pitcher left, MPH + Pitch Type right (all at-bats) */}
                     <div className="pbp-pa-meta-row" onClick={() => setActivePaIndex(i)} style={{ cursor: "pointer" }}>
@@ -305,7 +288,7 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                       </span>
                     </div>
 
-                    {/* Row 3: Play description — colored to match event */}
+                    {/* Row 3: Play description — colored to match result */}
                     {pa.description && (
                       <div className="pbp-pa-desc" onClick={() => setActivePaIndex(i)} style={{ cursor: "pointer", color: resultColor }}>{pa.description}</div>
                     )}
@@ -335,6 +318,13 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                         {pa.pitches.map((p, j) => {
                           const color = PITCH_COLORS[p.type] || PITCH_COLORS[TYPE_TO_NAME[p.type]] || "#888";
                           const mph = p.speed != null ? Number(p.speed).toFixed(1) : "—";
+                          // Color the pitch description using tooltip result colors
+                          const pitchResult = getTooltipResult(p, {
+                            desc: p.desc,
+                            paResult: j === pa.pitches.length - 1 ? pa.result : null,
+                            isLastPitch: j === pa.pitches.length - 1,
+                            launchAngle: j === pa.pitches.length - 1 ? pa.launch_angle : null,
+                          });
                           return (
                             <div key={j} className="pbp-pitch-row">
                               <span className="pbp-ph-num">{p.num}</span>
@@ -343,7 +333,7 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                               <span className="pbp-ph-type" style={{ color }}>
                                 {p.type}
                               </span>
-                              <span className="pbp-ph-desc">{p.desc}</span>
+                              <span className="pbp-ph-desc" style={{ color: pitchResult.color }}>{p.desc}</span>
                             </div>
                           );
                         })}
@@ -355,10 +345,11 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
             })}
           </div>
 
-          <div className="pbp-sz-panel" style={{ position: "relative" }}>
+          <div className="pbp-sz-panel" style={{ position: "sticky", top: 12, alignSelf: "flex-start" }}>
             {activePa && activePa.pitches && activePa.pitches.length > 0 && (
               <>
                 <StrikeZonePBP
+                  key={`${currentInning}-${currentIsTop}-${activePaIndex}`}
                   pitches={activePa.pitches}
                   pitchColors={PITCH_COLORS}
                   result={activePa.result}
@@ -383,97 +374,126 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                 {pitchHover && (() => {
                   const hp = pitchHover.pitch;
                   const hpColor = PITCH_COLORS[hp.type] || "#888";
-                  const desc = (hp.desc || "").toLowerCase().replace(/\s+/g, "_");
-                  const descLabel = hp.desc || "";
-                  const descColor = PITCH_DESC_COLORS[desc] || "#ccc";
                   const isLastPitch = activePa.pitches && activePa.pitches.indexOf(hp) === activePa.pitches.length - 1;
-                  const paResultRaw = isLastPitch ? activePa.result : null;
-                  const paResultLabel = paResultRaw ? formatResult(paResultRaw, activePa.trajectory) : null;
+                  const result = getTooltipResult(hp, {
+                    desc: hp.desc,
+                    paResult: activePa.result,
+                    isLastPitch,
+                    launchAngle: isLastPitch ? activePa.launch_angle : null,
+                  });
+
+                  const isBIP = isLastPitch && hp.launch_speed != null && hp.launch_angle != null &&
+                    (hp.desc || "").toLowerCase().includes("in play");
+                  const bbTag = isBIP ? classifyBattedBall(hp.launch_speed, hp.launch_angle) : null;
+                  const bbColor = bbTag ? (BATTED_BALL_COLORS[bbTag] || "rgba(180,184,210,0.7)") : null;
+
+                  // Parse count into balls/strikes
+                  const countParts = (hp.count || "0-0").split("-");
+                  const balls = countParts[0] || "0";
+                  const strikes = countParts[1] || "0";
+
                   return (
-                    <div className="pitch-tooltip" style={{
-                      left: pitchHover.x,
-                      top: pitchHover.y - 10,
-                      minWidth: 260,
-                    }}>
+                    <div className="pitch-tooltip" style={(() => {
+                      const tx = pitchHover.clientX + 16;
+                      const ty = pitchHover.clientY - 16;
+                      return {
+                        position: "fixed",
+                        left: tx + 300 > window.innerWidth ? pitchHover.clientX - 310 : tx,
+                        top: ty < 10 ? pitchHover.clientY + 16 : (ty + 280 > window.innerHeight ? pitchHover.clientY - 280 : ty),
+                        transform: "none",
+                        minWidth: 280,
+                        zIndex: 1000,
+                        pointerEvents: "none",
+                      };
+                    })()}>
+                      {/* Header row 1: Pitch type + mph (left) | Result (right) */}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: isBIP ? 0 : 4 }}>
+                        <div style={{ whiteSpace: "nowrap" }}>
+                          <span style={{ color: hpColor, fontWeight: 600 }}>{hp.type}</span>
+                          <span style={{ marginLeft: 6, color: "#e0e2ec" }}>
+                            {hp.speed ? Number(hp.speed).toFixed(1) + " mph" : ""}
+                          </span>
+                        </div>
+                        <div style={{ whiteSpace: "nowrap", color: result.color, fontWeight: 600, marginLeft: 12 }}>
+                          {result.label}
+                          {result.isK && (
+                            result.isCalledStrikeThree
+                              ? <span style={{ marginLeft: 3 }}>(<span style={{ display: "inline-block", transform: "scaleX(-1)" }}>K</span>)</span>
+                              : <span style={{ marginLeft: 3 }}>(K)</span>
+                          )}
+                        </div>
+                      </div>
+                      {/* Header row 2 (BIP only): EV/LA (left) | Batted ball tag (right) */}
+                      {isBIP && (
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                          <div style={{ fontSize: "0.85em", color: "rgba(180,184,210,0.7)" }}>
+                            {hp.launch_speed.toFixed(1)} EV · {hp.launch_angle != null ? hp.launch_angle.toFixed(0) + "° LA" : ""}
+                          </div>
+                          {bbTag && (
+                            <div style={{ color: bbColor, fontWeight: 600, fontSize: "0.85em", marginLeft: 12 }}>
+                              {bbTag}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Body: text left, strikezone right */}
                       <div style={{ display: "flex", gap: 10 }}>
                         <div style={{ flex: 1 }}>
-                          <div className="pt-row" style={{ marginBottom: 4 }}>
-                            <span style={{ color: hpColor, fontWeight: 600 }}>{hp.type}</span>
-                            <span style={{ marginLeft: 6 }}>{hp.speed ? hp.speed + " mph" : ""}</span>
+                          {/* vs Batter (left) | Strikeout sub-label (right) */}
+                          <div className="pt-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: "0.85em" }}>
+                            <span>vs {activePa.batter}</span>
+                            {result.isK && result.subLabel && (
+                              <span style={{ color: "rgba(180,184,210,0.7)" }}>{result.subLabel}</span>
+                            )}
                           </div>
-                          <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
-                            vs {activePa.batter}
-                          </div>
+
+                          {/* Inning + bases */}
                           <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
                             {currentIsTop ? "Top" : "Bot"} {ordinal(currentInning)} | {activePa.outs || 0} Out{(activePa.outs || 0) !== 1 ? "s" : ""}
                           </div>
+
+                          {/* Outs + count */}
                           <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
-                            {hp.count || "0-0"}
+                            {activePa.outs || 0} Outs | {balls}-{strikes}
                           </div>
+
+                          {/* iVB + iHB + Extension */}
                           {hp.pfx_z != null && hp.pfx_x != null && (
                             <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
                               iVB {hp.pfx_z.toFixed(1)}" · iHB {(-hp.pfx_x).toFixed(1)}"
                               {hp.release_extension != null && ` · Ext ${hp.release_extension.toFixed(1)}ft`}
                             </div>
                           )}
-                          {descLabel && (() => {
-                            // Strikeout: prefix with Called Strike or Swinging Strike
-                            const isK = paResultRaw && (paResultRaw.toLowerCase() === "strikeout" || paResultRaw.toLowerCase() === "strikeout_double_play");
-                            let displayResult = paResultLabel;
-                            if (isK && paResultLabel) {
-                              const descLower = (hp.desc || "").toLowerCase();
-                              const prefix = descLower.includes("called") ? "Called Strike" : "Swinging Strike";
-                              displayResult = `${prefix} - ${paResultLabel}`;
-                            }
-                            return (
-                              <div className="pt-row" style={{ color: descColor, fontWeight: 500, fontSize: "0.85em" }}>
-                                {descLabel}
-                                {displayResult && (
-                                  <span style={{ color: getResultColor(paResultRaw), marginLeft: 6 }}>
-                                    ({displayResult}{hp.launch_speed != null ? ` | ${hp.launch_speed.toFixed(1)} EV` : ""}{hp.launch_angle != null ? `, ${hp.launch_angle.toFixed(0)}° LA` : ""})
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })()}
-
-                          {/* BIP quality + Savant batted ball tag */}
-                          {isLastPitch && hp.launch_speed != null && hp.launch_angle != null && (() => {
-                            const tag = classifyBattedBall(hp.launch_speed, hp.launch_angle);
-                            if (!tag) return null;
-                            const quality = getBIPQuality(tag, hp.launch_angle);
-                            return (
-                              <div className="pt-row" style={{ fontSize: "0.85em", color: "rgba(180,184,210,0.7)" }}>
-                                {quality} — {tag}
-                              </div>
-                            );
-                          })()}
                         </div>
+
+                        {/* RIGHT: Mini Strikezone SVG, aligned to bottom */}
                         {hp.plate_x != null && hp.plate_z != null && (
-                          <svg width="65" height="103" viewBox="0 0 65 103" style={{ flexShrink: 0 }}>
-                            <rect x="12" y="17" width="41" height="50" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
-                            {[1, 2].map(i => (
-                              <line key={"v" + i} x1={12 + (i * 41) / 3} y1="17" x2={12 + (i * 41) / 3} y2="67" stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
-                            ))}
-                            {[1, 2].map(i => (
-                              <line key={"h" + i} x1="12" y1={17 + (i * 50) / 3} x2="53" y2={17 + (i * 50) / 3} stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
-                            ))}
-                            <polygon points="32.5,87 42,92 42,99 23,99 23,92" fill="rgba(140,145,175,0.22)" stroke="rgba(160,164,190,0.35)" strokeWidth="0.8" />
-                            {/* Batter side label (LHB/RHB) */}
-                            {(() => {
-                              const isLeft = (activePa.stand || "R") === "L";
-                              const lx = isLeft ? 6 : 59;
-                              const letters = isLeft ? ["L", "H", "B"] : ["R", "H", "B"];
-                              return letters.map((ch, i) => (
-                                <text key={i} x={lx} y={33 + i * 10} fill="rgba(150,155,185,0.28)" fontSize="7" fontWeight="bold" textAnchor="middle" dominantBaseline="middle" fontFamily="'DM Sans', sans-serif">{ch}</text>
-                              ));
-                            })()}
-                            <circle
-                              cx={12 + ((-hp.plate_x + 0.83) / 1.66) * 41}
-                              cy={17 + ((3.5 - hp.plate_z) / 2.0) * 50}
-                              r="4" fill={hpColor} stroke="rgba(0,0,0,0.4)" strokeWidth="0.8"
-                            />
-                          </svg>
+                          <div style={{ flexShrink: 0, display: "flex", alignItems: "flex-end", paddingTop: result.isK && result.subLabel ? 16 : 0 }}>
+                            <svg width="65" height="103" viewBox="0 0 65 103">
+                              <rect x="12" y="17" width="41" height="50" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
+                              {[1, 2].map(i => (
+                                <line key={`v${i}`} x1={12 + (i * 41) / 3} y1="17" x2={12 + (i * 41) / 3} y2="67" stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
+                              ))}
+                              {[1, 2].map(i => (
+                                <line key={`h${i}`} x1="12" y1={17 + (i * 50) / 3} x2="53" y2={17 + (i * 50) / 3} stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
+                              ))}
+                              <polygon points="32.5,87 42,92 42,99 23,99 23,92" fill="rgba(140,145,175,0.22)" stroke="rgba(160,164,190,0.35)" strokeWidth="0.8" />
+                              {(() => {
+                                const isLeft = (activePa.stand || "R") === "L";
+                                const lx = isLeft ? 6 : 59;
+                                const letters = isLeft ? ["L", "H", "B"] : ["R", "H", "B"];
+                                return letters.map((ch, i) => (
+                                  <text key={i} x={lx} y={33 + i * 10} fill="rgba(150,155,185,0.28)" fontSize="7" fontWeight="bold" textAnchor="middle" dominantBaseline="middle" fontFamily="'DM Sans', sans-serif">{ch}</text>
+                                ));
+                              })()}
+                              <circle
+                                cx={12 + ((-hp.plate_x + 0.83) / 1.66) * 41}
+                                cy={17 + ((3.5 - hp.plate_z) / 2.0) * 50}
+                                r="4" fill={hpColor} stroke="rgba(0,0,0,0.4)" strokeWidth="0.8"
+                              />
+                            </svg>
+                          </div>
                         )}
                       </div>
                     </div>

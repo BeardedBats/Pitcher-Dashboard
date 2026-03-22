@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { PITCHER_RESULTS_COLUMNS, TEAM_FULL_NAMES, displayAbbrev } from "../constants";
 import { fmtPct, fmtInt } from "../utils/formatting";
+import { isTop400 } from "../top400";
 
 const TEAM_SPLIT_HIDE = ["team", "opponent"];
 
@@ -33,12 +34,14 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
       return [...filtered].sort((a, b) => {
         let av = a[sortKey], bv = b[sortKey];
         if (av == null) return 1; if (bv == null) return -1;
+        // Sort team column by full name, not abbreviation
+        if (sortKey === "team") { av = TEAM_FULL_NAMES[av] || av; bv = TEAM_FULL_NAMES[bv] || bv; }
         if (typeof av === "string") return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
         return sortDir === "asc" ? av - bv : bv - av;
       });
     }
     return [...filtered].sort((a, b) => {
-      if (a.team !== b.team) return a.team.localeCompare(b.team);
+      if (a.team !== b.team) return (TEAM_FULL_NAMES[a.team] || a.team).localeCompare(TEAM_FULL_NAMES[b.team] || b.team);
       return a.appearance_order - b.appearance_order;
     });
   }, [filtered, sortKey, sortDir]);
@@ -65,7 +68,7 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
     const v = row[col.key];
     if (col.key === "pitcher") {
       if (!v) return <span className="pitcher-name" style={{ color: "rgb(180, 185, 219)" }}>--</span>;
-      const isTop = top400Names && top400Names.has(v);
+      const isTop = top400Names && isTop400(v);
       const nameClass = top400Names ? (isTop ? "pitcher-name pitcher-top400" : "pitcher-name") : "pitcher-name";
       return <span className={nameClass}>{v}</span>;
     }
@@ -125,7 +128,8 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
           <tbody>
             {rows.map((r, i) => (
               <tr key={i} className="clickable-row"
-                  onClick={(e) => onPitcherClick && onPitcherClick(r.pitcher_id, r.game_pk, e)}>
+                  onClick={(e) => onPitcherClick && onPitcherClick(r.pitcher_id, r.game_pk, e)}
+                  onMouseDown={(e) => { if (e.button === 1 && onPitcherClick) { e.preventDefault(); onPitcherClick(r.pitcher_id, r.game_pk, e); } }}>
                 {cols.map(c => <td key={c.key} style={{ textAlign: c.align || "left" }}>{renderCell(r, c)}</td>)}
               </tr>
             ))}

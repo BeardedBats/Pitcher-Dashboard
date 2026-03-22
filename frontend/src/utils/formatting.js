@@ -44,14 +44,27 @@ export function getZoneLabel(zone) {
 export function getSprayDirection(hc_x, hc_y) {
   if (hc_x == null || hc_y == null) return "";
   // Baseball Savant coordinates: home plate ~125, center field ~125
-  // x < 100 = left field side, x > 150 = right field side
   const cx = 125;
   const angle = Math.atan2(cx - hc_y, hc_x - cx) * (180 / Math.PI);
-  if (angle < -30) return "to right field";
-  if (angle < -10) return "to right-center";
-  if (angle < 10) return "to center field";
-  if (angle < 30) return "to left-center";
-  return "to left field";
+  const dist = Math.sqrt((hc_x - cx) ** 2 + (cx - hc_y) ** 2);
+  // Infield vs outfield threshold (~150 in Savant coords)
+  const isInfield = dist < 110;
+  if (isInfield) {
+    // Infield positions by angle
+    if (angle < -25) return "to 1B";
+    if (angle < -5) return "to 2B";
+    if (angle < 10) return "to SS";
+    if (angle < 30) return "to 3B";
+    // Extreme pull: catcher/pitcher territory
+    if (angle >= 30) return "to 3B";
+    return "to 1B";
+  }
+  // Outfield positions
+  if (angle < -20) return "to RF";
+  if (angle < -5) return "to RF";
+  if (angle < 10) return "to CF";
+  if (angle < 25) return "to LF";
+  return "to LF";
 }
 
 export function getVeloEmphasis(pitchName, velo) {
@@ -64,6 +77,7 @@ export function getVeloEmphasis(pitchName, velo) {
 }
 
 // Savant batted ball classification based on launch speed/angle
+// Burner: EV >= 93, LA < 10°. Flare: EV >= 80, LA 10-25°.
 export function classifyBattedBall(launchSpeed, launchAngle) {
   if (launchSpeed == null || launchAngle == null) return null;
   const ev = launchSpeed, la = launchAngle;
@@ -72,22 +86,23 @@ export function classifyBattedBall(launchSpeed, launchAngle) {
     const laMax = Math.min(50, 30 + (ev - 98) * 1.3);
     if (la >= laMin && la <= laMax) return "Barrel";
   }
-  if (ev >= 95 && la >= 10 && la <= 50) return "Solid";
-  if (la < 10) return "Poorly/Topped";
-  if (ev >= 80 && la >= 10 && la <= 25) return "Flare/Burner";
-  if (la > 50) return "Poorly/Under";
-  if (la > 25 && ev < 80) return "Poorly/Under";
-  if (ev < 80) return "Poorly/Weak";
-  if (ev >= 95) return "Solid";
-  return "Flare/Burner";
+  if (ev >= 90 && la >= 10 && la <= 50) return "Solid";
+  if (ev >= 93 && la < 10) return "Burner";
+  if (ev >= 80 && la >= 10 && la <= 25) return "Flare";
+  if (la < 10) return "Topped";
+  if (la > 50) return "Under";
+  if (la > 25 && ev < 80) return "Under";
+  if (ev < 80) return "Poor";
+  if (ev >= 90) return "Solid";
+  return "Flare";
 }
 
-// Hard BIP vs Weak BIP from Savant tag + launch angle
-export function getBIPQuality(tag, launchAngle) {
+// Hard BIP vs Weak BIP from batted ball tag
+// Hard = Barrel, Solid, Burner. Weak = Flare, Topped, Under, Poor.
+export function getBIPQuality(tag) {
   if (!tag) return null;
-  if (tag === "Barrel" || tag === "Solid") return "Hard BIP";
-  if (tag === "Flare/Burner") return launchAngle < 11 ? "Hard BIP" : "Weak BIP";
-  return "Weak BIP"; // Poorly/*
+  if (tag === "Barrel" || tag === "Solid" || tag === "Burner") return "Hard BIP";
+  return "Weak BIP";
 }
 
 export function getIHBEmphasis(pitchName, ihb, hand) {

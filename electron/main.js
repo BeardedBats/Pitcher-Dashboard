@@ -207,7 +207,16 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   if (backendProcess) {
     console.log("Shutting down backend...");
-    backendProcess.kill();
+    if (process.platform === "win32") {
+      // On Windows, kill the entire process tree so cmd/python children die too
+      try {
+        spawn("taskkill", ["/pid", String(backendProcess.pid), "/T", "/F"], { stdio: "ignore" });
+      } catch (e) {
+        backendProcess.kill();
+      }
+    } else {
+      backendProcess.kill();
+    }
     backendProcess = null;
   }
 });

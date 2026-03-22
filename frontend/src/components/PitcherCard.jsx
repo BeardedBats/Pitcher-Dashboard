@@ -5,10 +5,12 @@ import MovementPlot from "./MovementPlot";
 import PitchDataTable from "./PitchDataTable";
 import PitchFilterDropdown from "./PitchFilterDropdown";
 import ResultsTable from "./ResultsTable";
+import VelocityTrend from "./VelocityTrend";
+import VelocityTrendV2 from "./VelocityTrendV2";
 import { PITCH_COLORS, PITCH_DESC_COLORS, RESULT_COLORS, CARD_PITCH_DATA_COLUMNS, displayAbbrev } from "../constants";
 import { getResultColor } from "../utils/formatting";
-import { fetchSeasonAverages } from "../utils/api";
-import { classifyPitchResult, isWeakBIP, classifyBattedBallFull, RESULT_FILTER_OPTIONS, RESULT_QUICK_ACTIONS } from "../utils/pitchFilters";
+import { fetchSeasonAverages, fetchPitcherSeasonTotals } from "../utils/api";
+import { classifyPitchResult, isRunScored, isStrikeoutPitch, isBallInPlay, classifyBIPQuality, classifyBattedBallFull, getTooltipResult, RESULT_FILTER_OPTIONS, RESULT_QUICK_ACTIONS } from "../utils/pitchFilters";
 
 function ordinal(n) {
   const s = ["th", "st", "nd", "rd"];
@@ -40,7 +42,7 @@ function formatResult(result, trajectory) {
 const BATTED_BALL_COLORS = {
   "Barrel": "#ffa3a3", "Solid": "#F59E0B", "Burner": "#F59E0B",
   "Flare": "#8feaff",
-  "Poorly/Under": "#65ff9c", "Poorly/Topped": "#65ff9c", "Poorly/Weak": "#65ff9c",
+  "Under": "#65ff9c", "Topped": "#65ff9c", "Poor": "#65ff9c",
 };
 
 function isStrikeout(result) {
@@ -94,11 +96,14 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
 
   const [seasonAvgs, setSeasonAvgs] = useState(null);
   const [loadingAvgs, setLoadingAvgs] = useState(false);
+  const [seasonTotals, setSeasonTotals] = useState(null);
 
   // Pitch-type filter for plots (null = all selected on init)
   const [pitchTypeFilter, setPitchTypeFilter] = useState(null);
   // Pitch-result filter for plots (null = all selected on init)
   const [resultFilter, setResultFilter] = useState(null);
+  // Contact quality filter: "all" | "hard" | "weak"
+  const [contactFilter, setContactFilter] = useState("all");
 
   // Determine which season to compare against
   const currentYear = date ? parseInt(date.slice(0, 4)) : new Date().getFullYear();
@@ -112,6 +117,16 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
         .catch(() => { setSeasonAvgs({}); setLoadingAvgs(false); });
     }
   }, [seasonAvgs, pitcher_id, prevSeason]);
+
+  // Fetch spring season totals for box score
+  useEffect(() => {
+    if (pitcher_id) {
+      const springStart = `${currentYear}-02-10`;
+      fetchPitcherSeasonTotals(pitcher_id, springStart)
+        .then(totals => setSeasonTotals(totals && totals.games ? totals : null))
+        .catch(() => setSeasonTotals(null));
+    }
+  }, [pitcher_id, currentYear]);
 
   // Select correct pitch table based on batter filter
   const activePitchTable = useMemo(() => {
@@ -130,7 +145,10 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
     // Collect half-innings where this pitcher appeared
     const segments = [];
     for (const half of linescoreData.plays) {
-      const pitcherPAs = (half.pas || []).filter(pa => pa.pitcher_id === pitcher_id);
+      let pitcherPAs = (half.pas || []).filter(pa => pa.pitcher_id === pitcher_id);
+      // Apply batter hand filter
+      if (batterFilter === "L") pitcherPAs = pitcherPAs.filter(pa => pa.stand === "L");
+      else if (batterFilter === "R") pitcherPAs = pitcherPAs.filter(pa => pa.stand === "R");
       if (pitcherPAs.length === 0) continue;
       segments.push({
         inning: half.inning,
@@ -143,7 +161,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
     if (segments.length === 0) return null;
     const totalPAs = segments.reduce((sum, s) => sum + s.pas.length, 0);
     return { segments, totalPAs };
-  }, [linescoreData, pitcher_id]);
+  }, [linescoreData, pitcher_id, batterFilter]);
 
   // Available pitch types in this game (for filter options)
   const availablePitchTypes = useMemo(() => {
@@ -164,7 +182,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
     return resultFilter;
   }, [resultFilter]);
 
-  // Filter pitches for plots: batter hand + pitch type + result
+  // Filter pitches for plots: batter hand + pitch type + result + contact quality
   const filteredPitches = useMemo(() => {
     if (!pitches) return [];
     let fp = pitches;
@@ -174,24 +192,35 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
     if (pitchTypeFilter !== null) {
       fp = fp.filter(p => effectivePitchTypeFilter.has(p.pitch_name));
     }
+    // Apply contact quality filter (Hard BIP / Weak BIP) — only balls in play
+    if (contactFilter !== "all") {
+      fp = fp.filter(p => {
+        if (!isBallInPlay(p)) return false;
+        const quality = classifyBIPQuality(p.launch_speed, p.launch_angle);
+        return contactFilter === "hard" ? quality === "Hard" : quality === "Weak";
+      });
+    }
     // Apply result filter
     if (resultFilter !== null) {
       fp = fp.filter(p => {
         const cat = classifyPitchResult(p);
-        // "Weak BIP" is a virtual category — check separately
-        if (effectiveResultFilter.has("Weak BIP") && isWeakBIP(p)) return true;
+        // "Run(s)" is an overlay — check separately
+        if (effectiveResultFilter.has("Run(s)") && isRunScored(p)) return true;
+        // "Strikeout" is an overlay — strikeout PA's last pitch is classified as
+        // Called Strike or Whiff by description, so check the event directly
+        if (effectiveResultFilter.has("Strikeout") && isStrikeoutPitch(p)) return true;
         return effectiveResultFilter.has(cat) || (cat === "Other");
       });
     }
     return fp;
-  }, [pitches, batterFilter, pitchTypeFilter, effectivePitchTypeFilter, resultFilter, effectiveResultFilter]);
+  }, [pitches, batterFilter, pitchTypeFilter, effectivePitchTypeFilter, contactFilter, resultFilter, effectiveResultFilter]);
 
   return (
     <div className="card">
       {/* ===== TOP ROW: Player Info + Box Score ===== */}
       <div className="card-top">
         <div className="card-info">
-          <div className="card-name" onClick={(e) => onPlayerClick && pitcher_id && onPlayerClick(pitcher_id, e)} style={onPlayerClick ? { cursor: "pointer" } : {}}>{name}</div>
+          <div className="card-name" onClick={(e) => onPlayerClick && pitcher_id && onPlayerClick(pitcher_id, e)} onMouseDown={(e) => { if (e.button === 1 && onPlayerClick && pitcher_id) { e.preventDefault(); onPlayerClick(pitcher_id, e); } }} style={onPlayerClick ? { cursor: "pointer" } : {}}>{name}</div>
           <div className="card-meta">
             {displayAbbrev(team)} · {hand}HP ·{" "}
             {onGameClick ? (
@@ -209,9 +238,9 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
             <table className="card-gameline-table">
               <thead>
                 <tr>
-                  <th>Pitcher</th><th>IP</th><th>ER</th><th>Hits</th><th>BB</th>
+                  <th>Pitcher</th><th>IP</th><th>ER</th><th>R</th><th>Hits</th><th>BB</th>
                   <th className="gameline-divider-right">K</th>
-                  <th>Whiffs</th><th>CSW%</th><th>#</th><th>HR</th>
+                  <th>Whiffs</th><th>SwStr%</th><th>CSW%</th><th>Strike%</th><th>#</th><th>HR</th>
                 </tr>
               </thead>
               <tbody>
@@ -219,14 +248,51 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                   <td className="card-pitcher-name" style={{ color: "#f0c040" }}>{name}</td>
                   <td>{result.ip}</td>
                   <td>{result.er}</td>
+                  <td>{result.runs != null ? result.runs : "-"}</td>
                   <td>{result.hits}</td>
                   <td>{result.bbs}</td>
                   <td className="gameline-divider-right">{result.ks}</td>
                   <td>{result.whiffs}</td>
+                  <td>{result.swstr_pct != null ? Math.round(result.swstr_pct) + "%" : "-"}</td>
                   <td>{result.csw_pct != null ? Math.round(result.csw_pct) + "%" : "-"}</td>
+                  <td>{result.strike_pct != null ? Math.round(result.strike_pct) + "%" : "-"}</td>
                   <td>{result.pitches}</td>
                   <td>{result.hrs}</td>
                 </tr>
+                {seasonTotals && seasonTotals.games > 1 && (() => {
+                  const g = seasonTotals.games;
+                  const gs = seasonTotals.games_started || 0;
+                  const ipThirds = seasonTotals.ip_thirds || 0;
+                  const ip = ipThirds / 3;
+                  const bf = seasonTotals.batters_faced || 0;
+                  const ipg = ip > 0 ? (ip / g).toFixed(1) : "-";
+                  const era = ip > 0 ? ((seasonTotals.er / ip) * 9).toFixed(2) : "-";
+                  const whip = ip > 0 ? ((seasonTotals.hits + seasonTotals.bbs) / ip).toFixed(2) : "-";
+                  const h9 = ip > 0 ? ((seasonTotals.hits / ip) * 9).toFixed(1) : "-";
+                  const bbPct = bf > 0 ? (seasonTotals.bbs / bf * 100).toFixed(1) + "%" : "-";
+                  const kPct = bf > 0 ? (seasonTotals.ks / bf * 100).toFixed(1) + "%" : "-";
+                  const whfg = g > 0 ? (seasonTotals.whiffs / g).toFixed(1) : "-";
+                  const ppg = g > 0 ? Math.round(seasonTotals.pitches / g) : "-";
+                  const hr9 = ip > 0 ? ((seasonTotals.hrs / ip) * 9).toFixed(2) : "-";
+                  const gamesLabel = gs > 0 && gs !== g ? `${g} Games (${gs} GS)` : `${g} Games`;
+                  return (
+                    <tr className="pp-total-row">
+                      <td className="card-pitcher-name pp-total-label"><span className="rate-label">Season Total</span>{gamesLabel}</td>
+                      <td><span className="rate-label">IP/G</span>{ipg}</td>
+                      <td><span className="rate-label">ERA</span>{era}</td>
+                      <td><span className="rate-label">WHIP</span>{whip}</td>
+                      <td><span className="rate-label">H/9</span>{h9}</td>
+                      <td><span className="rate-label">BB%</span>{bbPct}</td>
+                      <td className="gameline-divider-right"><span className="rate-label">K%</span>{kPct}</td>
+                      <td><span className="rate-label">Whf/G</span>{whfg}</td>
+                      <td><span className="rate-label">SwStr%</span>{seasonTotals.swstr_pct != null ? Math.round(seasonTotals.swstr_pct) + "%" : "-"}</td>
+                      <td><span className="rate-label">CSW%</span>{seasonTotals.csw_pct != null ? Math.round(seasonTotals.csw_pct) + "%" : "-"}</td>
+                      <td><span className="rate-label">Str%</span>{seasonTotals.strike_pct != null ? Math.round(seasonTotals.strike_pct) + "%" : "-"}</td>
+                      <td><span className="rate-label">PPG</span>{ppg}</td>
+                      <td><span className="rate-label">HR/9</span>{hr9}</td>
+                    </tr>
+                  );
+                })()}
               </tbody>
             </table>
           </div>
@@ -243,25 +309,26 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
             <button className={`metrics-subnav-btn${metricsView === "results" ? " active" : ""}`} onClick={() => setMetricsView("results")}>
               Results
             </button>
+            <button className={`metrics-subnav-btn${metricsView === "velocity-trend" ? " active" : ""}`} onClick={() => setMetricsView("velocity-trend")}>
+              Velocity Trend
+            </button>
             {pitcherPBP && (
               <button className={`metrics-subnav-btn${metricsView === "play-by-play" ? " active" : ""}`} onClick={() => setMetricsView("play-by-play")}>
                 Play-by-Play
               </button>
             )}
           </div>
-          {(metricsView === "pitch-data" || metricsView === "results") && (
-            <div className="metrics-controls">
-              <div className="filter-pill-group">
-                <span className="filter-pill-label">LHB/RHB</span>
-                <select className="game-filter-select" value={batterFilter}
-                  onChange={e => setBatterFilter(e.target.value)}>
-                  <option value="all">vs. All</option>
-                  <option value="L">vs LHB</option>
-                  <option value="R">vs RHB</option>
-                </select>
-              </div>
+          <div className="metrics-controls">
+            <div className="filter-pill-group">
+              <span className="filter-pill-label">LHB/RHB</span>
+              <select className="game-filter-select" value={batterFilter}
+                onChange={e => setBatterFilter(e.target.value)}>
+                <option value="all">vs. All</option>
+                <option value="L">vs LHB</option>
+                <option value="R">vs RHB</option>
+              </select>
             </div>
-          )}
+          </div>
         </div>
         {metricsView === "pitch-data" && (
           <div className="metrics-card">
@@ -276,6 +343,11 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
         {metricsView === "results" && (
           <div className="metrics-card">
             <ResultsTable pitches={pitches} batterFilter={batterFilter} gameFilter="all" />
+          </div>
+        )}
+        {metricsView === "velocity-trend" && (
+          <div className="metrics-card">
+            <VelocityTrendV2 pitches={filteredPitches} onReclassify={onReclassify} />
           </div>
         )}
         {metricsView === "play-by-play" && pitcherPBP && (() => {
@@ -300,12 +372,20 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                       const paKey = `${si}-${pi}`;
                       const isActive = pbpActivePa === paKey;
                       const isExp = pbpExpanded[paKey];
-                      const resultLabel = formatResult(pa.result, pa.trajectory);
-                      const resultColor = getResultColor(pa.result);
                       const isK = isStrikeout(pa.result);
                       const lastPitch = pa.pitches?.length > 0 ? pa.pitches[pa.pitches.length - 1] : null;
                       const bbType = !isK ? classifyBattedBallFull(pa.launch_speed, pa.launch_angle) : null;
                       const bbColor = bbType ? BATTED_BALL_COLORS[bbType] : null;
+
+                      // Use tooltip result system for consistent colors
+                      const paResult = getTooltipResult({}, {
+                        desc: lastPitch?.desc || "",
+                        paResult: pa.result,
+                        isLastPitch: true,
+                        launchAngle: pa.launch_angle,
+                      });
+                      const resultLabel = paResult.label;
+                      const resultColor = paResult.color;
 
                       // Detect runs scored by comparing score to previous PA in the full half-inning
                       let runsScored = 0;
@@ -347,25 +427,32 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                                 <span className="card-pbp-batter">{pa.batter}</span>
                                 {runsScored > 0 && (
                                   <span className="card-pbp-rbi">
-                                    <span style={{ color: "#55e8ff" }}>- {runsScored} Run{runsScored !== 1 ? "s" : ""} score{runsScored === 1 ? "s" : ""}.{" "}</span>
+                                    <span style={{ color: "#FF5EDC" }}>- {runsScored} Run{runsScored !== 1 ? "s" : ""} score{runsScored === 1 ? "s" : ""}.{" "}</span>
                                     {pa.away_score != null && pa.home_score != null && (() => {
                                       const awayDisp = displayAbbrev(linescoreData.away_team) || linescoreData.away_team;
                                       const homeDisp = displayAbbrev(linescoreData.home_team) || linescoreData.home_team;
-                                      const pitcherTeam = seg.isTop ? linescoreData.home_team : linescoreData.away_team;
-                                      const awayIsP = linescoreData.away_team === pitcherTeam;
-                                      const homeIsP = linescoreData.home_team === pitcherTeam;
+                                      const battingTeam = seg.isTop ? linescoreData.away_team : linescoreData.home_team;
+                                      const awayScored = linescoreData.away_team === battingTeam;
+                                      const homeScored = linescoreData.home_team === battingTeam;
                                       return (
                                         <span>
-                                          <span style={{ color: awayIsP ? "#FFC46A" : "#E0E2EC", fontWeight: awayIsP ? 700 : 600 }}>{awayDisp} {pa.away_score}</span>
+                                          <span style={{ color: awayScored ? "#FFC46A" : "#E0E2EC", fontWeight: awayScored ? 700 : 600 }}>{awayDisp} {pa.away_score}</span>
                                           <span style={{ color: "rgba(180,184,210,0.6)" }}> - </span>
-                                          <span style={{ color: homeIsP ? "#FFC46A" : "#E0E2EC", fontWeight: homeIsP ? 700 : 600 }}>{homeDisp} {pa.home_score}</span>
+                                          <span style={{ color: homeScored ? "#FFC46A" : "#E0E2EC", fontWeight: homeScored ? 700 : 600 }}>{homeDisp} {pa.home_score}</span>
                                         </span>
                                       );
                                     })()}
                                   </span>
                                 )}
                               </div>
-                              <span className="card-pbp-result" style={{ color: resultColor }}>{resultLabel}</span>
+                              <span className="card-pbp-result" style={{ color: resultColor }}>
+                                {resultLabel}
+                                {paResult.isK && (
+                                  paResult.isCalledStrikeThree
+                                    ? <span style={{ marginLeft: 3 }}>(<span style={{ display: "inline-block", transform: "scaleX(-1)" }}>K</span>)</span>
+                                    : <span style={{ marginLeft: 3 }}>(K)</span>
+                                )}
+                              </span>
                             </div>
                             <div className="card-pbp-row2">
                               <span className="card-pbp-vs">vs {pa.pitcher}</span>
@@ -401,13 +488,19 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                                 </div>
                                 {pa.pitches.map((p, j) => {
                                   const pColor = PITCH_COLORS[p.type] || "#888";
+                                  const pResult = getTooltipResult(p, {
+                                    desc: p.desc,
+                                    paResult: j === pa.pitches.length - 1 ? pa.result : null,
+                                    isLastPitch: j === pa.pitches.length - 1,
+                                    launchAngle: j === pa.pitches.length - 1 ? pa.launch_angle : null,
+                                  });
                                   return (
                                     <div key={j} className="pbp-pitch-row">
                                       <span className="pbp-ph-num">{p.num}</span>
                                       <span className="pbp-ph-count">{p.count}</span>
                                       <span className="pbp-ph-speed">{p.speed != null ? Number(p.speed).toFixed(1) : "—"}</span>
                                       <span className="pbp-ph-type" style={{ color: pColor }}>{p.type}</span>
-                                      <span className="pbp-ph-desc">{p.desc}</span>
+                                      <span className="pbp-ph-desc" style={{ color: pResult.color }}>{p.desc}</span>
                                     </div>
                                   );
                                 })}
@@ -437,32 +530,82 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                               {pbpPitchHover && (() => {
                                 const hp = pbpPitchHover.pitch;
                                 const hpColor = PITCH_COLORS[hp.type] || "#888";
-                                const desc = (hp.desc || "").toLowerCase().replace(/\s+/g, "_");
-                                const descLabel = hp.desc || "";
-                                const descColor = PITCH_DESC_COLORS[desc] || "#ccc";
                                 const isLastPitch = pa.pitches && pa.pitches.indexOf(hp) === pa.pitches.length - 1;
-                                const paResultRaw = isLastPitch ? pa.result : null;
-                                const paResultLbl = paResultRaw ? formatResult(paResultRaw, pa.trajectory) : null;
+                                const result = getTooltipResult(hp, {
+                                  desc: hp.desc,
+                                  paResult: pa.result,
+                                  isLastPitch,
+                                  launchAngle: isLastPitch ? pa.launch_angle : null,
+                                });
+
+                                const isBIP = isLastPitch && hp.launch_speed != null && hp.launch_angle != null &&
+                                  (hp.desc || "").toLowerCase().includes("in play");
+                                const bbTag2 = isBIP ? classifyBattedBallFull(hp.launch_speed, hp.launch_angle) : null;
+                                const bbColor2 = bbTag2 ? (BATTED_BALL_COLORS[bbTag2] || "rgba(180,184,210,0.7)") : null;
+
+                                const countParts = (hp.count || "0-0").split("-");
+                                const balls = countParts[0] || "0";
+                                const strikes = countParts[1] || "0";
+
                                 return (
-                                  <div className="pitch-tooltip" style={{
-                                    left: pbpPitchHover.x,
-                                    top: pbpPitchHover.y - 10,
-                                    minWidth: 260,
-                                  }}>
+                                  <div className="pitch-tooltip" style={(() => {
+                                    const tx = pbpPitchHover.clientX + 16;
+                                    const ty = pbpPitchHover.clientY - 16;
+                                    return {
+                                      position: "fixed",
+                                      left: tx + 300 > window.innerWidth ? pbpPitchHover.clientX - 310 : tx,
+                                      top: ty < 10 ? pbpPitchHover.clientY + 16 : (ty + 280 > window.innerHeight ? pbpPitchHover.clientY - 280 : ty),
+                                      transform: "none",
+                                      minWidth: 280,
+                                      zIndex: 1000,
+                                      pointerEvents: "none",
+                                    };
+                                  })()}>
+                                    {/* Header row 1: Pitch type + mph (left) | Result (right) */}
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: isBIP ? 0 : 4 }}>
+                                      <div style={{ whiteSpace: "nowrap" }}>
+                                        <span style={{ color: hpColor, fontWeight: 600 }}>{hp.type}</span>
+                                        <span style={{ marginLeft: 6, color: "#e0e2ec" }}>
+                                          {hp.speed ? Number(hp.speed).toFixed(1) + " mph" : ""}
+                                        </span>
+                                      </div>
+                                      <div style={{ whiteSpace: "nowrap", color: result.color, fontWeight: 600, marginLeft: 12 }}>
+                                        {result.label}
+                                        {result.isK && (
+                                          result.isCalledStrikeThree
+                                            ? <span style={{ marginLeft: 3 }}>(<span style={{ display: "inline-block", transform: "scaleX(-1)" }}>K</span>)</span>
+                                            : <span style={{ marginLeft: 3 }}>(K)</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    {/* Header row 2 (BIP only): EV/LA (left) | Batted ball tag (right) */}
+                                    {isBIP && (
+                                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                                        <div style={{ fontSize: "0.85em", color: "rgba(180,184,210,0.7)" }}>
+                                          {hp.launch_speed.toFixed(1)} EV · {hp.launch_angle != null ? hp.launch_angle.toFixed(0) + "° LA" : ""}
+                                        </div>
+                                        {bbTag2 && (
+                                          <div style={{ color: bbColor2, fontWeight: 600, fontSize: "0.85em", marginLeft: 12 }}>
+                                            {bbTag2}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+
+                                    {/* Body: text left, strikezone right */}
                                     <div style={{ display: "flex", gap: 10 }}>
                                       <div style={{ flex: 1 }}>
-                                        <div className="pt-row" style={{ marginBottom: 4 }}>
-                                          <span style={{ color: hpColor, fontWeight: 600 }}>{hp.type}</span>
-                                          <span style={{ marginLeft: 6 }}>{hp.speed ? hp.speed + " mph" : ""}</span>
-                                        </div>
-                                        <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
-                                          vs {pa.batter}
+                                        <div className="pt-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: "0.85em" }}>
+                                          <span>vs {pa.batter}</span>
+                                          {result.isK && result.subLabel && (
+                                            <span style={{ color: "rgba(180,184,210,0.7)" }}>{result.subLabel}</span>
+                                          )}
                                         </div>
                                         <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
                                           {seg.isTop ? "Top" : "Bot"} {ordinal(seg.inning)} | {pa.outs || 0} Out{(pa.outs || 0) !== 1 ? "s" : ""}
                                         </div>
                                         <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
-                                          {hp.count || "0-0"}
+                                          {pa.outs || 0} Outs | {balls}-{strikes}
                                         </div>
                                         {hp.pfx_z != null && hp.pfx_x != null && (
                                           <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
@@ -470,33 +613,33 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                                             {hp.release_extension != null && ` · Ext ${hp.release_extension.toFixed(1)}ft`}
                                           </div>
                                         )}
-                                        {descLabel && (
-                                          <div className="pt-row" style={{ color: descColor, fontWeight: 500, fontSize: "0.85em" }}>
-                                            {descLabel}
-                                            {paResultLbl && (
-                                              <span style={{ color: getResultColor(paResultRaw), marginLeft: 6 }}>
-                                                ({paResultLbl}{hp.launch_speed != null ? ` | ${hp.launch_speed.toFixed(1)} EV` : ""}{hp.launch_angle != null ? `, ${hp.launch_angle.toFixed(0)}° LA` : ""})
-                                              </span>
-                                            )}
-                                          </div>
-                                        )}
                                       </div>
                                       {hp.plate_x != null && hp.plate_z != null && (
-                                        <svg width="65" height="103" viewBox="0 0 65 103" style={{ flexShrink: 0 }}>
-                                          <rect x="12" y="17" width="41" height="50" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
-                                          {[1, 2].map(i => (
-                                            <line key={"v" + i} x1={12 + (i * 41) / 3} y1="17" x2={12 + (i * 41) / 3} y2="67" stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
-                                          ))}
-                                          {[1, 2].map(i => (
-                                            <line key={"h" + i} x1="12" y1={17 + (i * 50) / 3} x2="53" y2={17 + (i * 50) / 3} stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
-                                          ))}
-                                          <polygon points="32.5,87 42,92 42,99 23,99 23,92" fill="rgba(140,145,175,0.22)" stroke="rgba(160,164,190,0.35)" strokeWidth="0.8" />
-                                          <circle
-                                            cx={12 + ((-hp.plate_x + 0.83) / 1.66) * 41}
-                                            cy={17 + ((3.5 - hp.plate_z) / 2.0) * 50}
-                                            r="4" fill={hpColor} stroke="rgba(0,0,0,0.4)" strokeWidth="0.8"
-                                          />
-                                        </svg>
+                                        <div style={{ flexShrink: 0, display: "flex", alignItems: "flex-end", paddingTop: result.isK && result.subLabel ? 16 : 0 }}>
+                                          <svg width="65" height="103" viewBox="0 0 65 103">
+                                            <rect x="12" y="17" width="41" height="50" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
+                                            {[1, 2].map(i => (
+                                              <line key={`v${i}`} x1={12 + (i * 41) / 3} y1="17" x2={12 + (i * 41) / 3} y2="67" stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
+                                            ))}
+                                            {[1, 2].map(i => (
+                                              <line key={`h${i}`} x1="12" y1={17 + (i * 50) / 3} x2="53" y2={17 + (i * 50) / 3} stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
+                                            ))}
+                                            <polygon points="32.5,87 42,92 42,99 23,99 23,92" fill="rgba(140,145,175,0.22)" stroke="rgba(160,164,190,0.35)" strokeWidth="0.8" />
+                                            {(() => {
+                                              const isLeft = (pa.stand || "R") === "L";
+                                              const lx = isLeft ? 6 : 59;
+                                              const letters = isLeft ? ["L", "H", "B"] : ["R", "H", "B"];
+                                              return letters.map((ch, idx) => (
+                                                <text key={idx} x={lx} y={33 + idx * 10} fill="rgba(150,155,185,0.28)" fontSize="7" fontWeight="bold" textAnchor="middle" dominantBaseline="middle" fontFamily="'DM Sans', sans-serif">{ch}</text>
+                                              ));
+                                            })()}
+                                            <circle
+                                              cx={12 + ((-hp.plate_x + 0.83) / 1.66) * 41}
+                                              cy={17 + ((3.5 - hp.plate_z) / 2.0) * 50}
+                                              r="4" fill={hpColor} stroke="rgba(0,0,0,0.4)" strokeWidth="0.8"
+                                            />
+                                          </svg>
+                                        </div>
                                       )}
                                     </div>
                                   </div>
@@ -569,19 +712,27 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
               quickActions={RESULT_QUICK_ACTIONS}
             />
           </div>
+          <div className="filter-pill-group">
+            <span className="filter-pill-label">Contact</span>
+            <select className="game-filter-select" value={contactFilter} onChange={e => setContactFilter(e.target.value)}>
+              <option value="all">All Pitches</option>
+              <option value="hard">Hard BIP</option>
+              <option value="weak">Weak BIP</option>
+            </select>
+          </div>
         </div>
         <div className="card-visuals">
           <div className="card-sz-pair">
             {(batterFilter === "all" || batterFilter === "L") && (
               <div className="viz-card">
                 <div className="viz-card-label">vs LHB</div>
-                <StrikeZonePlot pitches={filteredPitches} szTop={sz_top} szBot={sz_bot} stand="L" colorMode={szColorMode} />
+                <StrikeZonePlot pitches={filteredPitches} szTop={sz_top} szBot={sz_bot} stand="L" colorMode={szColorMode} onReclassify={onReclassify} />
               </div>
             )}
             {(batterFilter === "all" || batterFilter === "R") && (
               <div className="viz-card">
                 <div className="viz-card-label">vs RHB</div>
-                <StrikeZonePlot pitches={filteredPitches} szTop={sz_top} szBot={sz_bot} stand="R" colorMode={szColorMode} />
+                <StrikeZonePlot pitches={filteredPitches} szTop={sz_top} szBot={sz_bot} stand="R" colorMode={szColorMode} onReclassify={onReclassify} />
               </div>
             )}
         </div>

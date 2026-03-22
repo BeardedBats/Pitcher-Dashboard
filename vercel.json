@@ -1,0 +1,20 @@
+{
+  "framework": null,
+  "installCommand": "cd frontend && npm install",
+  "buildCommand": "cd frontend && npm run build && mv build ../output",
+  "outputDirectory": "output",
+  "functions": {
+    "api/index.py": {
+      "runtime": "@vercel/python",
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/index.py" }
+  ],
+  "crons": [
+    { "path": "/api/cron/warmup", "schedule": "0 10 * * *" },
+    { "path": "/api/cron/warmup", "schedule": "0 22 * * *" },
+    { "path": "/api/cron/warmup", "schedule": "0 3 * * *" }
+  ]
+}

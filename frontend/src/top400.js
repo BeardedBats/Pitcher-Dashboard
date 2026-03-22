@@ -88,5 +88,26 @@ export const TOP_400_NAMES = new Set([
   "Kai-Wei Teng", "Jake Woodford", "Jesse Scholtens", "Austin Gomber", "Jake Eder",
   "José Ureña",
   "Sean Newcomb", "Julio Teheran", "Elmer Rodriguez", "Aaron Sanchez",
-  "Huascar Ynoa", "Brent Suter", "TJ Nichols",
+  "Huascar Ynoa", "Brent Suter", "TJ Nichols", "Ryan Johnson",
 ]);
+
+// Strip diacritics for matching API names (which may lack accents)
+function stripAccents(str) {
+  return str.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/\u00ad/g, "");
+}
+
+// Normalized lookup: maps stripped-accent lowercase name → original name
+const _normalizedMap = new Map();
+TOP_400_NAMES.forEach(name => {
+  _normalizedMap.set(stripAccents(name).toLowerCase(), name);
+});
+
+/**
+ * Check if a name is in the Top 400 list, with accent-insensitive matching.
+ * e.g. isTop400("Cristopher Sanchez") → true (matches "Cristopher Sánchez")
+ */
+export function isTop400(name) {
+  if (!name) return false;
+  if (TOP_400_NAMES.has(name)) return true;
+  return _normalizedMap.has(stripAccents(name).toLowerCase());
+}

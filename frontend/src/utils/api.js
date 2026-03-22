@@ -43,6 +43,12 @@ export async function fetchSeasonAverages(pitcherId, season) {
   return res.json();
 }
 
+export async function fetchPitcherSeasonTotals(pitcherId, startDate = "2026-02-10", endDate = "") {
+  const res = await fetch(`${BASE}/api/pitcher-season-totals?pitcher_id=${pitcherId}&start_date=${startDate}&end_date=${endDate}`);
+  if (!res.ok) throw new Error("Failed to fetch season totals");
+  return res.json();
+}
+
 export async function fetchGameLinescore(gamePk) {
   const res = await fetch(`${BASE}/api/game-linescore?game_pk=${gamePk}`);
   if (!res.ok) throw new Error("Failed to fetch linescore");
@@ -76,5 +82,17 @@ export async function fetchDefaultDate() {
 export async function fetchInitialLoad() {
   const res = await fetch(`${BASE}/api/initial-load`);
   if (!res.ok) throw new Error("Failed to fetch initial load");
+  return res.json();
+}
+
+export async function fetchRefresh() {
+  const res = await fetch(`${BASE}/api/refresh`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to refresh data");
+  return res.json();
+}
+
+export async function fetchLastRefresh() {
+  const res = await fetch(`${BASE}/api/last-refresh`);
+  if (!res.ok) throw new Error("Failed to fetch last refresh");
   return res.json();
 }

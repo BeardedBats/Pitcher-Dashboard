@@ -1,21 +1,24 @@
 import os
 from pathlib import Path
-from fastapi import FastAPI, Query
+from datetime import datetime
+from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from data import (
     get_games, clear_cache, get_default_date, get_game_linescore,
     save_pitch_override, remove_pitch_override, get_all_overrides,
     fetch_date_range, fetch_all_pitchers_list, prefetch_boxscores,
     start_warmup, get_warmup_status, get_agg_cache, set_agg_cache,
+    warmup_range_data, fetch_date,
 )
 from aggregation import (
     aggregate_pitch_data, aggregate_pitcher_results, get_pitcher_card,
     get_season_averages, aggregate_pitcher_results_range,
     aggregate_pitch_data_range, get_pitcher_game_log,
 )
+from redis_cache import redis_get, redis_set, redis_available
 
 app = FastAPI(title="Baseball Savant Dashboard API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -24,11 +27,15 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 # Look for frontend build in ../frontend-build (relative to backend/)
 _FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend-build"
 
+# ── Detect environment: serverless (Vercel) vs persistent (local/Electron) ──
+_IS_SERVERLESS = os.environ.get("VERCEL") == "1" or os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is not None
 
-# ── Startup: pre-fetch data in background ──
+
+# ── Startup: pre-fetch data in background (local/Electron only) ──
 @app.on_event("startup")
 def on_startup():
-    start_warmup()
+    if not _IS_SERVERLESS:
+        start_warmup()
 
 
 # ── Helper: resolve end_date to today ET ──
@@ -115,6 +122,54 @@ def pitcher_card(date: str = Query(...), pitcher_id: int = Query(...), game_pk: 
         set_agg_cache(agg_key, result)
     return result
 
+@app.get("/api/pitcher-season-totals")
+def pitcher_season_totals(pitcher_id: int = Query(...), start_date: str = Query("2026-02-10"), end_date: str = Query("")):
+    """Return aggregated season totals for a pitcher's box score row."""
+    end_date = _resolve_end_date(end_date)
+    agg_key = f"season_totals_{pitcher_id}_{start_date}_{end_date}"
+    cached = get_agg_cache(agg_key)
+    if cached is not None:
+        return cached
+    df = fetch_date_range(start_date, end_date)
+    if df.empty:
+        return {}
+    game_log = get_pitcher_game_log(df, pitcher_id)
+    if not game_log:
+        return {}
+    total_pitches = sum(g.get("pitches", 0) for g in game_log)
+    total_ip_thirds = 0
+    for g in game_log:
+        ip_val = g.get("ip", "0.0")
+        parts = str(ip_val).split(".")
+        full = int(parts[0])
+        thirds = int(parts[1]) if len(parts) > 1 else 0
+        total_ip_thirds += full * 3 + thirds
+    total_whiffs = sum(g.get("whiffs", 0) for g in game_log)
+    total_strikes = sum(g.get("strikes", 0) for g in game_log)
+    total_runs = sum(g.get("runs", 0) for g in game_log)
+    total_batters_faced = sum(g.get("batters_faced", 0) for g in game_log)
+    total_games_started = sum(g.get("games_started", 0) for g in game_log)
+    result = {
+        "games": len(game_log),
+        "games_started": total_games_started,
+        "ip": f"{total_ip_thirds // 3}.{total_ip_thirds % 3}",
+        "ip_thirds": total_ip_thirds,
+        "hits": sum(g.get("hits", 0) for g in game_log),
+        "bbs": sum(g.get("bbs", 0) for g in game_log),
+        "ks": sum(g.get("ks", 0) for g in game_log),
+        "hrs": sum(g.get("hrs", 0) for g in game_log),
+        "er": sum(g.get("er", 0) for g in game_log),
+        "runs": total_runs,
+        "batters_faced": total_batters_faced,
+        "whiffs": total_whiffs,
+        "swstr_pct": round(total_whiffs / total_pitches * 100, 1) if total_pitches > 0 else 0,
+        "csw_pct": round(sum(g.get("csw_pct", 0) * g.get("pitches", 0) for g in game_log) / total_pitches, 1) if total_pitches > 0 else 0,
+        "strike_pct": round(total_strikes / total_pitches * 100, 1) if total_pitches > 0 else 0,
+        "pitches": total_pitches,
+    }
+    set_agg_cache(agg_key, result)
+    return result
+
 @app.get("/api/game-linescore")
 def game_linescore(game_pk: int = Query(...)): return get_game_linescore(game_pk)
 
@@ -130,7 +185,7 @@ def season_averages(pitcher_id: int = Query(...), season: int = Query(...)):
     return result
 
 @app.get("/api/pitchers-search")
-def pitchers_search(q: str = Query(""), start_date: str = Query("2026-02-20"), end_date: str = Query("")):
+def pitchers_search(q: str = Query(""), start_date: str = Query("2026-02-10"), end_date: str = Query("")):
     end_date = _resolve_end_date(end_date)
     pitchers = fetch_all_pitchers_list(start_date, end_date)
     if q:
@@ -139,7 +194,7 @@ def pitchers_search(q: str = Query(""), start_date: str = Query("2026-02-20"), e
     return pitchers[:20]
 
 @app.get("/api/resolve-pitcher")
-def resolve_pitcher(name: str = Query(...), start_date: str = Query("2026-02-20"), end_date: str = Query("")):
+def resolve_pitcher(name: str = Query(...), start_date: str = Query("2026-02-10"), end_date: str = Query("")):
     """Resolve a pitcher name to a pitcher_id from cached data. Uses accent-insensitive matching."""
     import unicodedata
     end_date = _resolve_end_date(end_date)
@@ -158,26 +213,8 @@ def resolve_pitcher(name: str = Query(...), start_date: str = Query("2026-02-20"
             return {"pitcher_id": p["pitcher_id"], "name": p["name"]}
     return {"pitcher_id": None, "name": name}
 
-@app.get("/api/leaderboard")
-def leaderboard(start_date: str = Query("2026-02-20"), end_date: str = Query(""), view: str = Query("results")):
-    end_date = _resolve_end_date(end_date)
-    # Check aggregation cache first
-    agg_key = f"leaderboard_{view}_{start_date}_{end_date}"
-    cached = get_agg_cache(agg_key)
-    if cached is not None:
-        return cached
-    df = fetch_date_range(start_date, end_date)
-    if df.empty:
-        return []
-    if view == "pitch-data":
-        result = aggregate_pitch_data_range(df)
-    else:
-        result = aggregate_pitcher_results_range(df)
-    set_agg_cache(agg_key, result)
-    return result
-
 @app.get("/api/team-pitchers")
-def team_pitchers(team: str = Query(...), start_date: str = Query("2026-02-20"), end_date: str = Query(""), view: str = Query("results")):
+def team_pitchers(team: str = Query(...), start_date: str = Query("2026-02-10"), end_date: str = Query(""), view: str = Query("results")):
     end_date = _resolve_end_date(end_date)
     # Check aggregation cache first
     agg_key = f"team_{team}_{view}_{start_date}_{end_date}"
@@ -199,7 +236,7 @@ def team_pitchers(team: str = Query(...), start_date: str = Query("2026-02-20"),
     return result
 
 @app.get("/api/player-page")
-def player_page(pitcher_id: int = Query(...), start_date: str = Query("2026-02-20"), end_date: str = Query("")):
+def player_page(pitcher_id: int = Query(...), start_date: str = Query("2026-02-10"), end_date: str = Query("")):
     end_date = _resolve_end_date(end_date)
     # Check aggregation cache
     agg_key = f"player_v2_{pitcher_id}_{start_date}_{end_date}"
@@ -292,6 +329,48 @@ def undo_reclassify(game_pk: int = Query(...), pitcher_id: int = Query(...), at_
 
 @app.get("/api/pitch-overrides")
 def pitch_overrides(): return get_all_overrides()
+
+
+# ── Cron warmup endpoint (called by Vercel cron jobs) ──
+@app.get("/api/cron/warmup")
+def cron_warmup(request: Request):
+    """Vercel cron job handler. Warms all caches: Savant data, boxscores, aggregations."""
+    # Verify this is a cron request (Vercel sets this header)
+    # In local dev, allow all requests
+    auth = request.headers.get("authorization")
+    cron_secret = os.environ.get("CRON_SECRET")
+    if _IS_SERVERLESS and cron_secret and auth != f"Bearer {cron_secret}":
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    try:
+        warmup_range_data()
+        now = datetime.now().isoformat()
+        redis_set("last_refresh", now)
+        return {"status": "ok", "timestamp": now}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ── Manual refresh endpoint (called by the refresh button) ──
+@app.post("/api/refresh")
+def manual_refresh():
+    """Clear caches and re-fetch all data. Returns new timestamp."""
+    try:
+        clear_cache()
+        warmup_range_data()
+        now = datetime.now().isoformat()
+        redis_set("last_refresh", now)
+        return {"status": "ok", "timestamp": now}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ── Last refresh timestamp ──
+@app.get("/api/last-refresh")
+def last_refresh():
+    """Return the timestamp of the last data refresh."""
+    ts = redis_get("last_refresh")
+    return {"timestamp": ts}
+
 
 # ── Serve React frontend (must be AFTER all /api routes) ──
 if _FRONTEND_DIR.is_dir():

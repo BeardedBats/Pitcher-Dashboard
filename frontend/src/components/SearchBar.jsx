@@ -52,13 +52,13 @@ export default function SearchBar({ onSelectPlayer }) {
     setOpen(matches.length > 0);
   };
 
-  const handleSelect = (name) => {
+  const handleSelect = (name, e) => {
     setQuery("");
     setResults([]);
     setOpen(false);
     setHighlightIdx(-1);
     // Pass name instead of pitcher_id — App.jsx navigateToPlayer handles name-based lookup
-    onSelectPlayer(null, name);
+    onSelectPlayer(null, name, e);
   };
 
   const handleKeyDown = (e) => {
@@ -73,7 +73,7 @@ export default function SearchBar({ onSelectPlayer }) {
       setHighlightIdx((prev) => Math.max(prev - 1, 0));
     } else if (e.key === "Enter" && highlightIdx >= 0 && highlightIdx < results.length) {
       e.preventDefault();
-      handleSelect(results[highlightIdx]);
+      handleSelect(results[highlightIdx], e);
     }
   };
 
@@ -94,7 +94,8 @@ export default function SearchBar({ onSelectPlayer }) {
             <div
               key={name}
               className={`search-result${idx === highlightIdx ? " highlighted" : ""}`}
-              onClick={() => handleSelect(name)}
+              onClick={(e) => handleSelect(name, e)}
+              onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); handleSelect(name, e); } }}
             >
               <span className="search-result-name">{name}</span>
             </div>

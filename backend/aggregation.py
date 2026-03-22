@@ -168,6 +168,7 @@ def aggregate_pitcher_results(date_str, game_pk=None):
         box = box_maps.get(r["game_pk"], {}).get(r["pitcher_id"])
         if box:
             r["er"] = box.get("er", 0)
+            r["runs"] = box.get("runs", 0)
             if box.get("ip") is not None:
                 r["ip"] = box["ip"]
             # Override pitch-by-pitch derived stats with official boxscore
@@ -175,8 +176,11 @@ def aggregate_pitcher_results(date_str, game_pk=None):
             r["bbs"] = box.get("bbs", r["bbs"])
             r["ks"] = box.get("ks", r["ks"])
             r["hrs"] = box.get("hrs", r["hrs"])
+            r["batters_faced"] = box.get("batters_faced", 0)
         else:
             r["er"] = 0
+            r["runs"] = 0
+            r["batters_faced"] = 0
     results.sort(key=lambda r: (r["team"], r["appearance_order"]))
     return results
 
@@ -185,7 +189,7 @@ def build_pitches_list(pdf):
     Converts pfx to inches and sanitizes NaN→None."""
     _pitch_cols = ["pitch_type", "pitch_name", "plate_x", "plate_z", "pfx_x", "pfx_z",
                    "release_speed", "stand", "description", "zone", "at_bat_number",
-                   "pitch_number", "outs_when_up", "batter_name", "events",
+                   "pitch_number", "outs_when_up", "batter_name", "events", "des",
                    "launch_speed", "launch_angle", "hc_x", "hc_y", "release_extension",
                    "inning", "inning_topbot", "balls", "strikes", "on_1b", "on_2b", "on_3b",
                    "game_pk", "game_date"]
@@ -200,7 +204,7 @@ def build_pitches_list(pdf):
     _int_fields = {"zone", "at_bat_number", "pitch_number", "outs_when_up", "inning", "balls", "strikes", "game_pk"}
     _float_fields = {"plate_x", "plate_z", "pfx_x", "pfx_z", "release_speed", "launch_speed", "launch_angle", "hc_x", "hc_y", "release_extension"}
     _bool_fields = {"on_1b", "on_2b", "on_3b"}
-    _str_defaults = {"pitch_name": "Unclassified", "description": "", "events": "", "batter_name": "", "stand": "", "pitch_type": "", "game_date": ""}
+    _str_defaults = {"pitch_name": "Unclassified", "description": "", "events": "", "des": "", "batter_name": "", "stand": "", "pitch_type": "", "game_date": ""}
     for row in pitches_raw:
         for k in list(row.keys()):
             v = row[k]
@@ -245,7 +249,7 @@ def get_pitcher_card(date_str, pitcher_id, game_pk):
     # Build pitches list using vectorized column operations instead of iterrows
     _pitch_cols = ["pitch_type", "pitch_name", "plate_x", "plate_z", "pfx_x", "pfx_z",
                    "release_speed", "stand", "description", "zone", "at_bat_number",
-                   "pitch_number", "outs_when_up", "batter_name", "events",
+                   "pitch_number", "outs_when_up", "batter_name", "events", "des",
                    "launch_speed", "launch_angle", "hc_x", "hc_y", "release_extension",
                    "inning", "inning_topbot", "balls", "strikes", "on_1b", "on_2b", "on_3b"]
     # Select only columns that exist
@@ -262,7 +266,7 @@ def get_pitcher_card(date_str, pitcher_id, game_pk):
     _int_fields = {"zone", "at_bat_number", "pitch_number", "outs_when_up", "inning", "balls", "strikes"}
     _float_fields = {"plate_x", "plate_z", "pfx_x", "pfx_z", "release_speed", "launch_speed", "launch_angle", "hc_x", "hc_y", "release_extension"}
     _bool_fields = {"on_1b", "on_2b", "on_3b"}
-    _str_defaults = {"pitch_name": "Unclassified", "description": "", "events": "", "batter_name": "", "stand": "", "pitch_type": ""}
+    _str_defaults = {"pitch_name": "Unclassified", "description": "", "events": "", "des": "", "batter_name": "", "stand": "", "pitch_type": ""}
     for row in pitches_raw:
         # First pass: convert any NaN to None across ALL fields
         for k in list(row.keys()):
@@ -324,12 +328,16 @@ def get_pitcher_card(date_str, pitcher_id, game_pk):
     appearance_order_r = int(pdf_r["at_bat_number"].min()) if "at_bat_number" in pdf_r.columns and pdf_r["at_bat_number"].notna().any() else 999
     home_team_r = pdf_r["home_team"].iloc[0] if "home_team" in pdf_r.columns else ""
     away_team_r = pdf_r["away_team"].iloc[0] if "away_team" in pdf_r.columns else ""
+    swings_r = int(pdf_r["description"].isin(_SWING_DESCS).sum())
+    strikes_r = int(pdf_r["type"].isin(_STRIKE_TYPES).sum()) if "type" in pdf_r.columns else 0
     pitcher_result = {
         "pitcher_id": int(pitcher_id), "game_pk": int(game_pk),
         "pitcher": name, "team": team, "hand": hand, "opponent": opp,
         "ip": ip_str_r, "hits": hits_r, "bbs": bbs_r, "ks": ks_r,
         "whiffs": whiffs_r,
+        "swstr_pct": round(whiffs_r / total_pitches * 100, 1) if total_pitches > 0 else 0,
         "csw_pct": round((called_strikes_r + whiffs_r) / total_pitches * 100, 1) if total_pitches > 0 else 0,
+        "strike_pct": round(strikes_r / total_pitches * 100, 1) if total_pitches > 0 else 0,
         "pitches": total_pitches, "hrs": hrs_r,
         "appearance_order": appearance_order_r,
         "home_team": home_team_r, "away_team": away_team_r,
@@ -339,14 +347,18 @@ def get_pitcher_card(date_str, pitcher_id, game_pk):
     pbox = box.get(int(pitcher_id)) if box else None
     if pbox:
         pitcher_result["er"] = pbox.get("er", 0)
+        pitcher_result["runs"] = pbox.get("runs", 0)
         if pbox.get("ip") is not None:
             pitcher_result["ip"] = pbox["ip"]
         pitcher_result["hits"] = pbox.get("hits", hits_r)
         pitcher_result["bbs"] = pbox.get("bbs", bbs_r)
         pitcher_result["ks"] = pbox.get("ks", ks_r)
         pitcher_result["hrs"] = pbox.get("hrs", hrs_r)
+        pitcher_result["batters_faced"] = pbox.get("batters_faced", 0)
     else:
         pitcher_result["er"] = 0
+        pitcher_result["runs"] = 0
+        pitcher_result["batters_faced"] = 0
     return {
         "pitcher_id": pitcher_id, "game_pk": game_pk,
         "name": name, "team": team, "hand": hand, "opponent": opp,
@@ -538,6 +550,7 @@ def aggregate_pitch_data_range(df, prepped=False):
             "usage": round(total / pitcher_total * 100, 1) if pitcher_total > 0 else 0,
             "usage_vs_r": round(vs_r_count / pitcher_vs_r_total * 100, 1) if pitcher_vs_r_total > 0 else 0,
             "usage_vs_l": round(vs_l_count / pitcher_vs_l_total * 100, 1) if pitcher_vs_l_total > 0 else 0,
+            "count_vs_r": vs_r_count, "count_vs_l": vs_l_count,
             "ext": round(gdf["release_extension"].mean(), 1) if gdf["release_extension"].notna().any() else None,
             "ivb": round(gdf["pfx_z"].mean() * 12, 1) if gdf["pfx_z"].notna().any() else None,
             "ihb": round(gdf["pfx_x"].mean() * 12, 1) if gdf["pfx_x"].notna().any() else None,
@@ -566,6 +579,8 @@ def get_pitcher_game_log(df, pitcher_id):
         pdf["game_date"] = pdf["game_date"].astype(str)
     pdf["is_whiff"] = pdf["description"].isin(_WHIFF_DESCS)
     pdf["is_called_strike"] = pdf["description"] == "called_strike"
+    pdf["is_swing"] = pdf["description"].isin(_SWING_DESCS)
+    pdf["is_strike_type"] = pdf["type"].isin(_STRIKE_TYPES) if "type" in pdf.columns else False
 
     # Pre-fetch all boxscores for this pitcher's games in parallel
     pitcher_game_pks = [int(gpk) for gpk in pdf["game_pk"].unique()]
@@ -576,6 +591,7 @@ def get_pitcher_game_log(df, pitcher_id):
         total_pitches = len(gdf)
         whiffs = int(gdf["is_whiff"].sum())
         called_strikes = int(gdf["is_called_strike"].sum())
+        strikes_g = int(gdf["is_strike_type"].sum())
         game_date = str(gdf["game_date"].iloc[0])[:10] if "game_date" in gdf.columns else ""
         team = gdf["pitcher_team"].iloc[0] if "pitcher_team" in gdf.columns else ""
         opp = gdf["opponent"].iloc[0] if "opponent" in gdf.columns else ""
@@ -592,16 +608,22 @@ def get_pitcher_game_log(df, pitcher_id):
         er = 0
 
         # Use pre-fetched boxscore (already in memory)
+        runs = 0
+        batters_faced = 0
+        game_started = 0
         box = box_maps.get(int(game_pk), {})
         pbox = box.get(int(pitcher_id))
         if pbox:
             er = pbox.get("er", 0)
+            runs = pbox.get("runs", 0)
             if pbox.get("ip") is not None:
                 ip_str = pbox["ip"]
             hits = pbox.get("hits", hits)
             bbs = pbox.get("bbs", bbs)
             ks = pbox.get("ks", ks)
             hrs = pbox.get("hrs", hrs)
+            batters_faced = pbox.get("batters_faced", 0)
+            game_started = pbox.get("games_started", 0)
 
         results.append({
             "game_pk": int(game_pk),
@@ -614,9 +636,15 @@ def get_pitcher_game_log(df, pitcher_id):
             "ks": ks,
             "hrs": hrs,
             "er": er,
+            "runs": runs,
+            "batters_faced": batters_faced,
+            "games_started": game_started,
             "whiffs": whiffs,
+            "swstr_pct": round(whiffs / total_pitches * 100, 1) if total_pitches > 0 else 0,
             "csw_pct": round((called_strikes + whiffs) / total_pitches * 100, 1) if total_pitches > 0 else 0,
+            "strike_pct": round(strikes_g / total_pitches * 100, 1) if total_pitches > 0 else 0,
             "pitches": total_pitches,
+            "strikes": strikes_g,
         })
     results.sort(key=lambda r: r["date"])
     return results

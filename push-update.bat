@@ -9,5 +9,5 @@ if "%msg%"=="" set msg=Update dashboard
 git commit -m "%msg%"
 git push origin main
 echo.
-echo Done! Railway will auto-redeploy in a few minutes.
+echo Done! Vercel will auto-deploy in a few minutes.
 pause

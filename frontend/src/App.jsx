@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef as useReactRef, Suspense, lazy } from "react";
 import DatePicker from "./components/DatePicker";
 import GameTabs from "./components/GameTabs";
 import PitchDataTable from "./components/PitchDataTable";
@@ -9,12 +9,11 @@ import PlayByPlayModal from "./components/PlayByPlayModal";
 import ReclassifyModal from "./components/ReclassifyModal";
 import SearchBar from "./components/SearchBar";
 // Lazy-load pages that aren't needed on initial render
-const LeaderboardPage = lazy(() => import("./components/LeaderboardPage"));
 const TeamPage = lazy(() => import("./components/TeamPage"));
 const PlayerPage = lazy(() => import("./components/PlayerPage"));
-import { fetchGames, fetchPitchData, fetchPitcherResults, fetchPitcherCard, fetchDefaultDate, fetchGameLinescore, reclassifyPitch, fetchInitialLoad } from "./utils/api";
+import { fetchGames, fetchPitchData, fetchPitcherResults, fetchPitcherCard, fetchDefaultDate, fetchGameLinescore, reclassifyPitch, fetchInitialLoad, fetchRefresh, fetchLastRefresh } from "./utils/api";
 import { PITCH_TYPE_FILTERS, PITCH_COLORS, TEAMS_LIST } from "./constants";
-import { TOP_400_NAMES } from "./top400";
+import { TOP_400_NAMES, isTop400 } from "./top400";
 
 function getYesterdayEST() {
   // Fallback: current time in US Eastern, minus 1 day
@@ -26,18 +25,30 @@ function getYesterdayEST() {
   return `${y}-${m}-${d}`;
 }
 
-// Helper: check if Ctrl (or Cmd on Mac) was held during click event
+// Helper: check if Ctrl (or Cmd on Mac) or middle-click was held during click event
 function isNewWindowClick(e) {
-  return e && (e.ctrlKey || e.metaKey);
+  return e && (e.ctrlKey || e.metaKey || e.button === 1);
 }
 
-// Open a hash route in a new Electron window (no-op if not in Electron)
+// Open a hash route in a new background tab (Electron or browser).
+// Uses a real <a> element so the browser opens in the background (no focus steal),
+// matching native middle-click / Ctrl+Click behavior.
 function openInNewWindow(hash) {
   if (window.electronAPI?.openNewWindow) {
     window.electronAPI.openNewWindow(hash);
     return true;
   }
-  return false;
+  const url = window.location.origin + window.location.pathname + "#" + hash;
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  // Dispatch a Ctrl+Click so the browser treats it as "open in background tab"
+  a.dispatchEvent(new MouseEvent("click", { ctrlKey: true, bubbles: true, cancelable: true }));
+  document.body.removeChild(a);
+  return true;
 }
 
 export default function App() {
@@ -57,17 +68,24 @@ export default function App() {
   const [linescoreData, setLinescoreData] = useState(null);
   const [pbpModal, setPbpModal] = useState(null); // { inning, isTop } or null
   const [reclassifyPitch_, setReclassifyPitch] = useState(null); // pitch object to reclassify
-  const [page, setPage] = useState("games"); // "games" | "leaderboard" | "team" | "player"
+  const [page, setPage] = useState("games"); // "games" | "team" | "player"
   const [playerPageId, setPlayerPageId] = useState(null);
   const [selectedTeamPage, setSelectedTeamPage] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(null);
+  const [toast, setToast] = useState(null); // { message, type: "success"|"error" }
 
   // Track whether this is the initial mount load (combined endpoint) vs user date change
   const initialLoadDone = React.useRef(false);
   // Ref to skip the date-change useEffect when navigating to a game card from player page
   const skipDateFetchForCard = React.useRef(false);
+  // Ref to skip the pitch/results data fetch (e.g. after initial load already provided it)
+  const skipNextDataFetch = React.useRef(false);
 
   // Fetch everything on mount in a single API call
   useEffect(() => {
+    const hash = window.location.hash.replace(/^#/, "");
+    if (hash) return; // Deep-link will handle its own loading
     setLoading(true);
     fetchInitialLoad()
       .then(data => {
@@ -80,12 +98,59 @@ export default function App() {
         setLoading(false);
       })
       .catch(() => {
-        // Fallback to sequential flow
+        // Fallback to sequential flow — date change will trigger games fetch
+        setLoading(false);
         fetchDefaultDate()
           .then(d => setDate(d))
           .catch(() => setDate(getYesterdayEST()));
       });
   }, []);
+
+  // Fetch last refresh timestamp on mount
+  useEffect(() => {
+    fetchLastRefresh()
+      .then(data => { if (data.timestamp) setLastRefresh(data.timestamp); })
+      .catch(() => {});
+  }, []);
+
+  // Auto-dismiss toast after 3 seconds
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const data = await fetchRefresh();
+      setLastRefresh(data.timestamp);
+      setToast({ message: "Data refreshed", type: "success" });
+      // Re-fetch current page data
+      if (date) {
+        const [newGames, newPitch, newResults] = await Promise.all([
+          fetchGames(date),
+          fetchPitchData(date, selectedGame),
+          fetchPitcherResults(date, selectedGame),
+        ]);
+        setGames(newGames);
+        setPitchData(newPitch);
+        setResultsData(newResults);
+      }
+    } catch (e) {
+      setToast({ message: "Refresh failed", type: "error" });
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const formatRefreshTime = (isoStr) => {
+    if (!isoStr) return "";
+    try {
+      const d = new Date(isoStr);
+      return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+    } catch { return ""; }
+  };
 
   // Handle hash-based deep linking for new windows (e.g. #player/12345 or #card/2026-03-08/12345/789)
   const hashHandled = React.useRef(false);
@@ -108,18 +173,23 @@ export default function App() {
       const pitcherId = Number(parts[2]);
       const gamePk = Number(parts[3]);
       skipDateFetchForCard.current = true;
+      skipNextDataFetch.current = true;
       setPage("games");
       setSelectedGame(gamePk);
+      setDate(gameDate);
       setLoading(true);
-      Promise.all([
-        fetchPitcherCard(gameDate, pitcherId, gamePk),
-        fetchGames(gameDate),
-      ]).then(([cd, g]) => {
-        setDate(gameDate);
-        setGames(g);
-        setCardData(cd);
-        setLoading(false);
-      }).catch(e => { setError(e.message); setLoading(false); });
+      // Fetch card immediately — show it as soon as it's ready.
+      fetchPitcherCard(gameDate, pitcherId, gamePk)
+        .then(cd => {
+          setCardData(cd); setLoading(false);
+          // Push card state so closeCard (history.back()) has a "list" entry to return to
+          pushState({ view: "card", selectedGame: gamePk, pitcherId, gamePk, date: gameDate }, "");
+        })
+        .catch(e => { setError(e.message); setLoading(false); });
+      // Background: load games for the game tabs (non-blocking)
+      fetchGames(gameDate)
+        .then(g => setGames(g))
+        .catch(() => {});
     }
   }, []);
 
@@ -163,9 +233,7 @@ export default function App() {
       if (!state || state.view === "list") {
         setCardData(null);
         setSelectedGame(state?.selectedGame || null);
-        setPage(state?.page || "games");
-        if (state?.page === "leaderboard") { setPage("leaderboard"); }
-        else if (state?.page === "team") { setPage("team"); setSelectedTeamPage(state.team); }
+        if (state?.page === "team") { setPage("team"); setSelectedTeamPage(state.team); }
         else if (state?.page === "player") { setPage("player"); setPlayerPageId(state.pitcherId); }
         else { setPage("games"); }
       } else if (state.view === "game") {
@@ -173,10 +241,11 @@ export default function App() {
         setSelectedGame(state.selectedGame);
         setPage("games");
       } else if (state.view === "card" && state.pitcherId && state.gamePk) {
+        const cardDate = state.date || date;
         setPage("games");
         setSelectedGame(state.selectedGame);
         setLoading(true);
-        fetchPitcherCard(date, state.pitcherId, state.gamePk)
+        fetchPitcherCard(cardDate, state.pitcherId, state.gamePk)
           .then(cd => { setCardData(cd); setLoading(false); })
           .catch(err => { setError(err.message); setLoading(false); });
       }
@@ -226,23 +295,22 @@ export default function App() {
       .catch(e => { setError(e.message); setLoading(false); });
   }, [date]);
 
-  // Skip the next pitch/results fetch if initial load already provided the data
-  const skipNextDataFetch = React.useRef(false);
-
   useEffect(() => {
     if (games.length === 0) return;
     if (skipNextDataFetch.current) {
       skipNextDataFetch.current = false;
       return;
     }
-    setCardData(null); setLoading(true); setError(null);
+    // Don't nuke an open card or fetch table data while viewing a card
+    if (cardData) return;
+    setLoading(true); setError(null);
     Promise.all([
       fetchPitchData(date, selectedGame),
       fetchPitcherResults(date, selectedGame),
     ]).then(([pd, pr]) => {
       setPitchData(pd); setResultsData(pr); setLoading(false);
     }).catch(e => { setError(e.message); setLoading(false); });
-  }, [selectedGame, date, games.length]);
+  }, [selectedGame, date, games.length]); // eslint-disable-line
 
   // Fetch linescore when a specific game is selected or card opens
   const linescoreGamePk = cardData?.result?.game_pk || selectedGame;
@@ -256,18 +324,20 @@ export default function App() {
   const filteredPitchData = useMemo(() => {
     let rows = pitchData;
     if (pitchFilter) rows = rows.filter(r => r.pitch_name === pitchFilter);
-    if (top400Only) rows = rows.filter(r => TOP_400_NAMES.has(r.pitcher));
+    if (top400Only) rows = rows.filter(r => isTop400(r.pitcher));
     return rows;
   }, [pitchData, pitchFilter, top400Only]);
 
   const filteredResultsData = useMemo(() => {
     if (!top400Only) return resultsData;
-    return resultsData.filter(r => TOP_400_NAMES.has(r.pitcher));
+    return resultsData.filter(r => isTop400(r.pitcher));
   }, [resultsData, top400Only]);
 
   const openCard = (pitcherId, gamePk, e) => {
-    // Ctrl+Click / Cmd+Click → open in new window
+    // Ctrl+Click / Cmd+Click / Middle-click → open in new tab, don't navigate current page
     if (isNewWindowClick(e) && date) {
+      if (e && e.preventDefault) e.preventDefault();
+      if (e && e.stopPropagation) e.stopPropagation();
       openInNewWindow(`card/${date}/${pitcherId}/${gamePk}`);
       return;
     }
@@ -281,7 +351,7 @@ export default function App() {
       .then(cd => {
         setCardData(cd); setLoading(false);
         if (!isPopState.current) {
-          pushState({ view: "card", selectedGame, pitcherId, gamePk }, "");
+          pushState({ view: "card", selectedGame, pitcherId, gamePk, date }, "");
         }
       })
       .catch(e => { setError(e.message); setLoading(false); });
@@ -289,12 +359,6 @@ export default function App() {
 
   const closeCard = () => {
     window.history.back();
-  };
-
-  const navigateToLeaderboard = () => {
-    setPage("leaderboard");
-    setCardData(null);
-    pushState({ view: "list", page: "leaderboard" }, "");
   };
 
   const navigateToTeam = (teamAbbrev) => {
@@ -305,8 +369,10 @@ export default function App() {
   };
 
   const navigateToPlayer = async (pitcherId, playerName, e) => {
-    // Ctrl+Click / Cmd+Click → open in new window
+    // Ctrl+Click / Cmd+Click / Middle-click → open in new tab, don't navigate current page
     if (isNewWindowClick(e) && pitcherId) {
+      if (e && e.preventDefault) e.preventDefault();
+      if (e && e.stopPropagation) e.stopPropagation();
       openInNewWindow(`player/${pitcherId}`);
       return;
     }
@@ -327,8 +393,10 @@ export default function App() {
         const res = await fetch(`${API}/api/resolve-pitcher?name=${encodeURIComponent(playerName)}`);
         const data = await res.json();
         if (data.pitcher_id) {
-          // If Ctrl+Click was held, open resolved player in new window
+          // If Ctrl+Click was held, open resolved player in new tab
           if (isNewWindowClick(e)) {
+            if (e && e.preventDefault) e.preventDefault();
+            if (e && e.stopPropagation) e.stopPropagation();
             openInNewWindow(`player/${data.pitcher_id}`);
             return;
           }
@@ -344,8 +412,10 @@ export default function App() {
   };
 
   const navigateToGameCard = (gameDate, pitcherId, gamePk, e) => {
-    // Ctrl+Click / Cmd+Click → open in new window
+    // Ctrl+Click / Cmd+Click / Middle-click → open in new tab, don't navigate current page
     if (isNewWindowClick(e)) {
+      if (e && e.preventDefault) e.preventDefault();
+      if (e && e.stopPropagation) e.stopPropagation();
       openInNewWindow(`card/${gameDate}/${pitcherId}/${gamePk}`);
       return;
     }
@@ -357,6 +427,9 @@ export default function App() {
     // Navigate from player page game log to the pitcher card for that game
     // Signal the date-change useEffect to skip resetting everything
     skipDateFetchForCard.current = true;
+    // Skip the data fetch triggered by selectedGame change (prevents race condition
+    // where stale date + new gamePk returns empty data before card loads)
+    skipNextDataFetch.current = true;
     setPage("games");
     setSelectedGame(gamePk);
     setLoading(true);
@@ -369,7 +442,7 @@ export default function App() {
       setGames(g);
       setCardData(cd);
       setLoading(false);
-      pushState({ view: "card", selectedGame: gamePk, pitcherId, gamePk }, "");
+      pushState({ view: "card", selectedGame: gamePk, pitcherId, gamePk, date: gameDate }, "");
     }).catch(e => { setError(e.message); setLoading(false); skipDateFetchForCard.current = false; });
   };
 
@@ -382,8 +455,14 @@ export default function App() {
   // Header nav component (reused in both header renders)
   const headerNav = (
     <div className="header-nav">
-      <button className={`nav-link${page === "leaderboard" ? " active" : ""}`} onClick={navigateToLeaderboard}>
-        Leaderboard
+      <button
+        className={`refresh-btn${refreshing ? " refreshing" : ""}`}
+        onClick={handleRefresh}
+        disabled={refreshing}
+        title="Refresh data"
+      >
+        <span className={`refresh-icon${refreshing ? " spinning" : ""}`}>&#x21bb;</span>
+        {lastRefresh ? <span className="refresh-ts">Updated {formatRefreshTime(lastRefresh)}</span> : null}
       </button>
       <select
         className="team-select"
@@ -396,7 +475,7 @@ export default function App() {
         ))}
       </select>
       <div className="header-nav-spacer" />
-      <SearchBar onSelectPlayer={(id, name) => navigateToPlayer(id, name)} />
+      <SearchBar onSelectPlayer={(id, name, e) => navigateToPlayer(id, name, e)} />
     </div>
   );
 
@@ -411,11 +490,11 @@ export default function App() {
         </div>
       )}
 
-      {/* === LEADERBOARD PAGE === */}
-      {page === "leaderboard" && !cardData && (
-        <Suspense fallback={<div className="loading-indicator">Loading...</div>}>
-          <LeaderboardPage onPlayerClick={(id, name, e) => navigateToPlayer(id, name, e)} onBack={navigateBackToGames} />
-        </Suspense>
+      {/* === TOAST NOTIFICATION === */}
+      {toast && (
+        <div className={`toast-notification toast-${toast.type}`}>
+          {toast.message}
+        </div>
       )}
 
       {/* === TEAM PAGE === */}

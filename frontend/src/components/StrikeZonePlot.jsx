@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
-import { PITCH_COLORS, PITCH_DESC_COLORS, getSZResultColor } from "../constants";
-import { getSprayDirection, getResultColor, classifyBattedBall, getBIPQuality } from "../utils/formatting";
+import { PITCH_COLORS, PITCH_DESC_COLORS, getSZResultColor, BATTED_BALL_COLORS } from "../constants";
+import { classifyBattedBall } from "../utils/formatting";
+import { getTooltipResult } from "../utils/pitchFilters";
 
 const W = 310, H = 345;
 const PAD = { top: 16, right: 16, bottom: 44, left: 16 };
@@ -31,7 +32,7 @@ function basesString(on1b, on2b, on3b) {
   return bases.join(" & ");
 }
 
-export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode = "pitch-type" }) {
+export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode = "pitch-type", onReclassify }) {
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
   const [hover, setHover] = useState(null);
@@ -153,186 +154,157 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
 
   const handleMouseLeave = useCallback(() => setHover(null), []);
 
-  const p = hover?.pitch;
-  const isPA = p?.events;
-
-  // Helper to format pitch result
-  const getPitchResult = () => {
-    if (isPA) {
-      // PA-ending pitch: show event
-      const eventLabel = p.events.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-      const resultColor = getResultColor(p.events);
-      // Strikeout: prefix with Called Strike or Swinging Strike
-      const rLower = p.events.toLowerCase();
-      if (rLower === "strikeout" || rLower === "strikeout_double_play") {
-        const desc = (p.description || "").toLowerCase();
-        const prefix = desc.includes("called") ? "Called Strike" : "Swinging Strike";
-        return { label: `${prefix} - ${eventLabel}`, color: resultColor };
-      }
-      return { label: eventLabel, color: resultColor };
-    } else {
-      // Non-PA pitch: show description
-      // Normalize foul_tip and swinging_strike_blocked → "Swinging Strike"
-      let rawDesc = p.description || "";
-      if (rawDesc === "foul_tip" || rawDesc === "swinging_strike_blocked") rawDesc = "swinging_strike";
-      const descLabel = rawDesc ? rawDesc.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "";
-      const resultColor = PITCH_DESC_COLORS[p.description] || "#ccc";
-      return { label: descLabel, color: resultColor };
+  const handleClick = useCallback((e) => {
+    if (!onReclassify) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (W / rect.width);
+    const my = (e.clientY - rect.top) * (H / rect.height);
+    const nearest = findNearest(mx, my);
+    if (nearest) {
+      onReclassify(nearest.pitch);
     }
-  };
+  }, [findNearest, onReclassify]);
 
-  const pitchResult = p ? getPitchResult() : null;
+  const p = hover?.pitch;
 
   return (
     <div ref={wrapRef} style={{ position: "relative", display: "inline-block" }}>
       <canvas
         ref={canvasRef}
-        style={{ borderRadius: 6 }}
+        style={{ borderRadius: 6, cursor: onReclassify ? "pointer" : "default" }}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
+        onClick={handleClick}
       />
-      {hover && p && pitchResult && (
-        <div className="pitch-tooltip" style={{
-          left: hover.x - (wrapRef.current?.getBoundingClientRect().left || 0),
-          top: hover.y - (wrapRef.current?.getBoundingClientRect().top || 0) - 10,
-          minWidth: 280,
-        }}>
-          <div style={{ display: "flex", gap: 10 }}>
-            {/* LEFT COLUMN: Text Info */}
-            <div style={{ flex: 1 }}>
-              {/* Line 1: Pitch type + velocity */}
-              <div className="pt-row" style={{ marginBottom: 4 }}>
+      {hover && p && (() => {
+        const result = getTooltipResult(p);
+        const isBIP = !!p.events && p.launch_speed != null && p.launch_angle != null &&
+          (p.description || "").toLowerCase() === "hit_into_play";
+        const bbTag = isBIP ? classifyBattedBall(p.launch_speed, p.launch_angle) : null;
+        const bbColor = bbTag ? (BATTED_BALL_COLORS[bbTag] || "rgba(180,184,210,0.7)") : null;
+
+        return (
+          <div className="pitch-tooltip" style={(() => {
+            const tx = hover.x + 16;
+            const ty = hover.y - 16;
+            return {
+              position: "fixed",
+              left: tx + 300 > window.innerWidth ? hover.x - 310 : tx,
+              top: ty < 10 ? hover.y + 16 : (ty + 280 > window.innerHeight ? hover.y - 280 : ty),
+              transform: "none",
+              minWidth: 280,
+              zIndex: 1000,
+              pointerEvents: "none",
+            };
+          })()}>
+            {/* Header row 1: Pitch type + mph (left) | Result (right) */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: isBIP ? 0 : 4 }}>
+              <div style={{ whiteSpace: "nowrap" }}>
                 <span style={{ color: PITCH_COLORS[p.pitch_name] || "#ccc", fontWeight: 600 }}>
                   {p.pitch_name}
                 </span>
-                <span style={{ marginLeft: 6 }}>
+                <span style={{ marginLeft: 6, color: "#e0e2ec" }}>
                   {p.release_speed ? p.release_speed.toFixed(1) + " mph" : ""}
                 </span>
               </div>
-
-              {/* Line 2: vs Batter + handedness */}
-              {p.batter_name && (
-                <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
-                  vs {p.batter_name}
-                </div>
-              )}
-
-              {/* Line 3: Game state top - inning + men on base */}
-              {p.inning != null && p.inning_topbot && (
-                <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
-                  {p.inning_topbot === "Top" ? "Top" : "Bot"} {ordinal(p.inning)} | {basesString(p.on_1b, p.on_2b, p.on_3b)}
-                </div>
-              )}
-
-              {/* Line 4: Game state bottom - outs + count */}
-              {p.outs_when_up != null && p.balls != null && p.strikes != null && (
-                <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
-                  {p.outs_when_up} Outs | {p.balls}-{p.strikes}
-                </div>
-              )}
-
-              {/* Line 5: iVB + iHB + Extension */}
-              {p.pfx_z != null && p.pfx_x != null && (
-                <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
-                  iVB {p.pfx_z.toFixed(1)}" · iHB {(-p.pfx_x).toFixed(1)}"
-                  {p.release_extension != null && ` · Ext ${p.release_extension.toFixed(1)}ft`}
-                </div>
-              )}
-
-              {/* Line 6: Pitch result - colored, with EV/LA/spray for PA balls in play */}
-              {pitchResult.label && (
-                <div className="pt-row" style={{ color: pitchResult.color, fontWeight: 500, fontSize: "0.85em" }}>
-                  <span>{pitchResult.label}</span>
-                  {isPA && p.launch_speed != null && <span> · {p.launch_speed.toFixed(1)} EV</span>}
-                  {isPA && p.launch_angle != null && <span> · {p.launch_angle.toFixed(0)}° LA</span>}
-                  {isPA && p.hc_x != null && <span> {getSprayDirection(p.hc_x, p.hc_y)}</span>}
-                </div>
-              )}
-
-              {/* Line 7: BIP quality + Savant batted ball tag */}
-              {isPA && p.launch_speed != null && p.launch_angle != null && (() => {
-                const tag = classifyBattedBall(p.launch_speed, p.launch_angle);
-                if (!tag) return null;
-                const quality = getBIPQuality(tag, p.launch_angle);
-                return (
-                  <div className="pt-row" style={{ fontSize: "0.85em", color: "rgba(180,184,210,0.7)" }}>
-                    {quality} — {tag}
-                  </div>
-                );
-              })()}
+              <div style={{ whiteSpace: "nowrap", color: result.color, fontWeight: 600, marginLeft: 12 }}>
+                {result.label}
+                {result.isK && (
+                  result.isCalledStrikeThree
+                    ? <span style={{ marginLeft: 3 }}>(<span style={{ display: "inline-block", transform: "scaleX(-1)" }}>K</span>)</span>
+                    : <span style={{ marginLeft: 3 }}>(K)</span>
+                )}
+              </div>
             </div>
-
-            {/* RIGHT COLUMN: Mini Strikezone SVG */}
-            {p.plate_x != null && p.plate_z != null && (
-              <svg width="65" height="103" viewBox="0 0 65 103" style={{ flexShrink: 0 }}>
-                {/* Strike zone box */}
-                <rect x="12" y="17" width="41" height="50" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
-
-                {/* 3x3 grid - vertical lines */}
-                {[1, 2].map(i => (
-                  <line
-                    key={`v${i}`}
-                    x1={12 + (i * 41) / 3}
-                    y1="17"
-                    x2={12 + (i * 41) / 3}
-                    y2="67"
-                    stroke="rgba(255,255,255,0.1)"
-                    strokeWidth="0.5"
-                  />
-                ))}
-
-                {/* 3x3 grid - horizontal lines */}
-                {[1, 2].map(i => (
-                  <line
-                    key={`h${i}`}
-                    x1="12"
-                    y1={17 + (i * 50) / 3}
-                    x2="53"
-                    y2={17 + (i * 50) / 3}
-                    stroke="rgba(255,255,255,0.1)"
-                    strokeWidth="0.5"
-                  />
-                ))}
-
-                {/* Home plate - pentagon with point at TOP (pitcher's perspective) */}
-                <polygon
-                  points="32.5,87 42,92 42,99 23,99 23,92"
-                  fill="rgba(140,145,175,0.22)"
-                  stroke="rgba(160,164,190,0.35)"
-                  strokeWidth="0.8"
-                />
-
-                {/* Batter side label (LHB/RHB) */}
-                {(() => {
-                  const isLeft = p.stand === "L";
-                  const lx = isLeft ? 6 : 59;
-                  const letters = isLeft ? ["L", "H", "B"] : ["R", "H", "B"];
-                  return letters.map((ch, i) => (
-                    <text key={i} x={lx} y={33 + i * 10} fill="rgba(150,155,185,0.28)" fontSize="7" fontWeight="bold" textAnchor="middle" dominantBaseline="middle" fontFamily="'DM Sans', sans-serif">{ch}</text>
-                  ));
-                })()}
-
-                {/* Pitch location dot */}
-                {(() => {
-                  const dotX = 12 + ((-p.plate_x + 0.83) / 1.66) * 41;
-                  const dotY = 17 + ((3.5 - p.plate_z) / 2.0) * 50;
-                  const pitchColor = PITCH_COLORS[p.pitch_name] || "#D9D9D9";
-                  return (
-                    <circle
-                      cx={dotX}
-                      cy={dotY}
-                      r="4"
-                      fill={pitchColor}
-                      stroke="rgba(0,0,0,0.4)"
-                      strokeWidth="0.8"
-                    />
-                  );
-                })()}
-              </svg>
+            {/* Header row 2 (BIP only): EV/LA (left) | Batted ball tag (right) */}
+            {isBIP && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                {p.launch_speed != null && (
+                  <div style={{ fontSize: "0.85em", color: "rgba(180,184,210,0.7)" }}>
+                    {p.launch_speed.toFixed(1)} EV · {p.launch_angle != null ? p.launch_angle.toFixed(0) + "° LA" : ""}
+                  </div>
+                )}
+                {bbTag && (
+                  <div style={{ color: bbColor, fontWeight: 600, fontSize: "0.85em", marginLeft: 12 }}>
+                    {bbTag}
+                  </div>
+                )}
+              </div>
             )}
+
+            {/* Body: text left, strikezone right */}
+            <div style={{ display: "flex", gap: 10 }}>
+              <div style={{ flex: 1 }}>
+                {/* vs Batter (left) | Strikeout sub-label (right) */}
+                {(p.batter_name || p.batter) && (
+                  <div className="pt-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: "0.85em" }}>
+                    <span>vs {p.batter_name || p.batter}</span>
+                    {result.isK && result.subLabel && (
+                      <span style={{ color: "rgba(180,184,210,0.7)" }}>{result.subLabel}</span>
+                    )}
+                  </div>
+                )}
+
+                {/* Inning + bases */}
+                {p.inning != null && p.inning_topbot && (
+                  <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
+                    {p.inning_topbot === "Top" ? "Top" : "Bot"} {ordinal(p.inning)} | {basesString(p.on_1b, p.on_2b, p.on_3b)}
+                  </div>
+                )}
+
+                {/* Outs + count */}
+                {p.outs_when_up != null && p.balls != null && p.strikes != null && (
+                  <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
+                    {p.outs_when_up} Outs | {p.balls}-{p.strikes}
+                  </div>
+                )}
+
+                {/* iVB + iHB + Extension */}
+                {p.pfx_z != null && p.pfx_x != null && (
+                  <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
+                    iVB {p.pfx_z.toFixed(1)}" · iHB {(-p.pfx_x).toFixed(1)}"
+                    {p.release_extension != null && ` · Ext ${p.release_extension.toFixed(1)}ft`}
+                  </div>
+                )}
+              </div>
+
+              {/* RIGHT: Mini Strikezone SVG, aligned to bottom */}
+              {p.plate_x != null && p.plate_z != null && (
+                <div style={{ flexShrink: 0, display: "flex", alignItems: "flex-end", paddingTop: result.isK && result.subLabel ? 16 : 0 }}>
+                  <svg width="65" height="103" viewBox="0 0 65 103">
+                    <rect x="12" y="17" width="41" height="50" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
+                    {[1, 2].map(i => (
+                      <line key={`v${i}`} x1={12 + (i * 41) / 3} y1="17" x2={12 + (i * 41) / 3} y2="67" stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
+                    ))}
+                    {[1, 2].map(i => (
+                      <line key={`h${i}`} x1="12" y1={17 + (i * 50) / 3} x2="53" y2={17 + (i * 50) / 3} stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
+                    ))}
+                    <polygon points="32.5,87 42,92 42,99 23,99 23,92" fill="rgba(140,145,175,0.22)" stroke="rgba(160,164,190,0.35)" strokeWidth="0.8" />
+                    {(() => {
+                      const isLeft = p.stand === "L";
+                      const lx = isLeft ? 6 : 59;
+                      const letters = isLeft ? ["L", "H", "B"] : ["R", "H", "B"];
+                      return letters.map((ch, i) => (
+                        <text key={i} x={lx} y={33 + i * 10} fill="rgba(150,155,185,0.28)" fontSize="7" fontWeight="bold" textAnchor="middle" dominantBaseline="middle" fontFamily="'DM Sans', sans-serif">{ch}</text>
+                      ));
+                    })()}
+                    {(() => {
+                      const dotX = 12 + ((-p.plate_x + 0.83) / 1.66) * 41;
+                      const dotY = 17 + ((3.5 - p.plate_z) / 2.0) * 50;
+                      const pitchColor = PITCH_COLORS[p.pitch_name] || "#D9D9D9";
+                      return (
+                        <circle cx={dotX} cy={dotY} r="4" fill={pitchColor} stroke="rgba(0,0,0,0.4)" strokeWidth="0.8" />
+                      );
+                    })()}
+                  </svg>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

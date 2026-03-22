@@ -6,7 +6,8 @@ import StrikeZonePlot from "./StrikeZonePlot";
 import MovementPlot from "./MovementPlot";
 import PitchFilterDropdown from "./PitchFilterDropdown";
 import ResultsTable from "./ResultsTable";
-import { classifyPitchResult, isWeakBIP, RESULT_FILTER_OPTIONS, RESULT_QUICK_ACTIONS } from "../utils/pitchFilters";
+import { classifyPitchResult, isRunScored, isStrikeoutPitch, isBallInPlay, classifyBIPQuality, RESULT_FILTER_OPTIONS, RESULT_QUICK_ACTIONS } from "../utils/pitchFilters";
+import VelocityTrend from "./VelocityTrend";
 
 const API = window.__BACKEND_PORT__
   ? `http://localhost:${window.__BACKEND_PORT__}`
@@ -20,11 +21,12 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
   const [loadingAvgs, setLoadingAvgs] = useState(false);
   const [batterFilter, setBatterFilter] = useState("all");
   const [szColorMode, setSzColorMode] = useState("pitch-type");
-  const [metricsView, setMetricsView] = useState("pitch-data"); // "pitch-data" | "results"
+  const [metricsView, setMetricsView] = useState("pitch-data"); // "pitch-data" | "results" | "velocity-trend"
 
-  // Pitch-type and result filters for plots
+  // Pitch-type, result, and contact filters for plots
   const [pitchTypeFilter, setPitchTypeFilter] = useState(null);
   const [resultFilter, setResultFilter] = useState(null);
+  const [contactFilter, setContactFilter] = useState("all");
 
   // Game filter for plots AND pitch metrics
   const [gameFilter, setGameFilter] = useState("all");
@@ -47,12 +49,12 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
 
     const params = new URLSearchParams({
       pitcher_id: pitcherId,
-      start_date: "2026-02-20",
+      start_date: "2026-02-10",
     });
     fetch(`${API}/api/player-page?${params}`)
       .then((r) => r.json())
-      .then((d) => { if (!cancelled) { setData(d); setLoading(false); } })
-      .catch(() => { if (!cancelled) setLoading(false); });
+      .then((d) => { if (!cancelled) { cancelled = true; clearTimeout(pollTimer); setData(d); setLoading(false); } })
+      .catch(() => { if (!cancelled) { cancelled = true; clearTimeout(pollTimer); setLoading(false); } });
 
     return () => { cancelled = true; clearTimeout(pollTimer); };
   }, [pitcherId]);
@@ -145,13 +147,26 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
     if (resultFilter !== null) {
       fp = fp.filter(p => {
         const cat = classifyPitchResult(p);
-        // "Weak BIP" is a virtual category — check separately
-        if (effectiveResultFilter.has("Weak BIP") && isWeakBIP(p)) return true;
+        // "Run(s)" is an overlay category — check separately
+        if (effectiveResultFilter.has("Run(s)") && isRunScored(p)) return true;
+        // "Strikeout" is an overlay — strikeout PA's last pitch is classified as
+        // Called Strike or Whiff by description, so check the event directly
+        if (effectiveResultFilter.has("Strikeout") && isStrikeoutPitch(p)) return true;
         return effectiveResultFilter.has(cat) || cat === "Other";
       });
     }
+    // Contact filter (Weak BIP / Hard BIP)
+    if (contactFilter !== "all") {
+      fp = fp.filter(p => {
+        if (!isBallInPlay(p)) return false;
+        const quality = classifyBIPQuality(p.launch_speed, p.launch_angle);
+        if (contactFilter === "weak") return quality === "Weak";
+        if (contactFilter === "hard") return quality === "Hard";
+        return true;
+      });
+    }
     return fp;
-  }, [data, gameFilter, batterFilter, pitchTypeFilter, effectivePitchTypeFilter, resultFilter, effectiveResultFilter]);
+  }, [data, gameFilter, batterFilter, pitchTypeFilter, effectivePitchTypeFilter, resultFilter, effectiveResultFilter, contactFilter]);
 
   // Play-by-Play availability: enabled when single game or specific game selected
   const multiGame = sortedLog.length > 1;
@@ -225,6 +240,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                     <tr key={row.game_pk + "-" + i}
                       className="pp-log-row"
                       onClick={(e) => onGameClick(row.date, pitcherId, row.game_pk, e)}
+                      onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); onGameClick(row.date, pitcherId, row.game_pk, e); } }}
                     >
                       <td>{row.date}</td>
                       <td>{displayAbbrev(row.opponent)}</td>
@@ -267,6 +283,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                 <div className="metrics-subnav">
                   <button className={`metrics-subnav-btn${metricsView === "pitch-data" ? " active" : ""}`} onClick={() => setMetricsView("pitch-data")}>Pitch Type Metrics</button>
                   <button className={`metrics-subnav-btn${metricsView === "results" ? " active" : ""}`} onClick={() => setMetricsView("results")}>Results</button>
+                  <button className={`metrics-subnav-btn${metricsView === "velocity-trend" ? " active" : ""}`} onClick={() => setMetricsView("velocity-trend")}>Velocity Trend</button>
                   <button
                     className={`metrics-subnav-btn${pbpDisabled ? " metrics-subnav-disabled" : ""}`}
                     onClick={handlePbpClick}
@@ -320,6 +337,11 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                   <ResultsTable pitches={data?.pitches} batterFilter={batterFilter} gameFilter={gameFilter} />
                 </div>
               )}
+              {metricsView === "velocity-trend" && (
+                <div className="metrics-card">
+                  <VelocityTrend pitches={filteredPitches} />
+                </div>
+              )}
             </div>
 
             {/* ===== VISUALS: Strike zones + Movement ===== */}
@@ -365,6 +387,14 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                     columns={2}
                     quickActions={RESULT_QUICK_ACTIONS}
                   />
+                </div>
+                <div className="filter-pill-group">
+                  <span className="filter-pill-label">Contact</span>
+                  <select className="sz-mode-select" value={contactFilter} onChange={e => setContactFilter(e.target.value)}>
+                    <option value="all">All Pitches</option>
+                    <option value="weak">Weak BIP</option>
+                    <option value="hard">Hard BIP</option>
+                  </select>
                 </div>
               </div>
               <div className="card-visuals">
