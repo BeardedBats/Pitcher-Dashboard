@@ -38,6 +38,17 @@ def on_startup():
         start_warmup()
 
 
+# ── Helper: get current time in Eastern ──
+def _now_et() -> datetime:
+    try:
+        import zoneinfo
+        et = zoneinfo.ZoneInfo("America/New_York")
+    except Exception:
+        import pytz
+        et = pytz.timezone("America/New_York")
+    return datetime.now(et)
+
+
 # ── Helper: resolve end_date to today ET ──
 def _resolve_end_date(end_date: str) -> str:
     if end_date:
@@ -343,7 +354,7 @@ def cron_warmup(request: Request):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     try:
         warmup_range_data()
-        now = datetime.now().isoformat()
+        now = _now_et().isoformat()
         redis_set("last_refresh", now)
         return {"status": "ok", "timestamp": now}
     except Exception as e:
@@ -357,7 +368,7 @@ def manual_refresh():
     try:
         clear_cache()
         warmup_range_data()
-        now = datetime.now().isoformat()
+        now = _now_et().isoformat()
         redis_set("last_refresh", now)
         return {"status": "ok", "timestamp": now}
     except Exception as e:
