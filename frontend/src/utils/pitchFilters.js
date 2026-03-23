@@ -236,7 +236,15 @@ export function getTooltipResult(pitch, opts) {
     if (ev === "triple") return { label: "Triple", color: "#feffa3" };
     if (ev === "sac_fly" || ev === "sac_fly_double_play") return { label: "Sac Fly", color: "#AAB9FF" };
     if (ev === "sac_bunt") return { label: "Sac Bunt", color: "#AAB9FF" };
-    if (ev === "field_error") return { label: "Error", color: "#65BAFF" };
+    if (ev === "field_error") {
+      // Determine base reached from play description (des field)
+      const desText = (pitch.des || "").toLowerCase();
+      let errorBase = "Single";
+      if (desText.includes("scores") || desText.includes("homers")) errorBase = "HR";
+      else if (desText.includes("to third") || desText.includes("to 3rd")) errorBase = "Triple";
+      else if (desText.includes("to second") || desText.includes("to 2nd")) errorBase = "Double";
+      return { label: `Error (${errorBase})`, color: "#65BAFF" };
+    }
     if (ev === "catcher_interf") return { label: "Catcher Int.", color: "#FFAB6E" };
     // Outs with trajectory-based labels (includes fielder's choice, force outs, double plays)
     if (ev.includes("out") || ev.includes("play") || ev.includes("force") || ev === "fielders_choice") {
