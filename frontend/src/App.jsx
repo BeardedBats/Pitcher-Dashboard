@@ -106,11 +106,11 @@ export default function App() {
       });
   }, []);
 
-  // Fetch last refresh timestamp on mount
+  // Fetch last refresh timestamp on mount; fall back to "now" so button always shows a time
   useEffect(() => {
     fetchLastRefresh()
-      .then(data => { if (data.timestamp) setLastRefresh(data.timestamp); })
-      .catch(() => {});
+      .then(data => { setLastRefresh(data.timestamp || new Date().toISOString()); })
+      .catch(() => { setLastRefresh(new Date().toISOString()); });
   }, []);
 
   // Auto-dismiss toast after 3 seconds
