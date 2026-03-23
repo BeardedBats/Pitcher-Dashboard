@@ -157,7 +157,10 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
     if (seasonVal == null) return deltaPlaceholder;
     if (key === "ihb") seasonVal = -seasonVal;
     const delta = currentVal - seasonVal;
-    const text = `(${delta >= 0 ? "+" : ""}${delta.toFixed(1)})`;
+    const usageKeys = ["usage", "usage_vs_r", "usage_vs_l"];
+    const text = usageKeys.includes(key)
+      ? `(${delta >= 0 ? "+" : ""}${Math.round(delta)}%)`
+      : `(${delta >= 0 ? "+" : ""}${delta.toFixed(1)})`;
 
     // For iHB/iVB deltas, use directional coloring with prev/current context
     if (key === "ihb") {
