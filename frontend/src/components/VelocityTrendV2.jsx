@@ -418,7 +418,7 @@ export default function VelocityTrendV2({ pitches, onReclassify }) {
     <div ref={wrapRef} className="velocity-trend-wrap" style={{ position: "relative", width: "100%" }}>
       {/* Pitch type legend — horizontal, text only (no dots), centered */}
       <div
-        style={{ display: "flex", gap: 0, padding: "6px 20px 10px", flexWrap: "wrap", justifyContent: "center" }}
+        style={{ display: "flex", gap: 0, padding: "6px 20px 10px", flexWrap: "wrap", justifyContent: "center", width: "fit-content", margin: "0 auto" }}
         onMouseLeave={() => { if (!lockedType) setHighlightType(null); }}
       >
         {pitchTypes.map(type => {

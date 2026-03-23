@@ -5,8 +5,6 @@
     { "source": "/api/:path*", "destination": "/api/index.py" }
   ],
   "crons": [
-    { "path": "/api/cron/warmup", "schedule": "0 10 * * *" },
-    { "path": "/api/cron/warmup", "schedule": "0 22 * * *" },
-    { "path": "/api/cron/warmup", "schedule": "0 3 * * *" }
+    { "path": "/api/cron/warmup", "schedule": "0 0-4,17-23 * * *" }
   ]
 }
