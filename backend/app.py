@@ -11,7 +11,8 @@ from data import (
     save_pitch_override, remove_pitch_override, get_all_overrides,
     fetch_date_range, fetch_all_pitchers_list, prefetch_boxscores,
     start_warmup, get_warmup_status, get_agg_cache, set_agg_cache,
-    warmup_range_data, fetch_date,
+    warmup_range_data, fetch_date, compute_player_page,
+    get_top400_pitcher_ids, warmup_player_pages,
 )
 from aggregation import (
     aggregate_pitch_data, aggregate_pitcher_results, get_pitcher_card,
@@ -249,70 +250,17 @@ def team_pitchers(team: str = Query(...), start_date: str = Query("2026-02-10"),
 @app.get("/api/player-page")
 def player_page(pitcher_id: int = Query(...), start_date: str = Query("2026-02-10"), end_date: str = Query("")):
     end_date = _resolve_end_date(end_date)
-    # Check aggregation cache
     agg_key = f"player_v2_{pitcher_id}_{start_date}_{end_date}"
     cached = get_agg_cache(agg_key)
     if cached is not None:
         return cached
     df = fetch_date_range(start_date, end_date)
+    empty = {"info": {}, "pitch_summary": [], "pitch_summary_vs_l": [], "pitch_summary_vs_r": [], "results_summary": {}, "game_log": []}
     if df.empty:
-        return {"info": {}, "pitch_summary": [], "pitch_summary_vs_l": [], "pitch_summary_vs_r": [], "results_summary": {}, "game_log": []}
-    pdf = df[df["pitcher"] == pitcher_id]
-    if pdf.empty:
-        return {"info": {}, "pitch_summary": [], "pitch_summary_vs_l": [], "pitch_summary_vs_r": [], "results_summary": {}, "game_log": []}
-    name = pdf["player_name"].iloc[0]
-    teams = list(pdf["pitcher_team"].unique()) if "pitcher_team" in pdf.columns else []
-    hand = pdf["p_throws"].iloc[0] if "p_throws" in pdf.columns else ""
-    info = {"name": name, "teams": teams, "hand": hand, "pitcher_id": pitcher_id}
-    # Prep boolean columns ONCE, then reuse for all three aggregations
-    from aggregation import _prep_df
-    pdf_prepped = _prep_df(pdf)
-    pitch_summary = aggregate_pitch_data_range(pdf_prepped, prepped=True)
-    pdf_vs_l = pdf_prepped[pdf_prepped["stand"] == "L"] if "stand" in pdf_prepped.columns else pdf_prepped.iloc[0:0]
-    pdf_vs_r = pdf_prepped[pdf_prepped["stand"] == "R"] if "stand" in pdf_prepped.columns else pdf_prepped.iloc[0:0]
-    pitch_summary_vs_l = aggregate_pitch_data_range(pdf_vs_l, prepped=True) if not pdf_vs_l.empty else []
-    pitch_summary_vs_r = aggregate_pitch_data_range(pdf_vs_r, prepped=True) if not pdf_vs_r.empty else []
-    game_log = get_pitcher_game_log(df, pitcher_id)
-    # Derive totals from game log so summary always matches displayed rows
-    if game_log:
-        total_pitches = sum(g.get("pitches", 0) for g in game_log)
-        total_ip_thirds = 0
-        for g in game_log:
-            ip_val = g.get("ip", "0.0")
-            parts = str(ip_val).split(".")
-            full = int(parts[0])
-            thirds = int(parts[1]) if len(parts) > 1 else 0
-            total_ip_thirds += full * 3 + thirds
-        results_summary = {
-            "games": len(game_log),
-            "ip": f"{total_ip_thirds // 3}.{total_ip_thirds % 3}",
-            "hits": sum(g.get("hits", 0) for g in game_log),
-            "bbs": sum(g.get("bbs", 0) for g in game_log),
-            "ks": sum(g.get("ks", 0) for g in game_log),
-            "hrs": sum(g.get("hrs", 0) for g in game_log),
-            "er": sum(g.get("er", 0) for g in game_log),
-            "whiffs": sum(g.get("whiffs", 0) for g in game_log),
-            "csw_pct": round(sum(g.get("csw_pct", 0) * g.get("pitches", 0) for g in game_log) / total_pitches, 1) if total_pitches > 0 else 0,
-            "pitches": total_pitches,
-        }
-    else:
-        results_summary = {}
-    # Build per-game pitch summaries for game filter in pitch metrics table
-    per_game_summaries = {}
-    for gpk in pdf_prepped["game_pk"].unique():
-        gpdf = pdf_prepped[pdf_prepped["game_pk"] == gpk]
-        per_game_summaries[str(int(gpk))] = {
-            "all": aggregate_pitch_data_range(gpdf, prepped=True),
-            "vs_l": aggregate_pitch_data_range(gpdf[gpdf["stand"] == "L"], prepped=True) if (gpdf["stand"] == "L").any() else [],
-            "vs_r": aggregate_pitch_data_range(gpdf[gpdf["stand"] == "R"], prepped=True) if (gpdf["stand"] == "R").any() else [],
-        }
-
-    # Build raw pitches list for strikezone/movement plots
-    from aggregation import build_pitches_list
-    all_pitches = build_pitches_list(pdf)
-    sz_top = float(pdf["sz_top"].mean()) if "sz_top" in pdf.columns and pdf["sz_top"].notna().any() else 3.5
-    sz_bot = float(pdf["sz_bot"].mean()) if "sz_bot" in pdf.columns and pdf["sz_bot"].notna().any() else 1.5
-    result = {"info": info, "pitch_summary": pitch_summary, "pitch_summary_vs_l": pitch_summary_vs_l, "pitch_summary_vs_r": pitch_summary_vs_r, "per_game_summaries": per_game_summaries, "results_summary": results_summary, "game_log": game_log, "pitches": all_pitches, "sz_top": sz_top, "sz_bot": sz_bot}
+        return empty
+    result = compute_player_page(df, pitcher_id)
+    if result is None:
+        return empty
     set_agg_cache(agg_key, result)
     return result
 
@@ -357,6 +305,77 @@ def cron_warmup(request: Request):
         now = _now_et().isoformat()
         redis_set("last_refresh", now)
         return {"status": "ok", "timestamp": now}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ── Batch backfill: pre-compute Top 400 player pages in chunks ──
+@app.get("/api/cron/warmup-players")
+def cron_warmup_players(request: Request, batch: int = Query(1), batch_size: int = Query(50)):
+    """Pre-compute Top 400 player pages in batches.
+    Call with ?batch=1, then ?batch=2, etc. until all are done.
+    Each batch computes ~50 player pages."""
+    auth = request.headers.get("authorization")
+    cron_secret = os.environ.get("CRON_SECRET")
+    if _IS_SERVERLESS and cron_secret and auth != f"Bearer {cron_secret}":
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    try:
+        start_date = "2026-02-10"
+        end_date = _resolve_end_date("")
+        # Fetch the full season data (hits in-memory cache if warmup already ran)
+        df = fetch_date_range(start_date, end_date)
+        if df.empty:
+            return {"status": "no_data"}
+        # Get all Top 400 pitcher IDs in the data
+        top400_map = get_top400_pitcher_ids(df)
+        all_ids = sorted(top400_map.keys())
+        total_batches = (len(all_ids) + batch_size - 1) // batch_size
+        # Slice to the requested batch (1-indexed)
+        start_idx = (batch - 1) * batch_size
+        end_idx = start_idx + batch_size
+        batch_ids = all_ids[start_idx:end_idx]
+        if not batch_ids:
+            return {"status": "done", "message": f"No players in batch {batch}", "total_batches": total_batches}
+        result = warmup_player_pages(df, start_date, end_date, pitcher_ids=batch_ids)
+        return {
+            "status": "ok", "batch": batch, "total_batches": total_batches,
+            "batch_computed": result["computed"], "batch_skipped": result["skipped"],
+            "total_top400_in_data": result["total_top400_in_data"],
+            "players": [{"id": pid, "name": top400_map[pid]} for pid in batch_ids],
+        }
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ── Daily 4:30 AM cron: refresh data + update only pitchers who played yesterday ──
+@app.get("/api/cron/warmup-daily")
+def cron_warmup_daily(request: Request):
+    """Nightly cron: fetches fresh data, updates team aggregations,
+    then re-computes player pages only for Top 400 pitchers who pitched yesterday."""
+    auth = request.headers.get("authorization")
+    cron_secret = os.environ.get("CRON_SECRET")
+    if _IS_SERVERLESS and cron_secret and auth != f"Bearer {cron_secret}":
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    try:
+        # Step 1: Full warmup (fetches fresh data + teams + leaderboards)
+        warmup_range_data()
+        start_date = "2026-02-10"
+        end_date = _resolve_end_date("")
+        # Step 2: Re-fetch data (instant cache hit after warmup)
+        df = fetch_date_range(start_date, end_date)
+        if df.empty:
+            return {"status": "no_data"}
+        # Step 3: Find yesterday's date and compute player pages for those who pitched
+        yesterday = get_default_date()
+        result = warmup_player_pages(df, start_date, end_date, only_date=yesterday)
+        now = _now_et().isoformat()
+        redis_set("last_refresh", now)
+        return {
+            "status": "ok", "timestamp": now, "date_updated": yesterday,
+            "players_computed": result["computed"],
+            "players_skipped": result["skipped"],
+            "total_top400_in_data": result["total_top400_in_data"],
+        }
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 

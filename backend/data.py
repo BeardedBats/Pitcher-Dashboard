@@ -855,6 +855,21 @@ def warmup_range_data(start_date="2026-02-10", end_date=None):
             pitch_data = aggregate_pitch_data_range(df)
             set_agg_cache(f"leaderboard_pitch-data_{start_date}_{end_date}", pitch_data)
 
+            # Pre-compute per-team aggregations so team pages load instantly
+            if "pitcher_team" in df.columns:
+                with _warmup_lock:
+                    _warmup_status["progress"] = "Pre-computing team aggregations..."
+                teams = df["pitcher_team"].dropna().unique()
+                for team in teams:
+                    tdf = df[df["pitcher_team"] == team]
+                    if tdf.empty:
+                        continue
+                    t_results = aggregate_pitcher_results_range(tdf)
+                    set_agg_cache(f"team_{team}_results_{start_date}_{end_date}", t_results)
+                    t_pitch = aggregate_pitch_data_range(tdf)
+                    set_agg_cache(f"team_{team}_pitch-data_{start_date}_{end_date}", t_pitch)
+                print(f"[Warmup] Team aggregations cached for {len(teams)} teams")
+
             # Also warm the daily cache for the default date so first game load is instant
             with _warmup_lock:
                 _warmup_status["progress"] = "Warming default date cache..."
@@ -896,6 +911,133 @@ def start_warmup(start_date="2026-02-10", end_date=None):
     t = threading.Thread(target=warmup_range_data, args=(start_date, end_date), daemon=True)
     t.start()
     return t
+
+
+# ── Player page computation (shared by API endpoint and warmup) ──
+
+def compute_player_page(df, pitcher_id):
+    """Compute the full player page result dict for a single pitcher.
+    Expects the full season DataFrame (not pre-filtered).
+    Returns the result dict, or None if the pitcher has no data."""
+    from aggregation import (
+        aggregate_pitch_data_range, get_pitcher_game_log,
+        _prep_df, build_pitches_list,
+    )
+
+    pdf = df[df["pitcher"] == pitcher_id]
+    if pdf.empty:
+        return None
+
+    name = pdf["player_name"].iloc[0]
+    teams = list(pdf["pitcher_team"].unique()) if "pitcher_team" in pdf.columns else []
+    hand = pdf["p_throws"].iloc[0] if "p_throws" in pdf.columns else ""
+    info = {"name": name, "teams": teams, "hand": hand, "pitcher_id": int(pitcher_id)}
+
+    pdf_prepped = _prep_df(pdf)
+    pitch_summary = aggregate_pitch_data_range(pdf_prepped, prepped=True)
+
+    pdf_vs_l = pdf_prepped[pdf_prepped["stand"] == "L"] if "stand" in pdf_prepped.columns else pdf_prepped.iloc[0:0]
+    pdf_vs_r = pdf_prepped[pdf_prepped["stand"] == "R"] if "stand" in pdf_prepped.columns else pdf_prepped.iloc[0:0]
+    pitch_summary_vs_l = aggregate_pitch_data_range(pdf_vs_l, prepped=True) if not pdf_vs_l.empty else []
+    pitch_summary_vs_r = aggregate_pitch_data_range(pdf_vs_r, prepped=True) if not pdf_vs_r.empty else []
+
+    game_log = get_pitcher_game_log(df, pitcher_id)
+
+    if game_log:
+        total_pitches = sum(g.get("pitches", 0) for g in game_log)
+        total_ip_thirds = 0
+        for g in game_log:
+            ip_val = g.get("ip", "0.0")
+            parts = str(ip_val).split(".")
+            full = int(parts[0])
+            thirds = int(parts[1]) if len(parts) > 1 else 0
+            total_ip_thirds += full * 3 + thirds
+        results_summary = {
+            "games": len(game_log),
+            "ip": f"{total_ip_thirds // 3}.{total_ip_thirds % 3}",
+            "hits": sum(g.get("hits", 0) for g in game_log),
+            "bbs": sum(g.get("bbs", 0) for g in game_log),
+            "ks": sum(g.get("ks", 0) for g in game_log),
+            "hrs": sum(g.get("hrs", 0) for g in game_log),
+            "er": sum(g.get("er", 0) for g in game_log),
+            "whiffs": sum(g.get("whiffs", 0) for g in game_log),
+            "csw_pct": round(sum(g.get("csw_pct", 0) * g.get("pitches", 0) for g in game_log) / total_pitches, 1) if total_pitches > 0 else 0,
+            "pitches": total_pitches,
+        }
+    else:
+        results_summary = {}
+
+    per_game_summaries = {}
+    for gpk in pdf_prepped["game_pk"].unique():
+        gpdf = pdf_prepped[pdf_prepped["game_pk"] == gpk]
+        per_game_summaries[str(int(gpk))] = {
+            "all": aggregate_pitch_data_range(gpdf, prepped=True),
+            "vs_l": aggregate_pitch_data_range(gpdf[gpdf["stand"] == "L"], prepped=True) if (gpdf["stand"] == "L").any() else [],
+            "vs_r": aggregate_pitch_data_range(gpdf[gpdf["stand"] == "R"], prepped=True) if (gpdf["stand"] == "R").any() else [],
+        }
+
+    all_pitches = build_pitches_list(pdf)
+    sz_top = float(pdf["sz_top"].mean()) if "sz_top" in pdf.columns and pdf["sz_top"].notna().any() else 3.5
+    sz_bot = float(pdf["sz_bot"].mean()) if "sz_bot" in pdf.columns and pdf["sz_bot"].notna().any() else 1.5
+
+    return {
+        "info": info, "pitch_summary": pitch_summary,
+        "pitch_summary_vs_l": pitch_summary_vs_l, "pitch_summary_vs_r": pitch_summary_vs_r,
+        "per_game_summaries": per_game_summaries, "results_summary": results_summary,
+        "game_log": game_log, "pitches": all_pitches, "sz_top": sz_top, "sz_bot": sz_bot,
+    }
+
+
+def get_top400_pitcher_ids(df):
+    """Return a dict of {pitcher_id: name} for Top 400 pitchers found in the data."""
+    from top400 import is_top400
+    if "player_name" not in df.columns or "pitcher" not in df.columns:
+        return {}
+    # Build unique pitcher_id → name mapping from the DataFrame
+    pitcher_map = df.drop_duplicates(subset=["pitcher"])[["pitcher", "player_name"]].set_index("pitcher")["player_name"].to_dict()
+    return {int(pid): name for pid, name in pitcher_map.items() if is_top400(name)}
+
+
+def warmup_player_pages(df, start_date, end_date, pitcher_ids=None, only_date=None):
+    """Pre-compute and cache player pages.
+
+    Args:
+        df: Full season DataFrame (already loaded).
+        start_date, end_date: Date range strings (for cache key).
+        pitcher_ids: List of pitcher IDs to compute. If None, computes all Top 400.
+        only_date: If set, only compute for pitchers who pitched on this date.
+
+    Returns:
+        dict with 'computed' count and 'skipped' count.
+    """
+    top400_map = get_top400_pitcher_ids(df)
+    if pitcher_ids is not None:
+        target_ids = [pid for pid in pitcher_ids if pid in top400_map]
+    else:
+        target_ids = list(top400_map.keys())
+
+    # If only_date is set, filter to pitchers who pitched on that date
+    if only_date and "game_date" in df.columns:
+        day_df = df[df["game_date"] == only_date]
+        day_pitcher_ids = set(day_df["pitcher"].unique().astype(int))
+        target_ids = [pid for pid in target_ids if pid in day_pitcher_ids]
+
+    computed = 0
+    skipped = 0
+    for pid in target_ids:
+        agg_key = f"player_v2_{pid}_{start_date}_{end_date}"
+        try:
+            result = compute_player_page(df, pid)
+            if result is not None:
+                set_agg_cache(agg_key, result)
+                computed += 1
+            else:
+                skipped += 1
+        except Exception as e:
+            print(f"[PlayerWarmup] Error computing player {pid} ({top400_map.get(pid)}): {e}")
+            skipped += 1
+
+    return {"computed": computed, "skipped": skipped, "total_top400_in_data": len(top400_map)}
 
 
 def get_warmup_status():
