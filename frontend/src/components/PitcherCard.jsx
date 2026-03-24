@@ -592,14 +592,18 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                                       </div>
                                     )}
 
+                                    {/* Sub-label row (e.g. "Swinging Strike") — right-aligned under result */}
+                                    {result.isK && result.subLabel && (
+                                      <div style={{ textAlign: "right", fontSize: "0.85em", color: "rgba(180,184,210,0.7)", marginBottom: 4 }}>
+                                        {result.subLabel}
+                                      </div>
+                                    )}
+
                                     {/* Body: text left, strikezone right */}
                                     <div style={{ display: "flex", gap: 10 }}>
                                       <div style={{ flex: 1 }}>
-                                        <div className="pt-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: "0.85em" }}>
-                                          <span>vs {pa.batter}</span>
-                                          {result.isK && result.subLabel && (
-                                            <span style={{ color: "rgba(180,184,210,0.7)" }}>{result.subLabel}</span>
-                                          )}
+                                        <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
+                                          vs {pa.batter}
                                         </div>
                                         <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
                                           {seg.isTop ? "Top" : "Bot"} {ordinal(seg.inning)} | {pa.outs || 0} Out{(pa.outs || 0) !== 1 ? "s" : ""}
@@ -615,7 +619,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                                         )}
                                       </div>
                                       {hp.plate_x != null && hp.plate_z != null && (
-                                        <div style={{ flexShrink: 0, display: "flex", alignItems: "flex-end", paddingTop: result.isK && result.subLabel ? 16 : 0 }}>
+                                        <div style={{ flexShrink: 0, display: "flex", alignItems: "flex-end", paddingTop: 0 }}>
                                           <svg width="65" height="103" viewBox="0 0 65 103">
                                             <rect x="12" y="17" width="41" height="50" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
                                             {[1, 2].map(i => (
