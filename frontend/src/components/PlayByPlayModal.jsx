@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { PITCH_COLORS, PITCH_DESC_COLORS, BATTED_BALL_COLORS, BIP_QUALITY_COLORS, displayAbbrev } from "../constants";
 import { getResultColor, classifyBattedBall, getBIPQuality } from "../utils/formatting";
 import { getTooltipResult } from "../utils/pitchFilters";
+import useIsMobile from "../hooks/useIsMobile";
 import StrikeZonePBP from "./StrikeZonePBP";
 
 const TYPE_TO_NAME = {
@@ -78,6 +79,7 @@ function computeInningStats(pas, pitcherId) {
 }
 
 export default function PlayByPlayModal({ data, inning: initialInning, isTop: initialIsTop, pitcherId, onClose }) {
+  const isMobile = useIsMobile();
   const [expanded, setExpanded] = useState({});
   const [activePaIndex, setActivePaIndex] = useState(0);
   const [pitchHover, setPitchHover] = useState(null);
@@ -370,6 +372,7 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                   awayTeam={data.away_team}
                   homeTeam={data.home_team}
                   pitcherTeam={teamPitching}
+                  isMobile={isMobile}
                 />
                 {pitchHover && (() => {
                   const hp = pitchHover.pitch;
@@ -437,19 +440,15 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                         </div>
                       )}
 
-                      {/* Sub-label row (e.g. "Swinging Strike") — right-aligned under result */}
-                      {result.isK && result.subLabel && (
-                        <div style={{ textAlign: "right", fontSize: "0.85em", color: "rgba(180,184,210,0.7)", marginBottom: 4 }}>
-                          {result.subLabel}
-                        </div>
-                      )}
-
                       {/* Body: text left, strikezone right */}
                       <div style={{ display: "flex", gap: 10 }}>
                         <div style={{ flex: 1 }}>
-                          {/* vs Batter */}
-                          <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
-                            vs {activePa.batter}
+                          {/* vs Batter (left) | Strikeout sub-label (right) */}
+                          <div className="pt-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: "0.85em" }}>
+                            <span>vs {activePa.batter}</span>
+                            {result.isK && result.subLabel && (
+                              <span style={{ color: "rgba(180,184,210,0.7)" }}>{result.subLabel}</span>
+                            )}
                           </div>
 
                           {/* Inning + bases */}

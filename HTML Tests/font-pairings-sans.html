@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Font Pairing Options — Sans-Serif Edition</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Nunito+Sans:wght@400;500;600&family=Work+Sans:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600&family=Outfit:wght@400;500;600&family=Manrope:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #21243A;
+    --surface: #262940;
+    --surface2: #2E3150;
+    --border: #363A54;
+    --text: #E0E2EC;
+    --text-bright: #F0F1F5;
+    --text-muted: #C0C4D8;
+    --text-dim: #8A8EB0;
+    --accent: #55e8ff;
+    --accent-soft: #70d4f0;
+    --accent-hover: #8cf0ff;
+    --accent-glow: rgba(85, 232, 255, 0.12);
+    --label: #fb9e2a;
+    --label-bright: #FFC46A;
+    --name: #55e8ff;
+    --row-border: rgba(54, 58, 84, 0.55);
+    --row-border-light: rgba(64, 68, 100, 0.55);
+    --hover-tint: rgba(85, 232, 255, 0.04);
+    --radius: 10px;
+    --radius-sm: 6px;
+  }
+
+  body {
+    background: #181a2a;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    padding: 40px 32px;
+    -webkit-font-smoothing: antialiased;
+    font-size: 15px;
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    background: linear-gradient(90deg, #FFC46A 0%, #fb9e2a 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 14px;
+    margin-bottom: 48px;
+  }
+
+  .pairing {
+    max-width: 920px;
+    margin: 0 auto 56px;
+  }
+  .pairing-label {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+  .pairing-number {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--label);
+    background: rgba(251, 158, 42, 0.12);
+    border: 1px solid rgba(251, 158, 42, 0.25);
+    border-radius: 4px;
+    padding: 3px 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .pairing-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-bright);
+  }
+  .pairing-desc {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+  .pairing-desc code {
+    background: rgba(85, 232, 255, 0.08);
+    color: var(--accent);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+
+  /* === Faithful dashboard recreation === */
+  .mock {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .mock-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .mock-title {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    background: linear-gradient(90deg, #FFC46A 0%, #fb9e2a 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+    flex-shrink: 0;
+  }
+  .mock-nav {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+  }
+  .mock-nav-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    padding: 5px 14px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .mock-nav-btn.active {
+    background: linear-gradient(135deg, rgba(85, 232, 255, 0.18), rgba(85, 232, 255, 0.06));
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .mock-tabs {
+    display: flex;
+    gap: 8px;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .mock-tab {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    padding: 5px 12px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .mock-tab.active {
+    background: linear-gradient(135deg, rgba(85, 232, 255, 0.18), rgba(85, 232, 255, 0.06));
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+    box-shadow: 0 0 10px var(--accent-glow);
+  }
+
+  .mock-table-wrap {
+    padding: 0 24px 20px;
+  }
+
+  .mock-table-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: table;
+    margin: 0 auto;
+  }
+
+  .mock-table-card table {
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mock-table-card thead th {
+    background: var(--surface2);
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 11px;
+    border-bottom: 2px solid var(--border);
+    white-space: nowrap;
+    padding: 8px 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    text-align: left;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .mock-table-card thead th.r { text-align: right; }
+
+  .mock-table-card tbody tr {
+    border-bottom: 1px solid var(--row-border-light);
+    transition: background 0.1s;
+    cursor: pointer;
+  }
+  .mock-table-card tbody tr:last-child { border-bottom: none; }
+  .mock-table-card tbody tr:nth-child(even) { background: rgba(255,255,255,0.012); }
+  .mock-table-card tbody tr:hover { background: var(--hover-tint); }
+
+  .mock-table-card tbody td {
+    padding: 7px 10px;
+    white-space: nowrap;
+    color: var(--text);
+  }
+  .mock-table-card tbody td.r { text-align: right; }
+
+  .mock-table-card .pitcher-name { color: var(--text-bright); font-weight: 500; }
+  .mock-table-card .pitcher-top400 { color: #f0c040; font-weight: 600; }
+  .mock-table-card .dim { color: #B4B9DB; }
+  .mock-table-card .team-col { color: var(--text-muted); }
+
+  .font-14 tbody td { font-size: 14px; }
+  .font-13 tbody td { font-size: 13px; }
+  .font-13-5 tbody td { font-size: 13.5px; }
+
+  .divider {
+    max-width: 920px;
+    margin: 0 auto 56px;
+    border: none;
+    border-top: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+
+<h1>Font Pairing Options — Sans-Serif</h1>
+<p class="subtitle">DM Sans (headers) paired with five sans-serif body fonts. No monospace — all proportional, all clean.</p>
+
+<!-- ========== OPTION 6: Nunito Sans ========== -->
+<div class="pairing">
+  <div class="pairing-label">
+    <span class="pairing-number">Option 6</span>
+    <span class="pairing-title">DM Sans + Nunito Sans</span>
+  </div>
+  <p class="pairing-desc">
+    Rounded terminals and generous x-height give Nunito Sans a warm, approachable feel — softening the data-heavy table without sacrificing legibility. The roundness contrasts nicely with DM Sans' sharper geometry. Great if you want the dashboard to feel less intimidating and more inviting. <code>font-family: 'Nunito Sans', sans-serif</code>
+  </p>
+  <div class="mock">
+    <div class="mock-header">
+      <span class="mock-title">Live Pitch Dashboard</span>
+      <div class="mock-nav">
+        <span class="mock-nav-btn active">Pitcher Results</span>
+        <span class="mock-nav-btn">Pitch Data</span>
+        <span class="mock-nav-btn">Leaderboard</span>
+      </div>
+    </div>
+    <div class="mock-tabs">
+      <span class="mock-tab active">AZ @ CHC</span>
+      <span class="mock-tab">ATL @ NYY</span>
+      <span class="mock-tab">BAL @ MIN</span>
+      <span class="mock-tab">BOS @ TB</span>
+      <span class="mock-tab">CLE @ DET</span>
+      <span class="mock-tab">LAD @ SD</span>
+    </div>
+    <div class="mock-table-wrap">
+      <div class="mock-table-card font-14" style="font-family: 'Nunito Sans', sans-serif;">
+        <table>
+          <thead>
+            <tr><th>Pitcher</th><th>Team</th><th>Hand</th><th>Opp</th><th class="r">IP</th><th class="r">ER</th><th class="r">H</th><th class="r">BB</th><th class="r">K</th><th class="r">CSW%</th><th class="r">Whfs</th><th class="r">#</th><th class="r">HR</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="pitcher-name pitcher-top400">Paul Skenes</span></td><td class="team-col">PIT</td><td>RHP</td><td>vs. AZ</td><td class="r">6.0</td><td class="r">1</td><td class="r">4</td><td class="r">1</td><td class="r">8</td><td class="r">32.4</td><td class="r">12</td><td class="r">89</td><td class="r">1</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Cristopher Sánchez</span></td><td class="team-col">PHI</td><td>LHP</td><td>@ NYM</td><td class="r">5.2</td><td class="r">2</td><td class="r">6</td><td class="r">2</td><td class="r">5</td><td class="r">28.1</td><td class="r">7</td><td class="r">84</td><td class="r">0</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Garrett Crochet</span></td><td class="team-col">BOS</td><td>LHP</td><td>@ TB</td><td class="r">7.0</td><td class="r">0</td><td class="r">3</td><td class="r">0</td><td class="r">10</td><td class="r">35.6</td><td class="r">14</td><td class="r">95</td><td class="r">0</td></tr>
+            <tr><td><span class="pitcher-name">Marcus Stroman</span></td><td class="team-col">NYM</td><td>RHP</td><td>vs. PHI</td><td class="r">5.0</td><td class="r">3</td><td class="r">7</td><td class="r">1</td><td class="r">4</td><td class="r">24.7</td><td class="r">5</td><td class="r">78</td><td class="r">1</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Logan Gilbert</span></td><td class="team-col">SEA</td><td>RHP</td><td>@ LAA</td><td class="r">6.1</td><td class="r">2</td><td class="r">5</td><td class="r">1</td><td class="r">7</td><td class="r">30.2</td><td class="r">9</td><td class="r">91</td><td class="r">1</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Randy Vásquez</span></td><td class="team-col">CLE</td><td>RHP</td><td>@ DET</td><td class="r">4.1</td><td class="r">4</td><td class="r">8</td><td class="r">3</td><td class="r">3</td><td class="r">22.3</td><td class="r">4</td><td class="r">72</td><td class="r">1</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== OPTION 7: Work Sans ========== -->
+<div class="pairing">
+  <div class="pairing-label">
+    <span class="pairing-number">Option 7</span>
+    <span class="pairing-title">DM Sans + Work Sans</span>
+  </div>
+  <p class="pairing-desc">
+    Designed specifically for on-screen text at small to medium sizes. Work Sans has a slightly condensed width that lets long pitcher names breathe while keeping columns tight. The subtle quirkiness in letterforms (the lowercase 'a' and 'g') adds character without being distracting. <code>font-family: 'Work Sans', sans-serif</code>
+  </p>
+  <div class="mock">
+    <div class="mock-header">
+      <span class="mock-title">Live Pitch Dashboard</span>
+      <div class="mock-nav">
+        <span class="mock-nav-btn active">Pitcher Results</span>
+        <span class="mock-nav-btn">Pitch Data</span>
+        <span class="mock-nav-btn">Leaderboard</span>
+      </div>
+    </div>
+    <div class="mock-tabs">
+      <span class="mock-tab active">AZ @ CHC</span>
+      <span class="mock-tab">ATL @ NYY</span>
+      <span class="mock-tab">BAL @ MIN</span>
+      <span class="mock-tab">BOS @ TB</span>
+      <span class="mock-tab">CLE @ DET</span>
+      <span class="mock-tab">LAD @ SD</span>
+    </div>
+    <div class="mock-table-wrap">
+      <div class="mock-table-card font-14" style="font-family: 'Work Sans', sans-serif;">
+        <table>
+          <thead>
+            <tr><th>Pitcher</th><th>Team</th><th>Hand</th><th>Opp</th><th class="r">IP</th><th class="r">ER</th><th class="r">H</th><th class="r">BB</th><th class="r">K</th><th class="r">CSW%</th><th class="r">Whfs</th><th class="r">#</th><th class="r">HR</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="pitcher-name pitcher-top400">Paul Skenes</span></td><td class="team-col">PIT</td><td>RHP</td><td>vs. AZ</td><td class="r">6.0</td><td class="r">1</td><td class="r">4</td><td class="r">1</td><td class="r">8</td><td class="r">32.4</td><td class="r">12</td><td class="r">89</td><td class="r">1</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Cristopher Sánchez</span></td><td class="team-col">PHI</td><td>LHP</td><td>@ NYM</td><td class="r">5.2</td><td class="r">2</td><td class="r">6</td><td class="r">2</td><td class="r">5</td><td class="r">28.1</td><td class="r">7</td><td class="r">84</td><td class="r">0</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Garrett Crochet</span></td><td class="team-col">BOS</td><td>LHP</td><td>@ TB</td><td class="r">7.0</td><td class="r">0</td><td class="r">3</td><td class="r">0</td><td class="r">10</td><td class="r">35.6</td><td class="r">14</td><td class="r">95</td><td class="r">0</td></tr>
+            <tr><td><span class="pitcher-name">Marcus Stroman</span></td><td class="team-col">NYM</td><td>RHP</td><td>vs. PHI</td><td class="r">5.0</td><td class="r">3</td><td class="r">7</td><td class="r">1</td><td class="r">4</td><td class="r">24.7</td><td class="r">5</td><td class="r">78</td><td class="r">1</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Logan Gilbert</span></td><td class="team-col">SEA</td><td>RHP</td><td>@ LAA</td><td class="r">6.1</td><td class="r">2</td><td class="r">5</td><td class="r">1</td><td class="r">7</td><td class="r">30.2</td><td class="r">9</td><td class="r">91</td><td class="r">1</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Randy Vásquez</span></td><td class="team-col">CLE</td><td>RHP</td><td>@ DET</td><td class="r">4.1</td><td class="r">4</td><td class="r">8</td><td class="r">3</td><td class="r">3</td><td class="r">22.3</td><td class="r">4</td><td class="r">72</td><td class="r">1</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== OPTION 8: Plus Jakarta Sans ========== -->
+<div class="pairing">
+  <div class="pairing-label">
+    <span class="pairing-number">Option 8</span>
+    <span class="pairing-title">DM Sans + Plus Jakarta Sans</span>
+  </div>
+  <p class="pairing-desc">
+    A geometric sans with soft, slightly rounded strokes — sharing DNA with DM Sans but with a tighter, more compact rhythm. This pairing creates visual harmony since both fonts come from the same geometric tradition, while Jakarta's narrower proportions keep the table data visually distinct from the headers. <code>font-family: 'Plus Jakarta Sans', sans-serif</code>
+  </p>
+  <div class="mock">
+    <div class="mock-header">
+      <span class="mock-title">Live Pitch Dashboard</span>
+      <div class="mock-nav">
+        <span class="mock-nav-btn active">Pitcher Results</span>
+        <span class="mock-nav-btn">Pitch Data</span>
+        <span class="mock-nav-btn">Leaderboard</span>
+      </div>
+    </div>
+    <div class="mock-tabs">
+      <span class="mock-tab active">AZ @ CHC</span>
+      <span class="mock-tab">ATL @ NYY</span>
+      <span class="mock-tab">BAL @ MIN</span>
+      <span class="mock-tab">BOS @ TB</span>
+      <span class="mock-tab">CLE @ DET</span>
+      <span class="mock-tab">LAD @ SD</span>
+    </div>
+    <div class="mock-table-wrap">
+      <div class="mock-table-card font-14" style="font-family: 'Plus Jakarta Sans', sans-serif;">
+        <table>
+          <thead>
+            <tr><th>Pitcher</th><th>Team</th><th>Hand</th><th>Opp</th><th class="r">IP</th><th class="r">ER</th><th class="r">H</th><th class="r">BB</th><th class="r">K</th><th class="r">CSW%</th><th class="r">Whfs</th><th class="r">#</th><th class="r">HR</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="pitcher-name pitcher-top400">Paul Skenes</span></td><td class="team-col">PIT</td><td>RHP</td><td>vs. AZ</td><td class="r">6.0</td><td class="r">1</td><td class="r">4</td><td class="r">1</td><td class="r">8</td><td class="r">32.4</td><td class="r">12</td><td class="r">89</td><td class="r">1</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Cristopher Sánchez</span></td><td class="team-col">PHI</td><td>LHP</td><td>@ NYM</td><td class="r">5.2</td><td class="r">2</td><td class="r">6</td><td class="r">2</td><td class="r">5</td><td class="r">28.1</td><td class="r">7</td><td class="r">84</td><td class="r">0</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Garrett Crochet</span></td><td class="team-col">BOS</td><td>LHP</td><td>@ TB</td><td class="r">7.0</td><td class="r">0</td><td class="r">3</td><td class="r">0</td><td class="r">10</td><td class="r">35.6</td><td class="r">14</td><td class="r">95</td><td class="r">0</td></tr>
+            <tr><td><span class="pitcher-name">Marcus Stroman</span></td><td class="team-col">NYM</td><td>RHP</td><td>vs. PHI</td><td class="r">5.0</td><td class="r">3</td><td class="r">7</td><td class="r">1</td><td class="r">4</td><td class="r">24.7</td><td class="r">5</td><td class="r">78</td><td class="r">1</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Logan Gilbert</span></td><td class="team-col">SEA</td><td>RHP</td><td>@ LAA</td><td class="r">6.1</td><td class="r">2</td><td class="r">5</td><td class="r">1</td><td class="r">7</td><td class="r">30.2</td><td class="r">9</td><td class="r">91</td><td class="r">1</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Randy Vásquez</span></td><td class="team-col">CLE</td><td>RHP</td><td>@ DET</td><td class="r">4.1</td><td class="r">4</td><td class="r">8</td><td class="r">3</td><td class="r">3</td><td class="r">22.3</td><td class="r">4</td><td class="r">72</td><td class="r">1</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== OPTION 9: Outfit ========== -->
+<div class="pairing">
+  <div class="pairing-label">
+    <span class="pairing-number">Option 9</span>
+    <span class="pairing-title">DM Sans + Outfit</span>
+  </div>
+  <p class="pairing-desc">
+    A variable geometric sans with clean, open letterforms and excellent number rendering. Outfit's wide apertures and even stroke widths make digits extremely clear at small sizes — ideal for dense stat tables. The geometric construction complements DM Sans while the slightly taller x-height creates just enough visual separation. <code>font-family: 'Outfit', sans-serif</code>
+  </p>
+  <div class="mock">
+    <div class="mock-header">
+      <span class="mock-title">Live Pitch Dashboard</span>
+      <div class="mock-nav">
+        <span class="mock-nav-btn active">Pitcher Results</span>
+        <span class="mock-nav-btn">Pitch Data</span>
+        <span class="mock-nav-btn">Leaderboard</span>
+      </div>
+    </div>
+    <div class="mock-tabs">
+      <span class="mock-tab active">AZ @ CHC</span>
+      <span class="mock-tab">ATL @ NYY</span>
+      <span class="mock-tab">BAL @ MIN</span>
+      <span class="mock-tab">BOS @ TB</span>
+      <span class="mock-tab">CLE @ DET</span>
+      <span class="mock-tab">LAD @ SD</span>
+    </div>
+    <div class="mock-table-wrap">
+      <div class="mock-table-card font-14" style="font-family: 'Outfit', sans-serif;">
+        <table>
+          <thead>
+            <tr><th>Pitcher</th><th>Team</th><th>Hand</th><th>Opp</th><th class="r">IP</th><th class="r">ER</th><th class="r">H</th><th class="r">BB</th><th class="r">K</th><th class="r">CSW%</th><th class="r">Whfs</th><th class="r">#</th><th class="r">HR</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="pitcher-name pitcher-top400">Paul Skenes</span></td><td class="team-col">PIT</td><td>RHP</td><td>vs. AZ</td><td class="r">6.0</td><td class="r">1</td><td class="r">4</td><td class="r">1</td><td class="r">8</td><td class="r">32.4</td><td class="r">12</td><td class="r">89</td><td class="r">1</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Cristopher Sánchez</span></td><td class="team-col">PHI</td><td>LHP</td><td>@ NYM</td><td class="r">5.2</td><td class="r">2</td><td class="r">6</td><td class="r">2</td><td class="r">5</td><td class="r">28.1</td><td class="r">7</td><td class="r">84</td><td class="r">0</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Garrett Crochet</span></td><td class="team-col">BOS</td><td>LHP</td><td>@ TB</td><td class="r">7.0</td><td class="r">0</td><td class="r">3</td><td class="r">0</td><td class="r">10</td><td class="r">35.6</td><td class="r">14</td><td class="r">95</td><td class="r">0</td></tr>
+            <tr><td><span class="pitcher-name">Marcus Stroman</span></td><td class="team-col">NYM</td><td>RHP</td><td>vs. PHI</td><td class="r">5.0</td><td class="r">3</td><td class="r">7</td><td class="r">1</td><td class="r">4</td><td class="r">24.7</td><td class="r">5</td><td class="r">78</td><td class="r">1</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Logan Gilbert</span></td><td class="team-col">SEA</td><td>RHP</td><td>@ LAA</td><td class="r">6.1</td><td class="r">2</td><td class="r">5</td><td class="r">1</td><td class="r">7</td><td class="r">30.2</td><td class="r">9</td><td class="r">91</td><td class="r">1</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Randy Vásquez</span></td><td class="team-col">CLE</td><td>RHP</td><td>@ DET</td><td class="r">4.1</td><td class="r">4</td><td class="r">8</td><td class="r">3</td><td class="r">3</td><td class="r">22.3</td><td class="r">4</td><td class="r">72</td><td class="r">1</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ========== OPTION 10: Manrope ========== -->
+<div class="pairing">
+  <div class="pairing-label">
+    <span class="pairing-number">Option 10</span>
+    <span class="pairing-title">DM Sans + Manrope</span>
+  </div>
+  <p class="pairing-desc">
+    A semi-rounded, modern grotesque with optical size adjustments baked in — digits and letters are optimized for small UI contexts. Manrope has a subtle warmth (rounded stroke endings) without the full softness of Nunito Sans, landing in a sweet spot between clinical and friendly. Tabular figures are built-in. <code>font-family: 'Manrope', sans-serif</code>
+  </p>
+  <div class="mock">
+    <div class="mock-header">
+      <span class="mock-title">Live Pitch Dashboard</span>
+      <div class="mock-nav">
+        <span class="mock-nav-btn active">Pitcher Results</span>
+        <span class="mock-nav-btn">Pitch Data</span>
+        <span class="mock-nav-btn">Leaderboard</span>
+      </div>
+    </div>
+    <div class="mock-tabs">
+      <span class="mock-tab active">AZ @ CHC</span>
+      <span class="mock-tab">ATL @ NYY</span>
+      <span class="mock-tab">BAL @ MIN</span>
+      <span class="mock-tab">BOS @ TB</span>
+      <span class="mock-tab">CLE @ DET</span>
+      <span class="mock-tab">LAD @ SD</span>
+    </div>
+    <div class="mock-table-wrap">
+      <div class="mock-table-card font-14" style="font-family: 'Manrope', sans-serif;">
+        <table>
+          <thead>
+            <tr><th>Pitcher</th><th>Team</th><th>Hand</th><th>Opp</th><th class="r">IP</th><th class="r">ER</th><th class="r">H</th><th class="r">BB</th><th class="r">K</th><th class="r">CSW%</th><th class="r">Whfs</th><th class="r">#</th><th class="r">HR</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="pitcher-name pitcher-top400">Paul Skenes</span></td><td class="team-col">PIT</td><td>RHP</td><td>vs. AZ</td><td class="r">6.0</td><td class="r">1</td><td class="r">4</td><td class="r">1</td><td class="r">8</td><td class="r">32.4</td><td class="r">12</td><td class="r">89</td><td class="r">1</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Cristopher Sánchez</span></td><td class="team-col">PHI</td><td>LHP</td><td>@ NYM</td><td class="r">5.2</td><td class="r">2</td><td class="r">6</td><td class="r">2</td><td class="r">5</td><td class="r">28.1</td><td class="r">7</td><td class="r">84</td><td class="r">0</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Garrett Crochet</span></td><td class="team-col">BOS</td><td>LHP</td><td>@ TB</td><td class="r">7.0</td><td class="r">0</td><td class="r">3</td><td class="r">0</td><td class="r">10</td><td class="r">35.6</td><td class="r">14</td><td class="r">95</td><td class="r">0</td></tr>
+            <tr><td><span class="pitcher-name">Marcus Stroman</span></td><td class="team-col">NYM</td><td>RHP</td><td>vs. PHI</td><td class="r">5.0</td><td class="r">3</td><td class="r">7</td><td class="r">1</td><td class="r">4</td><td class="r">24.7</td><td class="r">5</td><td class="r">78</td><td class="r">1</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Logan Gilbert</span></td><td class="team-col">SEA</td><td>RHP</td><td>@ LAA</td><td class="r">6.1</td><td class="r">2</td><td class="r">5</td><td class="r">1</td><td class="r">7</td><td class="r">30.2</td><td class="r">9</td><td class="r">91</td><td class="r">1</td></tr>
+            <tr><td><span class="pitcher-name pitcher-top400">Randy Vásquez</span></td><td class="team-col">CLE</td><td>RHP</td><td>@ DET</td><td class="r">4.1</td><td class="r">4</td><td class="r">8</td><td class="r">3</td><td class="r">3</td><td class="r">22.3</td><td class="r">4</td><td class="r">72</td><td class="r">1</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="height: 40px;"></div>
+
+</body>
+</html>

@@ -3,15 +3,15 @@ import { PITCH_COLORS, PITCH_DESC_COLORS, getSZResultColor, BATTED_BALL_COLORS }
 import { classifyBattedBall } from "../utils/formatting";
 import { getTooltipResult } from "../utils/pitchFilters";
 
-const W = 310, H = 345;
+const DEFAULT_W = 310, DEFAULT_H = 345;
 const PAD = { top: 16, right: 16, bottom: 44, left: 16 };
-const PLOT_W = W - PAD.left - PAD.right;
-const PLOT_H = H - PAD.top - PAD.bottom;
 const X_RANGE = [-2, 2];
 const Y_RANGE = [0.5, 4.5];
 const HIT_RADIUS = 10;
 
-function toCanvas(px, pz) {
+function toCanvas(px, pz, W, H) {
+  const PLOT_W = W - PAD.left - PAD.right;
+  const PLOT_H = H - PAD.top - PAD.bottom;
   const x = PAD.left + ((px - X_RANGE[0]) / (X_RANGE[1] - X_RANGE[0])) * PLOT_W;
   const y = PAD.top + ((Y_RANGE[1] - pz) / (Y_RANGE[1] - Y_RANGE[0])) * PLOT_H;
   return [x, y];
@@ -32,9 +32,10 @@ function basesString(on1b, on2b, on3b) {
   return bases.join(" & ");
 }
 
-export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode = "pitch-type", onReclassify }) {
+export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode = "pitch-type", onReclassify, isMobile = false }) {
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
+  const containerRef = useRef(null);
   const [hover, setHover] = useState(null);
   const pitchPositions = useRef([]);
 
@@ -43,6 +44,20 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     const dpr = window.devicePixelRatio || 1;
+
+    // Determine responsive sizing
+    let W = DEFAULT_W, H = DEFAULT_H;
+    if (isMobile && containerRef.current) {
+      const containerWidth = containerRef.current.offsetWidth;
+      if (containerWidth > 0) {
+        W = Math.min(containerWidth - 24, 310);
+        H = Math.round(W * DEFAULT_H / DEFAULT_W);
+      } else {
+        W = 280;
+        H = 312;
+      }
+    }
+
     canvas.width = W * dpr;
     canvas.height = H * dpr;
     canvas.style.width = W + "px";
@@ -52,10 +67,13 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
     ctx.fillStyle = "#2E3150";
     ctx.fillRect(0, 0, W, H);
 
+    const PLOT_W = W - PAD.left - PAD.right;
+    const PLOT_H = H - PAD.top - PAD.bottom;
+
     const top = szTop || 3.5;
     const bot = szBot || 1.5;
-    const [zl, zt] = toCanvas(-0.83, top);
-    const [zr, zb] = toCanvas(0.83, bot);
+    const [zl, zt] = toCanvas(-0.83, top, W, H);
+    const [zr, zb] = toCanvas(0.83, bot, W, H);
 
     ctx.fillStyle = "rgba(100, 108, 150, 0.05)";
     ctx.fillRect(zl, zt, zr - zl, zb - zt);
@@ -103,7 +121,7 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
       filtered = filtered.filter(p => p.events);
     }
     filtered.forEach((p) => {
-      const [x, y] = toCanvas(-p.plate_x, p.plate_z);
+      const [x, y] = toCanvas(-p.plate_x, p.plate_z, W, H);
       if (x < PAD.left - 8 || x > PAD.left + PLOT_W + 8 || y < PAD.top - 8 || y > PAD.top + PLOT_H + 8) return;
       positions.push({ x, y, pitch: p });
       // Color based on mode
@@ -126,7 +144,7 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
     });
     ctx.globalAlpha = 1;
     pitchPositions.current = positions;
-  }, [pitches, szTop, szBot, stand, colorMode]);
+  }, [pitches, szTop, szBot, stand, colorMode, isMobile]);
 
   const findNearest = useCallback((mx, my) => {
     let closest = null;
@@ -139,45 +157,59 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
   }, []);
 
   const handleMouseMove = useCallback((e) => {
+    if (isMobile) return; // Skip mouse move on mobile
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const mx = (e.clientX - rect.left) * (W / rect.width);
-    const my = (e.clientY - rect.top) * (H / rect.height);
+    const W = rect.width;
+    const H = rect.height;
+    const mx = (e.clientX - rect.left) * (canvas.width / (W * (window.devicePixelRatio || 1)));
+    const my = (e.clientY - rect.top) * (canvas.height / (H * (window.devicePixelRatio || 1)));
     const nearest = findNearest(mx, my);
     if (nearest) {
       setHover({ pitch: nearest.pitch, x: e.clientX, y: e.clientY });
     } else {
       setHover(null);
     }
-  }, [findNearest]);
+  }, [findNearest, isMobile]);
 
   const handleMouseLeave = useCallback(() => setHover(null), []);
 
   const handleClick = useCallback((e) => {
-    if (!onReclassify) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const mx = (e.clientX - rect.left) * (W / rect.width);
-    const my = (e.clientY - rect.top) * (H / rect.height);
+    const W = rect.width;
+    const H = rect.height;
+    const mx = (e.clientX - rect.left) * (canvas.width / (W * (window.devicePixelRatio || 1)));
+    const my = (e.clientY - rect.top) * (canvas.height / (H * (window.devicePixelRatio || 1)));
     const nearest = findNearest(mx, my);
     if (nearest) {
-      onReclassify(nearest.pitch);
+      if (isMobile) {
+        // On mobile, tap shows tooltip
+        setHover({ pitch: nearest.pitch, x: e.clientX, y: e.clientY });
+      } else if (onReclassify) {
+        // On desktop, click can trigger reclassify
+        onReclassify(nearest.pitch);
+      }
+    } else if (isMobile) {
+      // On mobile, tap on empty area closes tooltip
+      setHover(null);
     }
-  }, [findNearest, onReclassify]);
+  }, [findNearest, isMobile, onReclassify]);
 
   const p = hover?.pitch;
 
   return (
-    <div ref={wrapRef} style={{ position: "relative", display: "inline-block" }}>
-      <canvas
-        ref={canvasRef}
-        style={{ borderRadius: 6, cursor: onReclassify ? "pointer" : "default" }}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={handleMouseLeave}
-        onClick={handleClick}
-      />
+    <div ref={containerRef} style={{ position: "relative", display: "inline-block", width: "100%" }}>
+      <div ref={wrapRef} style={{ position: "relative", display: "inline-block" }}>
+        <canvas
+          ref={canvasRef}
+          style={{ borderRadius: 6, cursor: onReclassify ? "pointer" : "default" }}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+          onClick={handleClick}
+        />
       {hover && p && (() => {
         const result = getTooltipResult(p);
         const isBIP = !!p.events && p.launch_speed != null && p.launch_angle != null &&
@@ -186,7 +218,19 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
         const bbColor = bbTag ? (BATTED_BALL_COLORS[bbTag] || "rgba(180,184,210,0.7)") : null;
 
         return (
-          <div className="pitch-tooltip" style={(() => {
+          <div className={isMobile ? "pitch-tooltip mobile-tooltip" : "pitch-tooltip"} style={(() => {
+            if (isMobile) {
+              return {
+                position: "fixed",
+                bottom: 16,
+                left: 16,
+                right: 16,
+                transform: "none",
+                minWidth: "auto",
+                zIndex: 1000,
+                pointerEvents: "auto",
+              };
+            }
             const tx = hover.x + 16;
             const ty = hover.y - 16;
             return {
@@ -199,6 +243,30 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
               pointerEvents: "none",
             };
           })()}>
+            {isMobile && (
+              <button
+                className="mobile-tooltip-close"
+                onClick={() => setHover(null)}
+                style={{
+                  position: "absolute",
+                  top: 8,
+                  right: 8,
+                  background: "none",
+                  border: "none",
+                  color: "#e0e2ec",
+                  fontSize: "24px",
+                  cursor: "pointer",
+                  padding: 0,
+                  width: 32,
+                  height: 32,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                ×
+              </button>
+            )}
             {/* Header row 1: Pitch type + mph (left) | Result (right) */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: isBIP ? 0 : 4 }}>
               <div style={{ whiteSpace: "nowrap" }}>
@@ -234,20 +302,16 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
               </div>
             )}
 
-            {/* Sub-label row (e.g. "Swinging Strike") — right-aligned under result */}
-            {result.isK && result.subLabel && (
-              <div style={{ textAlign: "right", fontSize: "0.85em", color: "rgba(180,184,210,0.7)", marginBottom: 4 }}>
-                {result.subLabel}
-              </div>
-            )}
-
             {/* Body: text left, strikezone right */}
             <div style={{ display: "flex", gap: 10 }}>
               <div style={{ flex: 1 }}>
-                {/* vs Batter */}
+                {/* vs Batter (left) | Strikeout sub-label (right) */}
                 {(p.batter_name || p.batter) && (
-                  <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
-                    vs {p.batter_name || p.batter}
+                  <div className="pt-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: "0.85em" }}>
+                    <span>vs {p.batter_name || p.batter}</span>
+                    {result.isK && result.subLabel && (
+                      <span style={{ color: "rgba(180,184,210,0.7)" }}>{result.subLabel}</span>
+                    )}
                   </div>
                 )}
 
@@ -309,6 +373,7 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
           </div>
         );
       })()}
+      </div>
     </div>
   );
 }

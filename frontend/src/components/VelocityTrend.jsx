@@ -19,12 +19,13 @@ function hex2rgba(hex, a) {
   return `rgba(${parseInt(hex.slice(1, 3), 16)},${parseInt(hex.slice(3, 5), 16)},${parseInt(hex.slice(5, 7), 16)},${a})`;
 }
 
-export default function VelocityTrend({ pitches }) {
+export default function VelocityTrend({ pitches, isMobile }) {
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
   const dotsRef = useRef([]);
   const [hover, setHover] = useState(null);
   const [dims, setDims] = useState({ w: 0 });
+  const [mobileTooltipVis, setMobileTooltipVis] = useState(null);
 
   // Process pitches: sequential ordering, inning boundaries, type stats
   const { ordered, inningBounds, typeStats, pitchTypes } = useMemo(() => {
@@ -278,6 +279,7 @@ export default function VelocityTrend({ pitches }) {
   // Hover handling
   const handleMouseMove = useCallback(
     (e) => {
+      if (isMobile) return; // mobile uses tap instead
       const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
@@ -300,10 +302,37 @@ export default function VelocityTrend({ pitches }) {
       }
       canvas.style.cursor = near ? "pointer" : "default";
     },
-    [dims, totalH]
+    [dims, totalH, isMobile]
   );
 
-  const handleMouseLeave = useCallback(() => setHover(null), []);
+  const handleMouseLeave = useCallback(() => {
+    if (!isMobile) setHover(null);
+  }, [isMobile]);
+
+  const handleCanvasClick = useCallback((e) => {
+    if (!isMobile) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (dims.w / rect.width);
+    const my = (e.clientY - rect.top) * (totalH / rect.height);
+    const dots = dotsRef.current;
+    let near = null, md = 18;
+    for (const d of dots) {
+      const dist = Math.sqrt((mx - d.x) ** 2 + (my - d.y) ** 2);
+      if (dist < md) { md = dist; near = d; }
+    }
+
+    if (near) {
+      if (mobileTooltipVis && mobileTooltipVis.pitch === near.pitch) {
+        setMobileTooltipVis(null);
+      } else {
+        setMobileTooltipVis({ pitch: near.pitch, x: e.clientX, y: e.clientY });
+      }
+    } else {
+      setMobileTooltipVis(null);
+    }
+  }, [isMobile, mobileTooltipVis, dims, totalH]);
 
   if (!pitches || pitches.length === 0 || pitchTypes.length === 0) {
     return (
@@ -314,16 +343,25 @@ export default function VelocityTrend({ pitches }) {
   }
 
   const hp = hover?.pitch;
+  const mobileShowTooltip = isMobile && mobileTooltipVis;
+
+  const handleTapElsewhere = useCallback((e) => {
+    if (isMobile && mobileTooltipVis && !e.target.closest(".pitch-tooltip")) {
+      setMobileTooltipVis(null);
+    }
+  }, [isMobile, mobileTooltipVis]);
 
   return (
-    <div ref={wrapRef} className="velocity-trend-wrap" style={{ position: "relative", width: "100%" }}>
+    <div ref={wrapRef} className="velocity-trend-wrap" style={{ position: "relative", width: "100%" }} onClick={handleTapElsewhere}>
       <canvas
         ref={canvasRef}
         style={{ width: "100%", height: totalH + "px", borderRadius: 8, display: "block" }}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
+        onClick={handleCanvasClick}
       />
-      {hp && <VelocityTooltip pitch={hp} x={hover.x} y={hover.y} />}
+      {hp && !isMobile && <VelocityTooltip pitch={hp} x={hover.x} y={hover.y} />}
+      {mobileShowTooltip && <VelocityTooltipMobile pitch={mobileTooltipVis.pitch} x={mobileTooltipVis.x} y={mobileTooltipVis.y} onClose={() => setMobileTooltipVis(null)} />}
     </div>
   );
 }
@@ -335,6 +373,133 @@ function basesString(on1b, on2b, on3b) {
   if (on3b) bases.push("3rd");
   if (bases.length === 0) return "Bases Empty";
   return bases.join(" & ");
+}
+
+function VelocityTooltipMobile({ pitch: p, x, y, onClose }) {
+  const dc = PITCH_COLORS[p.pitch_name] || "#888";
+  const result = getTooltipResult(p);
+
+  const isBIP = !!p.events && p.launch_speed != null && p.launch_angle != null &&
+    (p.description || "").toLowerCase() === "hit_into_play";
+  const bbTag = isBIP ? classifyBattedBall(p.launch_speed, p.launch_angle) : null;
+  const bbColor = bbTag ? (BATTED_BALL_COLORS[bbTag] || "rgba(180,184,210,0.7)") : null;
+
+  const tx = x + 16;
+  const ty = y - 16;
+  const style = {
+    position: "fixed",
+    left: tx + 300 > window.innerWidth ? x - 310 : tx,
+    top: ty + 260 > window.innerHeight ? y - 260 : ty,
+    zIndex: 1000,
+    pointerEvents: "auto",
+  };
+
+  return (
+    <div className="pitch-tooltip mobile-tooltip" style={style}>
+      <button onClick={onClose} style={{
+        position: "absolute",
+        top: 8,
+        right: 8,
+        background: "none",
+        border: "none",
+        color: "#e0e2ec",
+        fontSize: 20,
+        cursor: "pointer",
+        padding: 0,
+        width: 24,
+        height: 24,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center"
+      }}>×</button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: isBIP ? 0 : 4 }}>
+        <div style={{ whiteSpace: "nowrap" }}>
+          <span style={{ color: dc, fontWeight: 600 }}>{p.pitch_name}</span>
+          <span style={{ marginLeft: 6, color: "#e0e2ec" }}>
+            {p.release_speed ? p.release_speed.toFixed(1) + " mph" : ""}
+          </span>
+          <span style={{ marginLeft: 6, color: "rgba(180,184,210,0.5)", fontSize: "0.85em" }}>#{p._seqNum}</span>
+        </div>
+        <div style={{ whiteSpace: "nowrap", color: result.color, fontWeight: 600, marginLeft: 12 }}>
+          {result.label}
+          {result.isK && (
+            result.isCalledStrikeThree
+              ? <span style={{ marginLeft: 3 }}>(<span style={{ display: "inline-block", transform: "scaleX(-1)" }}>K</span>)</span>
+              : <span style={{ marginLeft: 3 }}>(K)</span>
+          )}
+        </div>
+      </div>
+      {isBIP && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+          {p.launch_speed != null && (
+            <div style={{ fontSize: "0.85em", color: "rgba(180,184,210,0.7)" }}>
+              {p.launch_speed.toFixed(1)} EV · {p.launch_angle != null ? p.launch_angle.toFixed(0) + "° LA" : ""}
+            </div>
+          )}
+          {bbTag && (
+            <div style={{ color: bbColor, fontWeight: 600, fontSize: "0.85em", marginLeft: 12 }}>
+              {bbTag}
+            </div>
+          )}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ flex: 1 }}>
+          {(p.batter_name || p.batter) && (
+            <div className="pt-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: "0.85em" }}>
+              <span>vs {p.batter_name || p.batter}</span>
+              {result.isK && result.subLabel && (
+                <span style={{ color: "rgba(180,184,210,0.7)" }}>{result.subLabel}</span>
+              )}
+            </div>
+          )}
+          {p.inning != null && p.inning_topbot && (
+            <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
+              {p.inning_topbot === "Top" ? "Top" : "Bot"} {ordinal(p.inning)} | {basesString(p.on_1b, p.on_2b, p.on_3b)}
+            </div>
+          )}
+          {p.outs_when_up != null && p.balls != null && p.strikes != null && (
+            <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
+              {p.outs_when_up} Outs | {p.balls}-{p.strikes}
+            </div>
+          )}
+          {p.pfx_z != null && p.pfx_x != null && (
+            <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
+              iVB {p.pfx_z.toFixed(1)}" · iHB {(-p.pfx_x).toFixed(1)}"
+              {p.release_extension != null && ` · Ext ${p.release_extension.toFixed(1)}ft`}
+            </div>
+          )}
+        </div>
+        {p.plate_x != null && p.plate_z != null && (
+          <div style={{ flexShrink: 0, display: "flex", alignItems: "flex-end", paddingTop: 0 }}>
+            <svg width="65" height="103" viewBox="0 0 65 103">
+              <rect x="12" y="17" width="41" height="50" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
+              {[1, 2].map(i => (
+                <line key={`v${i}`} x1={12 + (i * 41) / 3} y1="17" x2={12 + (i * 41) / 3} y2="67" stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
+              ))}
+              {[1, 2].map(i => (
+                <line key={`h${i}`} x1="12" y1={17 + (i * 50) / 3} x2="53" y2={17 + (i * 50) / 3} stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
+              ))}
+              <polygon points="32.5,87 42,92 42,99 23,99 23,92" fill="rgba(140,145,175,0.22)" stroke="rgba(160,164,190,0.35)" strokeWidth="0.8" />
+              {(() => {
+                const isLeft = p.stand === "L";
+                const lx = isLeft ? 6 : 59;
+                const letters = isLeft ? ["L", "H", "B"] : ["R", "H", "B"];
+                return letters.map((ch, i) => (
+                  <text key={i} x={lx} y={33 + i * 10} fill="rgba(150,155,185,0.28)" fontSize="7" fontWeight="bold" textAnchor="middle" dominantBaseline="middle" fontFamily="'DM Sans', sans-serif">{ch}</text>
+                ));
+              })()}
+              {(() => {
+                const dotX = 12 + ((-p.plate_x + 0.83) / 1.66) * 41;
+                const dotY = 17 + ((3.5 - p.plate_z) / 2.0) * 50;
+                return <circle cx={dotX} cy={dotY} r="4" fill={dc} stroke="rgba(0,0,0,0.4)" strokeWidth="0.8" />;
+              })()}
+            </svg>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function VelocityTooltip({ pitch: p, x, y }) {
@@ -392,20 +557,16 @@ function VelocityTooltip({ pitch: p, x, y }) {
         </div>
       )}
 
-      {/* Sub-label row (e.g. "Swinging Strike") — right-aligned under result */}
-      {result.isK && result.subLabel && (
-        <div style={{ textAlign: "right", fontSize: "0.85em", color: "rgba(180,184,210,0.7)", marginBottom: 4 }}>
-          {result.subLabel}
-        </div>
-      )}
-
       {/* Body: text left, strikezone right */}
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
-          {/* vs Batter */}
+          {/* vs Batter (left) | Strikeout sub-label (right) */}
           {(p.batter_name || p.batter) && (
-            <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
-              vs {p.batter_name || p.batter}
+            <div className="pt-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: "0.85em" }}>
+              <span>vs {p.batter_name || p.batter}</span>
+              {result.isK && result.subLabel && (
+                <span style={{ color: "rgba(180,184,210,0.7)" }}>{result.subLabel}</span>
+              )}
             </div>
           )}
 

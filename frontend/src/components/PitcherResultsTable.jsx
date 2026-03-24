@@ -4,8 +4,9 @@ import { fmtPct, fmtInt } from "../utils/formatting";
 import { isTop400 } from "../top400";
 
 const TEAM_SPLIT_HIDE = ["team", "opponent"];
+const MOBILE_HIDE = ["hand"];
 
-export default function PitcherResultsTable({ data, onPitcherClick, spOnly, splitByTeam, top400Names }) {
+export default function PitcherResultsTable({ data, onPitcherClick, spOnly, splitByTeam, top400Names, isMobile }) {
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState("asc");
 
@@ -56,7 +57,7 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
   }, [data, splitByTeam]);
 
   const getColWidth = (key) => {
-    if (key === "pitcher") return maxPitcherWidth;
+    if (key === "pitcher") return isMobile ? 130 : maxPitcherWidth;
     if (key === "hand") return 52;
     if (key === "csw_pct") return 65;
     return 50;
@@ -98,11 +99,12 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
   };
 
   const renderTable = (rows, teamLabel, isCard) => {
-    const cols = isCard ? PITCHER_RESULTS_COLUMNS.filter(c => !TEAM_SPLIT_HIDE.includes(c.key)) : PITCHER_RESULTS_COLUMNS;
+    let cols = isCard ? PITCHER_RESULTS_COLUMNS.filter(c => !TEAM_SPLIT_HIDE.includes(c.key)) : PITCHER_RESULTS_COLUMNS;
+    if (isMobile) cols = cols.filter(c => !MOBILE_HIDE.includes(c.key));
     const oppLabel = isCard ? getTeamOppLabel(rows) : "";
-    const totalWidth = isCard ? cols.reduce((sum, c) => sum + getColWidth(c.key), 0) : undefined;
+    const totalWidth = isCard && !isMobile ? cols.reduce((sum, c) => sum + getColWidth(c.key), 0) : undefined;
     return (
-      <div className={isCard ? "team-card-wrapper" : ""} key={teamLabel || "all"} style={isCard ? { width: totalWidth + "px" } : undefined}>
+      <div className={isCard ? "team-card-wrapper" : ""} key={teamLabel || "all"} style={isCard && !isMobile ? { width: totalWidth + "px" } : undefined}>
         {teamLabel && (
           <div className="team-split-header">
             {teamLabel}
@@ -110,8 +112,8 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
           </div>
         )}
         <div className={isCard ? "team-card" : "table-wrapper"}>
-        <table style={isCard ? { tableLayout: "fixed", width: "100%" } : undefined}>
-          {isCard && (
+        <table style={isCard && !isMobile ? { tableLayout: "fixed", width: "100%" } : undefined}>
+          {isCard && !isMobile && (
             <colgroup>
               {cols.map(c => <col key={c.key} style={{ width: getColWidth(c.key) + "px" }} />)}
             </colgroup>
@@ -119,7 +121,10 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
           <thead>
             <tr>
               {cols.map(c => (
-                <th key={c.key} style={{ textAlign: c.align || "left" }} onClick={() => handleSort(c.key)}>
+                <th key={c.key}
+                  className={isMobile && c.key === "pitcher" ? "mobile-sticky-col" : ""}
+                  style={{ textAlign: c.align || "left", ...(isMobile && c.key === "pitcher" ? { left: 0, minWidth: 130 } : {}) }}
+                  onClick={() => handleSort(c.key)}>
                   {c.label}{sortKey === c.key ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : ""}
                 </th>
               ))}
@@ -130,7 +135,13 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
               <tr key={i} className="clickable-row"
                   onClick={(e) => onPitcherClick && onPitcherClick(r.pitcher_id, r.game_pk, e)}
                   onMouseDown={(e) => { if (e.button === 1 && onPitcherClick) { e.preventDefault(); onPitcherClick(r.pitcher_id, r.game_pk, e); } }}>
-                {cols.map(c => <td key={c.key} style={{ textAlign: c.align || "left" }}>{renderCell(r, c)}</td>)}
+                {cols.map(c => (
+                  <td key={c.key}
+                    className={isMobile && c.key === "pitcher" ? "mobile-sticky-col" : ""}
+                    style={{ textAlign: c.align || "left", ...(isMobile && c.key === "pitcher" ? { left: 0, minWidth: 130 } : {}) }}>
+                    {renderCell(r, c)}
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>

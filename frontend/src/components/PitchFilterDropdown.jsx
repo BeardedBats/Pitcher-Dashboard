@@ -13,9 +13,10 @@ import { PITCH_COLORS } from "../constants";
  *  - quickActions: { label, fn(currentSet, allOptions) => newSet }[]
  *  - columns: number            — # of grid columns (default 1)
  *  - colorMap: { [label]: color } — optional dot colors
+ *  - isMobile: boolean          — mobile mode (forces single column)
  */
 export default function PitchFilterDropdown({
-  options, selected, onChange, label, quickActions, columns = 1, colorMap, menuHeader,
+  options, selected, onChange, label, quickActions, columns = 1, colorMap, menuHeader, isMobile,
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -54,7 +55,7 @@ export default function PitchFilterDropdown({
         {someFiltered && <span className="pf-badge">{selected.size}</span>}
       </button>
       {open && (
-        <div className={`pf-menu${columns > 1 ? " pf-multi-col" : ""}`}>
+        <div className={`pf-menu${!isMobile && columns > 1 ? " pf-multi-col" : ""}`}>
           {menuHeader && <div className="pf-menu-header">{menuHeader}</div>}
           <div className="pf-quick-row">
             <span className="pf-quick" onClick={selectAll}>All</span>

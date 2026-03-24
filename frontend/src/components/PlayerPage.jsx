@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { PITCH_COLORS, CARD_PITCH_DATA_COLUMNS, displayAbbrev } from "../constants";
 import { fetchSeasonAverages } from "../utils/api";
+import useIsMobile from "../hooks/useIsMobile";
 import PitchDataTable from "./PitchDataTable";
 import StrikeZonePlot from "./StrikeZonePlot";
 import MovementPlot from "./MovementPlot";
@@ -14,6 +15,7 @@ const API = window.__BACKEND_PORT__
   : process.env.NODE_ENV === "development" ? "http://localhost:8000" : "";
 
 export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
+  const isMobile = useIsMobile();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadMsg, setLoadMsg] = useState("Loading player data...");
@@ -301,18 +303,27 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
             {/* ===== PITCH TYPE METRICS ===== */}
             <div className="card-section">
               <div className="metrics-header">
-                <div className="metrics-subnav">
-                  <button className={`metrics-subnav-btn${metricsView === "pitch-data" ? " active" : ""}`} onClick={() => setMetricsView("pitch-data")}>Pitch Type Metrics</button>
-                  <button className={`metrics-subnav-btn${metricsView === "results" ? " active" : ""}`} onClick={() => setMetricsView("results")}>Results</button>
-                  <button className={`metrics-subnav-btn${metricsView === "velocity-trend" ? " active" : ""}`} onClick={() => setMetricsView("velocity-trend")}>Velocity Trend</button>
-                  <button
-                    className={`metrics-subnav-btn${pbpDisabled ? " metrics-subnav-disabled" : ""}`}
-                    onClick={handlePbpClick}
-                    disabled={pbpDisabled}
-                  >
-                    Play-by-Play
-                  </button>
-                </div>
+                {isMobile ? (
+                  <select className="metrics-subnav-mobile" value={metricsView} onChange={e => setMetricsView(e.target.value)}>
+                    <option value="pitch-data">Pitch Type Metrics</option>
+                    <option value="results">Results</option>
+                    <option value="velocity-trend">Velocity Trend</option>
+                    <option value="play-by-play" disabled={pbpDisabled}>Play-by-Play</option>
+                  </select>
+                ) : (
+                  <div className="metrics-subnav">
+                    <button className={`metrics-subnav-btn${metricsView === "pitch-data" ? " active" : ""}`} onClick={() => setMetricsView("pitch-data")}>Pitch Type Metrics</button>
+                    <button className={`metrics-subnav-btn${metricsView === "results" ? " active" : ""}`} onClick={() => setMetricsView("results")}>Results</button>
+                    <button className={`metrics-subnav-btn${metricsView === "velocity-trend" ? " active" : ""}`} onClick={() => setMetricsView("velocity-trend")}>Velocity Trend</button>
+                    <button
+                      className={`metrics-subnav-btn${pbpDisabled ? " metrics-subnav-disabled" : ""}`}
+                      onClick={handlePbpClick}
+                      disabled={pbpDisabled}
+                    >
+                      Play-by-Play
+                    </button>
+                  </div>
+                )}
                 <div className="metrics-controls">
                   <div className="filter-pill-group">
                     <span className="filter-pill-label">Game</span>
@@ -349,18 +360,19 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                     showChange={true}
                     seasonAvgs={seasonAvgs}
                     batterFilter={batterFilter}
+                    isMobile={isMobile}
                   />
                   {loadingAvgs && <div className="loading-avgs">Loading season averages...</div>}
                 </div>
               )}
               {metricsView === "results" && (
                 <div className="metrics-card">
-                  <ResultsTable pitches={data?.pitches} batterFilter={batterFilter} gameFilter={gameFilter} />
+                  <ResultsTable pitches={data?.pitches} batterFilter={batterFilter} gameFilter={gameFilter} isMobile={isMobile} />
                 </div>
               )}
               {metricsView === "velocity-trend" && (
                 <div className="metrics-card">
-                  <VelocityTrend pitches={filteredPitches} />
+                  <VelocityTrend pitches={filteredPitches} isMobile={isMobile} />
                 </div>
               )}
             </div>
@@ -423,19 +435,19 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                   {(batterFilter === "all" || batterFilter === "L") && (
                     <div className="viz-card">
                       <div className="viz-card-label">vs LHB</div>
-                      <StrikeZonePlot pitches={filteredPitches} szTop={data.sz_top} szBot={data.sz_bot} stand="L" colorMode={szColorMode} />
+                      <StrikeZonePlot pitches={filteredPitches} szTop={data.sz_top} szBot={data.sz_bot} stand="L" colorMode={szColorMode} isMobile={isMobile} />
                     </div>
                   )}
                   {(batterFilter === "all" || batterFilter === "R") && (
                     <div className="viz-card">
                       <div className="viz-card-label">vs RHB</div>
-                      <StrikeZonePlot pitches={filteredPitches} szTop={data.sz_top} szBot={data.sz_bot} stand="R" colorMode={szColorMode} />
+                      <StrikeZonePlot pitches={filteredPitches} szTop={data.sz_top} szBot={data.sz_bot} stand="R" colorMode={szColorMode} isMobile={isMobile} />
                     </div>
                   )}
                 </div>
                 <div className="viz-card">
                   <div className="viz-card-label">Pitch Movement</div>
-                  <MovementPlot pitches={filteredPitches} hand={info.hand} />
+                  <MovementPlot pitches={filteredPitches} hand={info.hand} isMobile={isMobile} />
                 </div>
               </div>
             </div>

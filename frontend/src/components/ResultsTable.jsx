@@ -10,8 +10,9 @@ import { classifyBIPQuality } from "../utils/pitchFilters";
  *  - pitches: raw pitch-level data array
  *  - batterFilter: "all" | "L" | "R"
  *  - gameFilter: "all" | game_pk string
+ *  - isMobile: boolean for mobile responsive design
  */
-export default function ResultsTable({ pitches, batterFilter, gameFilter }) {
+export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobile }) {
   const resultData = useMemo(() => {
     if (!pitches || pitches.length === 0) return [];
 
@@ -222,10 +223,19 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter }) {
     <table style={{ width: "100%", fontVariantNumeric: "tabular-nums" }}>
       <thead>
         <tr>
-          {cols.map(c => (
+          {cols.map((c, i) => (
             <th key={c.key}
-                className={c.dividerRight ? "col-divider-right" : ""}
-                style={{ textAlign: c.align || "right" }}>
+                className={`${c.dividerRight ? "col-divider-right" : ""}${isMobile && i === 0 ? " mobile-sticky-col" : ""}`}
+                style={{
+                  textAlign: c.align || "right",
+                  ...(isMobile && i === 0 ? {
+                    position: "sticky",
+                    left: 0,
+                    zIndex: 2,
+                    background: "var(--surface2)",
+                    minWidth: 80
+                  } : {})
+                }}>
               {c.label}
             </th>
           ))}
@@ -234,10 +244,19 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter }) {
       <tbody>
         {resultData.map((r, i) => (
           <tr key={i}>
-            {cols.map(c => (
+            {cols.map((c, colIdx) => (
               <td key={c.key}
-                  className={c.dividerRight ? "col-divider-right" : ""}
-                  style={{ textAlign: c.align || "right" }}>
+                  className={`${c.dividerRight ? "col-divider-right" : ""}${isMobile && colIdx === 0 ? " mobile-sticky-col" : ""}`}
+                  style={{
+                    textAlign: c.align || "right",
+                    ...(isMobile && colIdx === 0 ? {
+                      position: "sticky",
+                      left: 0,
+                      zIndex: 3,
+                      background: "var(--surface2)",
+                      minWidth: 80
+                    } : {})
+                  }}>
                 {renderCell(r, c, false)}
               </td>
             ))}
@@ -245,10 +264,19 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter }) {
         ))}
         {totals && (
           <tr className="pp-total-row">
-            {cols.map(c => (
+            {cols.map((c, colIdx) => (
               <td key={c.key}
-                  className={`${c.dividerRight ? "col-divider-right" : ""}${c.key === "pitch_name" ? "" : ""}`}
-                  style={{ textAlign: c.align || "right" }}>
+                  className={`${c.dividerRight ? "col-divider-right" : ""}${isMobile && colIdx === 0 ? " mobile-sticky-col" : ""}`}
+                  style={{
+                    textAlign: c.align || "right",
+                    ...(isMobile && colIdx === 0 ? {
+                      position: "sticky",
+                      left: 0,
+                      zIndex: 3,
+                      background: "var(--surface2)",
+                      minWidth: 80
+                    } : {})
+                  }}>
                 {renderCell(totals, c, true)}
               </td>
             ))}

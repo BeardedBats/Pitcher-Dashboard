@@ -14,6 +14,7 @@ const PlayerPage = lazy(() => import("./components/PlayerPage"));
 import { fetchGames, fetchPitchData, fetchPitcherResults, fetchPitcherCard, fetchDefaultDate, fetchGameLinescore, reclassifyPitch, fetchInitialLoad, fetchRefresh, fetchLastRefresh } from "./utils/api";
 import { PITCH_TYPE_FILTERS, PITCH_COLORS, TEAMS_LIST } from "./constants";
 import { TOP_400_NAMES, isTop400 } from "./top400";
+import useIsMobile from "./hooks/useIsMobile";
 
 function getYesterdayEST() {
   // Fallback: current time in US Eastern, minus 1 day
@@ -52,6 +53,7 @@ function openInNewWindow(hash) {
 }
 
 export default function App() {
+  const isMobile = useIsMobile();
   const [date, setDate] = useState(null);
   const [games, setGames] = useState([]);
   const [selectedGame, setSelectedGame] = useState(null);
@@ -579,10 +581,10 @@ export default function App() {
         <div className={splitByTeam ? "table-card-none" : "table-card"}>
           <div className="table-container">
             {view === "pitch-data" && (
-              <PitchDataTable data={filteredPitchData} onPitcherClick={openCard} splitByTeam={splitByTeam} spOnly={spOnly} top400Names={TOP_400_NAMES} />
+              <PitchDataTable data={filteredPitchData} onPitcherClick={openCard} splitByTeam={splitByTeam} spOnly={spOnly} top400Names={TOP_400_NAMES} isMobile={isMobile} />
             )}
             {view === "pitcher-results" && (
-              <PitcherResultsTable data={filteredResultsData} onPitcherClick={openCard} spOnly={spOnly} splitByTeam={splitByTeam} top400Names={TOP_400_NAMES} />
+              <PitcherResultsTable data={filteredResultsData} onPitcherClick={openCard} spOnly={spOnly} splitByTeam={splitByTeam} top400Names={TOP_400_NAMES} isMobile={isMobile} />
             )}
           </div>
         </div>
@@ -612,7 +614,7 @@ export default function App() {
                 <Scoreboard data={linescoreData} pitcherId={cardData?.result?.pitcher_id} onInningClick={(inn, isTop) => setPbpModal({ inning: inn, isTop })} />
               )}
             </div>
-            <PitcherCard cardData={cardData} date={date} linescoreData={linescoreData} onPlayerClick={(id, e) => navigateToPlayer(id, null, e)} onGameClick={() => {
+            <PitcherCard cardData={cardData} date={date} linescoreData={linescoreData} isMobile={isMobile} onPlayerClick={(id, e) => navigateToPlayer(id, null, e)} onGameClick={() => {
               const gamePk = cardData?.result?.game_pk || selectedGame;
               if (gamePk) {
                 setSelectedGame(gamePk);

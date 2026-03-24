@@ -29,7 +29,9 @@ const FASTBALL_TYPES = ["Four-Seamer", "Sinker"];
 // Pitch types where +iHB (arm-side) = red, -iHB (glove-side) = blue
 const IHB_ARM_SIDE_TYPES = ["Four-Seamer", "Sinker", "Changeup"];
 
-export default function PitchDataTable({ data, onPitcherClick, columns, splitByTeam, spOnly, pitcherHand, sortable = true, showChange, seasonAvgs, batterFilter, top400Names }) {
+const MOBILE_HIDE_COLS = ["hand", "team", "opponent"];
+
+export default function PitchDataTable({ data, onPitcherClick, columns, splitByTeam, spOnly, pitcherHand, sortable = true, showChange, seasonAvgs, batterFilter, top400Names, isMobile }) {
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState("asc");
   const cols = columns || PITCH_DATA_COLUMNS;
@@ -241,6 +243,7 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
   // cell-delta is a fixed-width inline-block so its ) aligns with the header.
   const cellDelta = (valEl, deltaEl, colKey) => {
     if (!showChange || !hasAnySeasonData || deltaEl === null) return valEl;
+    if (isMobile) return valEl; // Hide deltas on mobile
     const cls = NARROW_DELTA_KEYS.has(colKey) ? "cell-delta cell-delta-narrow" : "cell-delta";
     return <span className="cell-with-delta">{valEl}<span className={cls}>{deltaEl || deltaPlaceholder}</span></span>;
   };
@@ -365,12 +368,28 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
   };
 
   const renderTable = (rows, teamLabel, isCard) => {
-    const activeCols = isCard ? cols.filter(c => !TEAM_SPLIT_HIDE.includes(c.key)) : cols;
+    let activeCols = isCard ? cols.filter(c => !TEAM_SPLIT_HIDE.includes(c.key)) : cols;
+    if (isMobile) activeCols = activeCols.filter(c => !MOBILE_HIDE_COLS.includes(c.key));
     const oppLabel = isCard ? getTeamOppLabel(rows) : "";
     // Compute total table width for consistent card sizing
-    const totalWidth = isCard ? activeCols.reduce((sum, c) => sum + getColWidth(c.key), 0) : undefined;
+    const totalWidth = isCard && !isMobile ? activeCols.reduce((sum, c) => sum + getColWidth(c.key), 0) : undefined;
+
+    // Compute sticky left offsets for mobile (pitcher + pitch_name)
+    const stickyKeys = isMobile ? ["pitcher", "pitch_name"] : [];
+    const stickyLeftMap = {};
+    if (isMobile) {
+      let left = 0;
+      for (const key of stickyKeys) {
+        const col = activeCols.find(c => c.key === key);
+        if (col) {
+          stickyLeftMap[key] = left;
+          left += key === "pitcher" ? 110 : 80;
+        }
+      }
+    }
+
     return (
-      <div className={isCard ? "team-card-wrapper" : ""} key={teamLabel || "all"} style={isCard ? { width: totalWidth + "px" } : undefined}>
+      <div className={isCard ? "team-card-wrapper" : ""} key={teamLabel || "all"} style={isCard && !isMobile ? { width: totalWidth + "px" } : undefined}>
         {teamLabel && (
           <div className="team-split-header">
             {teamLabel}
@@ -378,8 +397,8 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
           </div>
         )}
         <div className={isCard ? "team-card" : "table-wrapper"}>
-        <table style={isCard ? { tableLayout: "fixed", width: "100%" } : undefined}>
-          {isCard && (
+        <table style={isCard && !isMobile ? { tableLayout: "fixed", width: "100%" } : undefined}>
+          {isCard && !isMobile && (
             <colgroup>
               {activeCols.map(c => {
                 return <col key={c.key} style={{ width: getColWidth(c.key) + "px" }} />;
@@ -388,14 +407,18 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
           )}
           <thead>
             <tr>
-              {activeCols.map(c => (
-                <th key={c.key}
-                    className={c.dividerRight ? "col-divider-right" : ""}
-                    style={{ textAlign: c.align || "right", cursor: sortable ? "pointer" : "default" }}
-                    onClick={() => handleSort(c.key)}>
-                  {c.label}{sortable && sortKey === c.key ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : ""}
-                </th>
-              ))}
+              {activeCols.map(c => {
+                const isSticky = stickyKeys.includes(c.key);
+                const stickyStyle = isSticky ? { position: "sticky", left: stickyLeftMap[c.key], zIndex: 3, background: "var(--surface2)", minWidth: c.key === "pitcher" ? 110 : 80 } : {};
+                return (
+                  <th key={c.key}
+                      className={[c.dividerRight ? "col-divider-right" : "", isSticky ? "mobile-sticky-col" : ""].filter(Boolean).join(" ")}
+                      style={{ textAlign: c.align || "right", cursor: sortable ? "pointer" : "default", ...stickyStyle }}
+                      onClick={() => handleSort(c.key)}>
+                    {c.label}{sortable && sortKey === c.key ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : ""}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -403,7 +426,11 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
               <tr key={i} className={onPitcherClick ? "clickable-row" : ""}
                   onClick={(e) => onPitcherClick && onPitcherClick(r.pitcher_id, r.game_pk, e)}
                   onMouseDown={(e) => { if (e.button === 1 && onPitcherClick) { e.preventDefault(); onPitcherClick(r.pitcher_id, r.game_pk, e); } }}>
-                {activeCols.map(c => <td key={c.key} className={c.dividerRight ? "col-divider-right" : ""} style={{ textAlign: c.align || "left" }}>{renderCell(r, c)}</td>)}
+                {activeCols.map(c => {
+                  const isSticky = stickyKeys.includes(c.key);
+                  const stickyStyle = isSticky ? { position: "sticky", left: stickyLeftMap[c.key], zIndex: 2, background: "var(--surface2)", minWidth: c.key === "pitcher" ? 110 : 80 } : {};
+                  return <td key={c.key} className={[c.dividerRight ? "col-divider-right" : "", isSticky ? "mobile-sticky-col" : ""].filter(Boolean).join(" ")} style={{ textAlign: c.align || "left", ...stickyStyle }}>{renderCell(r, c)}</td>;
+                })}
               </tr>
             ))}
             {(() => {

@@ -71,7 +71,7 @@ function computeInningStats(pas, pitcherId) {
   return { ip, hits, bbs, ks, hrs, runs, pitches: totalPitches };
 }
 
-export default function PitcherCard({ cardData, date, linescoreData, onGameClick, onReclassify, onPlayerClick }) {
+export default function PitcherCard({ cardData, date, linescoreData, onGameClick, onReclassify, onPlayerClick, isMobile }) {
   if (!cardData) return null;
   const { name, team, hand, opponent, pitches, sz_top, sz_bot,
     pitch_table, pitch_table_vs_l, pitch_table_vs_r, result, pitcher_id } = cardData;
@@ -302,22 +302,31 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
       {/* ===== PITCH TYPE METRICS / PLAY-BY-PLAY ===== */}
       <div className="card-section">
         <div className="metrics-header">
-          <div className="metrics-subnav">
-            <button className={`metrics-subnav-btn${metricsView === "pitch-data" ? " active" : ""}`} onClick={() => setMetricsView("pitch-data")}>
-              Pitch Type Metrics
-            </button>
-            <button className={`metrics-subnav-btn${metricsView === "results" ? " active" : ""}`} onClick={() => setMetricsView("results")}>
-              Results
-            </button>
-            <button className={`metrics-subnav-btn${metricsView === "velocity-trend" ? " active" : ""}`} onClick={() => setMetricsView("velocity-trend")}>
-              Velocity Trend
-            </button>
-            {pitcherPBP && (
-              <button className={`metrics-subnav-btn${metricsView === "play-by-play" ? " active" : ""}`} onClick={() => setMetricsView("play-by-play")}>
-                Play-by-Play
+          {isMobile ? (
+            <select className="metrics-subnav-mobile" value={metricsView} onChange={e => setMetricsView(e.target.value)}>
+              <option value="pitch-data">Pitch Type Metrics</option>
+              <option value="results">Results</option>
+              <option value="velocity-trend">Velocity Trend</option>
+              {pitcherPBP && <option value="play-by-play">Play-by-Play</option>}
+            </select>
+          ) : (
+            <div className="metrics-subnav">
+              <button className={`metrics-subnav-btn${metricsView === "pitch-data" ? " active" : ""}`} onClick={() => setMetricsView("pitch-data")}>
+                Pitch Type Metrics
               </button>
-            )}
-          </div>
+              <button className={`metrics-subnav-btn${metricsView === "results" ? " active" : ""}`} onClick={() => setMetricsView("results")}>
+                Results
+              </button>
+              <button className={`metrics-subnav-btn${metricsView === "velocity-trend" ? " active" : ""}`} onClick={() => setMetricsView("velocity-trend")}>
+                Velocity Trend
+              </button>
+              {pitcherPBP && (
+                <button className={`metrics-subnav-btn${metricsView === "play-by-play" ? " active" : ""}`} onClick={() => setMetricsView("play-by-play")}>
+                  Play-by-Play
+                </button>
+              )}
+            </div>
+          )}
           <div className="metrics-controls">
             <div className="filter-pill-group">
               <span className="filter-pill-label">LHB/RHB</span>
@@ -336,18 +345,18 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
               splitByTeam={false} spOnly={false} pitcherHand={hand}
               sortable={false}
               showChange={true} seasonAvgs={seasonAvgs}
-              batterFilter={batterFilter} />
+              batterFilter={batterFilter} isMobile={isMobile} />
             {loadingAvgs && <div className="loading-avgs">Loading season averages...</div>}
           </div>
         )}
         {metricsView === "results" && (
           <div className="metrics-card">
-            <ResultsTable pitches={pitches} batterFilter={batterFilter} gameFilter="all" />
+            <ResultsTable pitches={pitches} batterFilter={batterFilter} gameFilter="all" isMobile={isMobile} />
           </div>
         )}
         {metricsView === "velocity-trend" && (
           <div className="metrics-card">
-            <VelocityTrendV2 pitches={filteredPitches} onReclassify={onReclassify} />
+            <VelocityTrendV2 pitches={filteredPitches} onReclassify={onReclassify} isMobile={isMobile} />
           </div>
         )}
         {metricsView === "play-by-play" && pitcherPBP && (() => {
@@ -592,18 +601,14 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                                       </div>
                                     )}
 
-                                    {/* Sub-label row (e.g. "Swinging Strike") — right-aligned under result */}
-                                    {result.isK && result.subLabel && (
-                                      <div style={{ textAlign: "right", fontSize: "0.85em", color: "rgba(180,184,210,0.7)", marginBottom: 4 }}>
-                                        {result.subLabel}
-                                      </div>
-                                    )}
-
                                     {/* Body: text left, strikezone right */}
                                     <div style={{ display: "flex", gap: 10 }}>
                                       <div style={{ flex: 1 }}>
-                                        <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
-                                          vs {pa.batter}
+                                        <div className="pt-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: "0.85em" }}>
+                                          <span>vs {pa.batter}</span>
+                                          {result.isK && result.subLabel && (
+                                            <span style={{ color: "rgba(180,184,210,0.7)" }}>{result.subLabel}</span>
+                                          )}
                                         </div>
                                         <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
                                           {seg.isTop ? "Top" : "Bot"} {ordinal(seg.inning)} | {pa.outs || 0} Out{(pa.outs || 0) !== 1 ? "s" : ""}
@@ -730,19 +735,19 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
             {(batterFilter === "all" || batterFilter === "L") && (
               <div className="viz-card">
                 <div className="viz-card-label">vs LHB</div>
-                <StrikeZonePlot pitches={filteredPitches} szTop={sz_top} szBot={sz_bot} stand="L" colorMode={szColorMode} onReclassify={onReclassify} />
+                <StrikeZonePlot pitches={filteredPitches} szTop={sz_top} szBot={sz_bot} stand="L" colorMode={szColorMode} onReclassify={onReclassify} isMobile={isMobile} />
               </div>
             )}
             {(batterFilter === "all" || batterFilter === "R") && (
               <div className="viz-card">
                 <div className="viz-card-label">vs RHB</div>
-                <StrikeZonePlot pitches={filteredPitches} szTop={sz_top} szBot={sz_bot} stand="R" colorMode={szColorMode} onReclassify={onReclassify} />
+                <StrikeZonePlot pitches={filteredPitches} szTop={sz_top} szBot={sz_bot} stand="R" colorMode={szColorMode} onReclassify={onReclassify} isMobile={isMobile} />
               </div>
             )}
         </div>
           <div className="viz-card">
             <div className="viz-card-label">Pitch Movement</div>
-            <MovementPlot pitches={filteredPitches} hand={hand} onReclassify={onReclassify} />
+            <MovementPlot pitches={filteredPitches} hand={hand} onReclassify={onReclassify} isMobile={isMobile} />
           </div>
         </div>
       </div>

@@ -2,14 +2,14 @@ import React, { useRef, useEffect, useState, useCallback } from "react";
 import { PITCH_COLORS, PITCH_DESC_COLORS } from "../constants";
 import { getSprayDirection, getResultColor, classifyBattedBall, getBIPQuality } from "../utils/formatting";
 
-const W = 345, H = 345;
+const DEFAULT_W = 345, DEFAULT_H = 345;
 const PAD = { top: 16, right: 16, bottom: 16, left: 16 };
-const PLOT_W = W - PAD.left - PAD.right;
-const PLOT_H = H - PAD.top - PAD.bottom;
 const RANGE = 25;
 const HIT_RADIUS = 10;
 
-function toCanvas(ihb, ivb) {
+function toCanvas(ihb, ivb, W, H) {
+  const PLOT_W = W - PAD.left - PAD.right;
+  const PLOT_H = H - PAD.top - PAD.bottom;
   const x = PAD.left + ((ihb + RANGE) / (2 * RANGE)) * PLOT_W;
   const y = PAD.top + ((RANGE - ivb) / (2 * RANGE)) * PLOT_H;
   return [x, y];
@@ -30,9 +30,10 @@ function basesString(on1b, on2b, on3b) {
   return bases.join(" & ");
 }
 
-export default function MovementPlot({ pitches, hand, onReclassify }) {
+export default function MovementPlot({ pitches, hand, onReclassify, isMobile = false }) {
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
+  const containerRef = useRef(null);
   const [hover, setHover] = useState(null);
 
   // Build pitch positions for hit detection
@@ -43,6 +44,20 @@ export default function MovementPlot({ pitches, hand, onReclassify }) {
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     const dpr = window.devicePixelRatio || 1;
+
+    // Determine responsive sizing
+    let W = DEFAULT_W, H = DEFAULT_H;
+    if (isMobile && containerRef.current) {
+      const containerWidth = containerRef.current.offsetWidth;
+      if (containerWidth > 0) {
+        W = Math.min(containerWidth - 24, 345);
+        H = W; // Square plot
+      } else {
+        W = 290;
+        H = 290;
+      }
+    }
+
     canvas.width = W * dpr;
     canvas.height = H * dpr;
     canvas.style.width = W + "px";
@@ -52,7 +67,9 @@ export default function MovementPlot({ pitches, hand, onReclassify }) {
     ctx.fillStyle = "#2E3150";
     ctx.fillRect(0, 0, W, H);
 
-    const [cx, cy] = toCanvas(0, 0);
+    const PLOT_W = W - PAD.left - PAD.right;
+    const PLOT_H = H - PAD.top - PAD.bottom;
+    const [cx, cy] = toCanvas(0, 0, W, H);
     const pxPerInch = PLOT_W / (2 * RANGE);
 
     const radii = [6, 12, 18, 24];
@@ -81,7 +98,7 @@ export default function MovementPlot({ pitches, hand, onReclassify }) {
         if (p.pfx_x == null || p.pfx_z == null) return;
         const ihb = -p.pfx_x;
         const ivb = p.pfx_z;
-        const [x, y] = toCanvas(ihb, ivb);
+        const [x, y] = toCanvas(ihb, ivb, W, H);
         if (x < PAD.left - 8 || x > PAD.left + PLOT_W + 8 || y < PAD.top - 8 || y > PAD.top + PLOT_H + 8) return;
         positions.push({ x, y, idx, pitch: p });
         const color = PITCH_COLORS[p.pitch_name] || "#D9D9D9";
@@ -98,7 +115,7 @@ export default function MovementPlot({ pitches, hand, onReclassify }) {
       ctx.globalAlpha = 1;
     }
     pitchPositions.current = positions;
-  }, [pitches, hand]);
+  }, [pitches, hand, isMobile]);
 
   const findNearest = useCallback((mx, my) => {
     let closest = null;
@@ -111,11 +128,14 @@ export default function MovementPlot({ pitches, hand, onReclassify }) {
   }, []);
 
   const handleMouseMove = useCallback((e) => {
+    if (isMobile) return; // Skip mouse move on mobile
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const mx = (e.clientX - rect.left) * (W / rect.width);
-    const my = (e.clientY - rect.top) * (H / rect.height);
+    const W = rect.width;
+    const H = rect.height;
+    const mx = (e.clientX - rect.left) * (canvas.width / (W * (window.devicePixelRatio || 1)));
+    const my = (e.clientY - rect.top) * (canvas.height / (H * (window.devicePixelRatio || 1)));
     const nearest = findNearest(mx, my);
     if (nearest) {
       setHover({
@@ -126,22 +146,36 @@ export default function MovementPlot({ pitches, hand, onReclassify }) {
     } else {
       setHover(null);
     }
-  }, [findNearest]);
+  }, [findNearest, isMobile]);
 
   const handleMouseLeave = useCallback(() => setHover(null), []);
 
   const handleClick = useCallback((e) => {
-    if (!onReclassify) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const mx = (e.clientX - rect.left) * (W / rect.width);
-    const my = (e.clientY - rect.top) * (H / rect.height);
+    const W = rect.width;
+    const H = rect.height;
+    const mx = (e.clientX - rect.left) * (canvas.width / (W * (window.devicePixelRatio || 1)));
+    const my = (e.clientY - rect.top) * (canvas.height / (H * (window.devicePixelRatio || 1)));
     const nearest = findNearest(mx, my);
     if (nearest) {
-      onReclassify(nearest.pitch);
+      if (isMobile) {
+        // On mobile, tap shows tooltip
+        setHover({
+          pitch: nearest.pitch,
+          x: e.clientX,
+          y: e.clientY,
+        });
+      } else if (onReclassify) {
+        // On desktop, click can trigger reclassify
+        onReclassify(nearest.pitch);
+      }
+    } else if (isMobile) {
+      // On mobile, tap on empty area closes tooltip
+      setHover(null);
     }
-  }, [findNearest, onReclassify]);
+  }, [findNearest, isMobile, onReclassify]);
 
   const p = hover?.pitch;
   const isPA = p?.events;
@@ -174,20 +208,54 @@ export default function MovementPlot({ pitches, hand, onReclassify }) {
   const pitchResult = p ? getPitchResult() : null;
 
   return (
-    <div ref={wrapRef} style={{ position: "relative", display: "inline-block" }}>
-      <canvas
-        ref={canvasRef}
-        style={{ borderRadius: 6, cursor: onReclassify ? "pointer" : "default" }}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={handleMouseLeave}
-        onClick={handleClick}
-      />
+    <div ref={containerRef} style={{ position: "relative", display: "inline-block", width: "100%" }}>
+      <div ref={wrapRef} style={{ position: "relative", display: "inline-block" }}>
+        <canvas
+          ref={canvasRef}
+          style={{ borderRadius: 6, cursor: onReclassify ? "pointer" : "default" }}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+          onClick={handleClick}
+        />
       {hover && p && pitchResult && (
-        <div className="pitch-tooltip" style={{
+        <div className={isMobile ? "pitch-tooltip mobile-tooltip" : "pitch-tooltip"} style={isMobile ? {
+          position: "fixed",
+          bottom: 16,
+          left: 16,
+          right: 16,
+          transform: "none",
+          minWidth: "auto",
+          zIndex: 1000,
+          pointerEvents: "auto",
+        } : {
           left: hover.x - (wrapRef.current?.getBoundingClientRect().left || 0),
           top: hover.y - (wrapRef.current?.getBoundingClientRect().top || 0) - 10,
           minWidth: 280,
         }}>
+          {isMobile && (
+            <button
+              className="mobile-tooltip-close"
+              onClick={() => setHover(null)}
+              style={{
+                position: "absolute",
+                top: 8,
+                right: 8,
+                background: "none",
+                border: "none",
+                color: "#e0e2ec",
+                fontSize: "24px",
+                cursor: "pointer",
+                padding: 0,
+                width: 32,
+                height: 32,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              ×
+            </button>
+          )}
           <div style={{ display: "flex", gap: 10 }}>
             {/* LEFT COLUMN: Text Info */}
             <div style={{ flex: 1 }}>
@@ -324,6 +392,7 @@ export default function MovementPlot({ pitches, hand, onReclassify }) {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
