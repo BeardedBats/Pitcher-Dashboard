@@ -230,7 +230,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
               <table className="card-gameline-table">
                 <thead>
                   <tr>
-                    <th>Date</th><th>Opp</th><th>IP</th><th>ER</th><th>Hits</th><th>BB</th>
+                    <th>Date</th><th>Opp</th><th>IP</th><th>ER</th><th>R</th><th>Hits</th><th>BB</th>
                     <th className="gameline-divider-right">K</th>
                     <th>Whiffs</th><th>CSW%</th><th>#</th><th>HR</th>
                   </tr>
@@ -246,6 +246,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                       <td>{displayAbbrev(row.opponent)}</td>
                       <td>{row.ip}</td>
                       <td>{row.er}</td>
+                      <td>{row.runs != null ? row.runs : "—"}</td>
                       <td>{row.hits}</td>
                       <td>{row.bbs}</td>
                       <td className="gameline-divider-right">{row.ks}</td>
@@ -255,20 +256,40 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                       <td>{row.hrs}</td>
                     </tr>
                   ))}
-                  {/* Total row */}
-                  <tr className="pp-total-row">
-                    <td className="pp-total-label">Total</td>
-                    <td>{rs.games ? `${rs.games} G` : "—"}</td>
-                    <td>{rs.ip ?? "—"}</td>
-                    <td>{rs.er ?? "—"}</td>
-                    <td>{rs.hits ?? "—"}</td>
-                    <td>{rs.bbs ?? "—"}</td>
-                    <td className="gameline-divider-right">{rs.ks ?? "—"}</td>
-                    <td>{rs.whiffs ?? "—"}</td>
-                    <td>{rs.csw_pct != null ? rs.csw_pct.toFixed(1) + "%" : "—"}</td>
-                    <td>{rs.pitches ?? "—"}</td>
-                    <td>{rs.hrs ?? "—"}</td>
-                  </tr>
+                  {/* Total row — matches Box Score format with rate labels */}
+                  {(() => {
+                    const g = rs.games || 0;
+                    const gs = rs.games_started || 0;
+                    const ipThirds = rs.ip_thirds || 0;
+                    const ip = ipThirds / 3;
+                    const bf = rs.batters_faced || 0;
+                    const ipg = ip > 0 && g > 0 ? (ip / g).toFixed(1) : "—";
+                    const era = ip > 0 ? ((rs.er / ip) * 9).toFixed(2) : "—";
+                    const whip = ip > 0 ? (((rs.hits || 0) + (rs.bbs || 0)) / ip).toFixed(2) : "—";
+                    const h9 = ip > 0 ? (((rs.hits || 0) / ip) * 9).toFixed(1) : "—";
+                    const bbPct = bf > 0 ? ((rs.bbs || 0) / bf * 100).toFixed(1) + "%" : "—";
+                    const kPct = bf > 0 ? ((rs.ks || 0) / bf * 100).toFixed(1) + "%" : "—";
+                    const whfg = g > 0 ? ((rs.whiffs || 0) / g).toFixed(1) : "—";
+                    const ppg = g > 0 ? Math.round((rs.pitches || 0) / g) : "—";
+                    const hr9 = ip > 0 ? (((rs.hrs || 0) / ip) * 9).toFixed(2) : "—";
+                    const gamesLabel = gs > 0 && gs !== g ? `${g} Games (${gs} GS)` : `${g} Games`;
+                    return (
+                      <tr className="pp-total-row">
+                        <td className="pp-total-label"><span className="rate-label">Season Total</span>{gamesLabel}</td>
+                        <td><span className="rate-label">IP/G</span>{ipg}</td>
+                        <td><span className="rate-label">ERA</span>{era}</td>
+                        <td><span className="rate-label">WHIP</span>{whip}</td>
+                        <td><span className="rate-label">H/9</span>{h9}</td>
+                        <td><span className="rate-label">BB%</span>{bbPct}</td>
+                        <td className="gameline-divider-right"><span className="rate-label">K%</span>{kPct}</td>
+                        <td><span className="rate-label">Whf/G</span>{whfg}</td>
+                        <td><span className="rate-label">SwStr%</span>{rs.swstr_pct != null ? Math.round(rs.swstr_pct) + "%" : "—"}</td>
+                        <td><span className="rate-label">CSW%</span>{rs.csw_pct != null ? rs.csw_pct.toFixed(1) + "%" : "—"}</td>
+                        <td><span className="rate-label">PPG</span>{ppg}</td>
+                        <td><span className="rate-label">HR/9</span>{hr9}</td>
+                      </tr>
+                    );
+                  })()}
                 </tbody>
               </table>
             </div>

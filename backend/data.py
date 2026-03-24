@@ -960,8 +960,14 @@ def compute_player_page(df, pitcher_id):
             "ks": sum(g.get("ks", 0) for g in game_log),
             "hrs": sum(g.get("hrs", 0) for g in game_log),
             "er": sum(g.get("er", 0) for g in game_log),
+            "runs": sum(g.get("runs", 0) for g in game_log),
+            "batters_faced": sum(g.get("batters_faced", 0) for g in game_log),
+            "games_started": sum(g.get("games_started", 0) for g in game_log),
             "whiffs": sum(g.get("whiffs", 0) for g in game_log),
+            "swstr_pct": round(sum(g.get("whiffs", 0) for g in game_log) / total_pitches * 100, 1) if total_pitches > 0 else 0,
             "csw_pct": round(sum(g.get("csw_pct", 0) * g.get("pitches", 0) for g in game_log) / total_pitches, 1) if total_pitches > 0 else 0,
+            "strike_pct": round(sum(g.get("strikes", 0) for g in game_log) / total_pitches * 100, 1) if total_pitches > 0 else 0,
+            "ip_thirds": total_ip_thirds,
             "pitches": total_pitches,
         }
     else:

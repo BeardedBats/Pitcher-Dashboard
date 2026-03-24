@@ -1099,7 +1099,7 @@ canvas { display: block; border: none; border-radius: var(--radius-sm); }
 
 .pp-total-row td {
   font-weight: 400 !important;
-  background: rgba(255,255,255,0.04) !important;
+  background: #363957 !important;
   border-top: 2px solid var(--border) !important;
 }
 .pp-total-label { color: var(--text) !important; font-weight: 600 !important; }
