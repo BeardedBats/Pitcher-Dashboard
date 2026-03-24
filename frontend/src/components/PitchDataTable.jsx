@@ -437,7 +437,7 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
               const t = computeTotals(rows);
               if (!t) return null;
               return (
-                <tr className="pp-total-row">
+                <tr className="pp-total-row" style={isMobile ? { position: "sticky", bottom: 0, zIndex: 2 } : undefined}>
                   {activeCols.map(c => {
                     let val;
                     if (c.key === "pitch_name") val = <span className="pp-total-label">Total</span>;
@@ -445,10 +445,12 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
                     else if (c.key === "count") val = t.count;
                     else if (pctKeys.includes(c.key) && t[c.key] != null) val = t[c.key] + "%";
                     else val = t[c.key] != null ? t[c.key] : "—";
+                    const isSticky = stickyKeys.includes(c.key);
+                    const totalStickyStyle = isSticky ? { position: "sticky", left: stickyLeftMap[c.key], zIndex: 4, background: "#363957", minWidth: c.key === "pitcher" ? 110 : 80 } : {};
                     return (
                       <td key={c.key}
-                          className={c.dividerRight ? "col-divider-right" : ""}
-                          style={{ textAlign: c.align || "left" }}>
+                          className={[c.dividerRight ? "col-divider-right" : "", isSticky ? "mobile-sticky-col" : ""].filter(Boolean).join(" ")}
+                          style={{ textAlign: c.align || "left", ...totalStickyStyle }}>
                         {val}
                       </td>
                     );

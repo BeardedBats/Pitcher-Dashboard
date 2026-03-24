@@ -1181,18 +1181,20 @@ canvas { display: block; border: none; border-radius: var(--radius-sm); }
   .table-card thead th { padding: 6px 6px; font-size: 10px; }
   .table-card tbody td { padding: 5px 6px; font-size: 12px; }
 
-  /* Sticky first column for all main tables */
-  .mobile-sticky-col { position: sticky !important; left: 0; z-index: 2; background: var(--surface2) !important; }
-  .mobile-sticky-col-2 { position: sticky !important; z-index: 2; background: var(--surface2) !important; }
+  /* Sticky columns for all main tables — z-index must beat regular td */
+  .mobile-sticky-col { position: sticky !important; left: 0; z-index: 4 !important; background: var(--surface2) !important; box-shadow: 2px 0 4px rgba(0,0,0,0.18); }
+  .mobile-sticky-col-2 { position: sticky !important; z-index: 4 !important; background: var(--surface2) !important; }
+  tbody .mobile-sticky-col { z-index: 3 !important; }
+  tbody .mobile-sticky-col-2 { z-index: 3 !important; }
   tr:hover .mobile-sticky-col,
   tr:hover .mobile-sticky-col-2 { background: rgba(85, 232, 255, 0.06) !important; }
   thead .mobile-sticky-col,
-  thead .mobile-sticky-col-2 { z-index: 3 !important; background: var(--surface2) !important; }
+  thead .mobile-sticky-col-2 { z-index: 5 !important; background: var(--surface2) !important; }
 
   /* -- Team split cards -- */
   .team-cards-grid { align-items: stretch; }
   .team-card-wrapper { width: 100% !important; }
-  .team-card { overflow-x: auto; }
+  .team-card { overflow-x: auto; overflow-y: auto; max-height: 60vh; -webkit-overflow-scrolling: touch; }
   .team-split-header { font-size: 14px; }
 
   /* -- Card (Pitcher Card / Player Page card) -- */
@@ -1202,10 +1204,17 @@ canvas { display: block; border: none; border-radius: var(--radius-sm); }
   .card-info { min-width: unset; }
   .card-name { font-size: 22px; }
   .card-meta { font-size: 13px; }
-  .card-gameline-box { width: 100%; overflow-x: auto; }
+  .card-gameline-box { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; max-height: 60vh; overflow-y: auto; }
   .card-gameline-table { font-size: 12px; }
-  .card-gameline-table thead th { font-size: 10px; padding: 6px 6px; }
-  .card-gameline-table tbody td { font-size: 13px; padding: 5px 6px; }
+  .card-gameline-table thead th { font-size: 10px; padding: 6px 6px; position: sticky; top: 0; z-index: 4; background: var(--surface2); }
+  .card-gameline-table tbody td { padding: 5px 6px; font-size: 12px; }
+  /* Sticky first column (Pitcher/Date) in box score & spring training */
+  .card-gameline-table thead th:first-child { position: sticky; left: 0; z-index: 5; background: var(--surface2); box-shadow: 2px 0 4px rgba(0,0,0,0.18); }
+  .card-gameline-table tbody td:first-child { position: sticky; left: 0; z-index: 2; background: #2e3150; box-shadow: 2px 0 4px rgba(0,0,0,0.18); }
+  .card-gameline-table tbody tr:hover td:first-child { background: rgba(85, 232, 255, 0.06); }
+  /* Sticky total row at bottom */
+  .card-gameline-table .pp-total-row td { position: sticky; bottom: 0; z-index: 2; }
+  .card-gameline-table .pp-total-row td:first-child { z-index: 3; }
 
   /* -- Metrics section -- */
   .metrics-header { flex-direction: column; align-items: flex-start; gap: 8px; }
@@ -1220,7 +1229,7 @@ canvas { display: block; border: none; border-radius: var(--radius-sm); }
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238A8EB0'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px;
   }
-  .metrics-card { padding: 8px 6px; overflow-x: auto; }
+  .metrics-card { padding: 8px 6px; overflow-x: auto; overflow-y: auto; max-height: 70vh; }
   .metrics-card table { font-size: 12px; }
   .metrics-card thead th { padding: 6px 6px; font-size: 10px; }
   .metrics-card tbody td { padding: 5px 6px; font-size: 12px; }

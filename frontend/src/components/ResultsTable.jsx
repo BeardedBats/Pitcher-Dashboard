@@ -263,7 +263,7 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
           </tr>
         ))}
         {totals && (
-          <tr className="pp-total-row">
+          <tr className="pp-total-row" style={isMobile ? { position: "sticky", bottom: 0, zIndex: 2 } : undefined}>
             {cols.map((c, colIdx) => (
               <td key={c.key}
                   className={`${c.dividerRight ? "col-divider-right" : ""}${isMobile && colIdx === 0 ? " mobile-sticky-col" : ""}`}
@@ -272,8 +272,8 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
                     ...(isMobile && colIdx === 0 ? {
                       position: "sticky",
                       left: 0,
-                      zIndex: 3,
-                      background: "var(--surface2)",
+                      zIndex: 4,
+                      background: "#363957",
                       minWidth: 80
                     } : {})
                   }}>
