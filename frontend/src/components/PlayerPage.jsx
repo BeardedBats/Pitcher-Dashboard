@@ -51,7 +51,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
 
     const params = new URLSearchParams({
       pitcher_id: pitcherId,
-      start_date: "2026-02-10",
+      start_date: "2026-03-25",
     });
     fetch(`${API}/api/player-page?${params}`)
       .then((r) => r.json())
@@ -228,7 +228,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
           </div>
           {hasData && (
             <div className="card-gameline-box">
-              <div className="card-gameline-header">Spring Training Results</div>
+              <div className="card-gameline-header">Regular Season</div>
               <table className="card-gameline-table">
                 <thead>
                   <tr>

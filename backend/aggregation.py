@@ -575,6 +575,11 @@ def get_pitcher_game_log(df, pitcher_id):
     if pdf.empty:
         return []
     pdf = pdf.copy()
+    # Exclude All-Star Game data
+    if "game_type" in pdf.columns:
+        pdf = pdf[pdf["game_type"] != "A"]
+    if pdf.empty:
+        return []
     if "game_date" in pdf.columns:
         pdf["game_date"] = pdf["game_date"].astype(str)
     pdf["is_whiff"] = pdf["description"].isin(_WHIFF_DESCS)

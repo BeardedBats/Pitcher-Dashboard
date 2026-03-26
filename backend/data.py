@@ -820,7 +820,7 @@ def _get_default_end_date():
     return datetime.now(et).strftime("%Y-%m-%d")
 
 
-def warmup_range_data(start_date="2026-02-10", end_date=None):
+def warmup_range_data(start_date="2026-03-25", end_date=None):
     """Pre-fetch and warm all caches for the standard date range.
     Called on server startup in a background thread."""
     global _warmup_status
@@ -906,7 +906,7 @@ def warmup_range_data(start_date="2026-02-10", end_date=None):
             _warmup_status["progress"] = f"Error: {e}"
 
 
-def start_warmup(start_date="2026-02-10", end_date=None):
+def start_warmup(start_date="2026-03-25", end_date=None):
     """Kick off warmup in a background thread."""
     t = threading.Thread(target=warmup_range_data, args=(start_date, end_date), daemon=True)
     t.start()
@@ -925,6 +925,11 @@ def compute_player_page(df, pitcher_id):
     )
 
     pdf = df[df["pitcher"] == pitcher_id]
+    if pdf.empty:
+        return None
+    # Exclude All-Star Game data
+    if "game_type" in pdf.columns:
+        pdf = pdf[pdf["game_type"] != "A"]
     if pdf.empty:
         return None
 

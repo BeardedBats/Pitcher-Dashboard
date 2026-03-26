@@ -135,7 +135,7 @@ def pitcher_card(date: str = Query(...), pitcher_id: int = Query(...), game_pk: 
     return result
 
 @app.get("/api/pitcher-season-totals")
-def pitcher_season_totals(pitcher_id: int = Query(...), start_date: str = Query("2026-02-10"), end_date: str = Query("")):
+def pitcher_season_totals(pitcher_id: int = Query(...), start_date: str = Query("2026-03-25"), end_date: str = Query("")):
     """Return aggregated season totals for a pitcher's box score row."""
     end_date = _resolve_end_date(end_date)
     agg_key = f"season_totals_{pitcher_id}_{start_date}_{end_date}"
@@ -197,7 +197,7 @@ def season_averages(pitcher_id: int = Query(...), season: int = Query(...)):
     return result
 
 @app.get("/api/pitchers-search")
-def pitchers_search(q: str = Query(""), start_date: str = Query("2026-02-10"), end_date: str = Query("")):
+def pitchers_search(q: str = Query(""), start_date: str = Query("2026-03-25"), end_date: str = Query("")):
     end_date = _resolve_end_date(end_date)
     pitchers = fetch_all_pitchers_list(start_date, end_date)
     if q:
@@ -206,7 +206,7 @@ def pitchers_search(q: str = Query(""), start_date: str = Query("2026-02-10"), e
     return pitchers[:20]
 
 @app.get("/api/resolve-pitcher")
-def resolve_pitcher(name: str = Query(...), start_date: str = Query("2026-02-10"), end_date: str = Query("")):
+def resolve_pitcher(name: str = Query(...), start_date: str = Query("2026-03-25"), end_date: str = Query("")):
     """Resolve a pitcher name to a pitcher_id from cached data. Uses accent-insensitive matching."""
     import unicodedata
     end_date = _resolve_end_date(end_date)
@@ -226,7 +226,7 @@ def resolve_pitcher(name: str = Query(...), start_date: str = Query("2026-02-10"
     return {"pitcher_id": None, "name": name}
 
 @app.get("/api/team-pitchers")
-def team_pitchers(team: str = Query(...), start_date: str = Query("2026-02-10"), end_date: str = Query(""), view: str = Query("results")):
+def team_pitchers(team: str = Query(...), start_date: str = Query("2026-03-25"), end_date: str = Query(""), view: str = Query("results")):
     end_date = _resolve_end_date(end_date)
     # Check aggregation cache first
     agg_key = f"team_{team}_{view}_{start_date}_{end_date}"
@@ -248,7 +248,7 @@ def team_pitchers(team: str = Query(...), start_date: str = Query("2026-02-10"),
     return result
 
 @app.get("/api/player-page")
-def player_page(pitcher_id: int = Query(...), start_date: str = Query("2026-02-10"), end_date: str = Query("")):
+def player_page(pitcher_id: int = Query(...), start_date: str = Query("2026-03-25"), end_date: str = Query("")):
     end_date = _resolve_end_date(end_date)
     agg_key = f"player_v2_{pitcher_id}_{start_date}_{end_date}"
     cached = get_agg_cache(agg_key)
@@ -320,7 +320,7 @@ def cron_warmup_players(request: Request, batch: int = Query(1), batch_size: int
     if _IS_SERVERLESS and cron_secret and auth != f"Bearer {cron_secret}":
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     try:
-        start_date = "2026-02-10"
+        start_date = "2026-03-25"
         end_date = _resolve_end_date("")
         # Fetch the full season data (hits in-memory cache if warmup already ran)
         df = fetch_date_range(start_date, end_date)
@@ -359,7 +359,7 @@ def cron_warmup_daily(request: Request):
     try:
         # Step 1: Full warmup (fetches fresh data + teams + leaderboards)
         warmup_range_data()
-        start_date = "2026-02-10"
+        start_date = "2026-03-25"
         end_date = _resolve_end_date("")
         # Step 2: Re-fetch data (instant cache hit after warmup)
         df = fetch_date_range(start_date, end_date)

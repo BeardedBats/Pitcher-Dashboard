@@ -118,11 +118,11 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
     }
   }, [seasonAvgs, pitcher_id, prevSeason]);
 
-  // Fetch spring season totals for box score
+  // Fetch regular season totals for box score
   useEffect(() => {
     if (pitcher_id) {
-      const springStart = `${currentYear}-02-10`;
-      fetchPitcherSeasonTotals(pitcher_id, springStart)
+      const seasonStart = `${currentYear}-03-25`;
+      fetchPitcherSeasonTotals(pitcher_id, seasonStart)
         .then(totals => setSeasonTotals(totals && totals.games ? totals : null))
         .catch(() => setSeasonTotals(null));
     }

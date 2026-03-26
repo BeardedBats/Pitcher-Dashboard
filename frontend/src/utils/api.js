@@ -43,7 +43,7 @@ export async function fetchSeasonAverages(pitcherId, season) {
   return res.json();
 }
 
-export async function fetchPitcherSeasonTotals(pitcherId, startDate = "2026-02-10", endDate = "") {
+export async function fetchPitcherSeasonTotals(pitcherId, startDate = "2026-03-25", endDate = "") {
   const res = await fetch(`${BASE}/api/pitcher-season-totals?pitcher_id=${pitcherId}&start_date=${startDate}&end_date=${endDate}`);
   if (!res.ok) throw new Error("Failed to fetch season totals");
   return res.json();
