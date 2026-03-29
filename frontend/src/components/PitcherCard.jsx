@@ -701,9 +701,9 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
             </select>
           </div>
           <div className="filter-pill-group">
-            <span className="filter-pill-label">Pitch Filter</span>
+            <span className="filter-pill-label">Pitch Type Filter</span>
             <PitchFilterDropdown
-              label="Pitch Types"
+              label="All Pitches"
               options={availablePitchTypes}
               selected={effectivePitchTypeFilter}
               onChange={setPitchTypeFilter}
