@@ -31,9 +31,13 @@ const IHB_ARM_SIDE_TYPES = ["Four-Seamer", "Sinker", "Changeup"];
 
 const MOBILE_HIDE_COLS = ["hand", "team", "opponent"];
 
-export default function PitchDataTable({ data, onPitcherClick, columns, splitByTeam, spOnly, pitcherHand, sortable = true, showChange, seasonAvgs, batterFilter, top400Names, isMobile }) {
-  const [sortKey, setSortKey] = useState(null);
-  const [sortDir, setSortDir] = useState("asc");
+export default function PitchDataTable({ data, onPitcherClick, columns, splitByTeam, spOnly, pitcherHand, sortable = true, showChange, seasonAvgs, batterFilter, top400Names, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange }) {
+  const [sortKeyLocal, setSortKeyLocal] = useState(null);
+  const [sortDirLocal, setSortDirLocal] = useState("asc");
+  const sortKey = onSortKeyChange ? sortKeyProp : sortKeyLocal;
+  const setSortKey = onSortKeyChange || setSortKeyLocal;
+  const sortDir = onSortDirChange ? sortDirProp : sortDirLocal;
+  const setSortDir = onSortDirChange || setSortDirLocal;
   const cols = columns || PITCH_DATA_COLUMNS;
 
   const handleSort = (key) => {

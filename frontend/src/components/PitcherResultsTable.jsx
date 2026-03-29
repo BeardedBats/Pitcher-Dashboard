@@ -6,9 +6,13 @@ import { isTop400 } from "../top400";
 const TEAM_SPLIT_HIDE = ["team", "opponent"];
 const MOBILE_HIDE = ["hand"];
 
-export default function PitcherResultsTable({ data, onPitcherClick, spOnly, splitByTeam, top400Names, isMobile }) {
-  const [sortKey, setSortKey] = useState(null);
-  const [sortDir, setSortDir] = useState("asc");
+export default function PitcherResultsTable({ data, onPitcherClick, spOnly, splitByTeam, top400Names, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange }) {
+  const [sortKeyLocal, setSortKeyLocal] = useState(null);
+  const [sortDirLocal, setSortDirLocal] = useState("asc");
+  const sortKey = onSortKeyChange ? sortKeyProp : sortKeyLocal;
+  const setSortKey = onSortKeyChange || setSortKeyLocal;
+  const sortDir = onSortDirChange ? sortDirProp : sortDirLocal;
+  const setSortDir = onSortDirChange || setSortDirLocal;
 
   const handleSort = (key) => {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");

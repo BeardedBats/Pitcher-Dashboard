@@ -77,6 +77,12 @@ export default function App() {
   const [lastRefresh, setLastRefresh] = useState(null);
   const [toast, setToast] = useState(null); // { message, type: "success"|"error" }
 
+  // Lifted sort state so it persists across card navigation
+  const [resultsSortKey, setResultsSortKey] = useState(null);
+  const [resultsSortDir, setResultsSortDir] = useState("asc");
+  const [pitchSortKey, setPitchSortKey] = useState(null);
+  const [pitchSortDir, setPitchSortDir] = useState("asc");
+
   // Track whether this is the initial mount load (combined endpoint) vs user date change
   const initialLoadDone = React.useRef(false);
   // Ref to skip the date-change useEffect when navigating to a game card from player page
@@ -581,10 +587,10 @@ export default function App() {
         <div className={splitByTeam ? "table-card-none" : "table-card"}>
           <div className="table-container">
             {view === "pitch-data" && (
-              <PitchDataTable data={filteredPitchData} onPitcherClick={openCard} splitByTeam={splitByTeam} spOnly={spOnly} top400Names={TOP_400_NAMES} isMobile={isMobile} />
+              <PitchDataTable data={filteredPitchData} onPitcherClick={openCard} splitByTeam={splitByTeam} spOnly={spOnly} top400Names={TOP_400_NAMES} isMobile={isMobile} sortKey={pitchSortKey} onSortKeyChange={setPitchSortKey} sortDir={pitchSortDir} onSortDirChange={setPitchSortDir} />
             )}
             {view === "pitcher-results" && (
-              <PitcherResultsTable data={filteredResultsData} onPitcherClick={openCard} spOnly={spOnly} splitByTeam={splitByTeam} top400Names={TOP_400_NAMES} isMobile={isMobile} />
+              <PitcherResultsTable data={filteredResultsData} onPitcherClick={openCard} spOnly={spOnly} splitByTeam={splitByTeam} top400Names={TOP_400_NAMES} isMobile={isMobile} sortKey={resultsSortKey} onSortKeyChange={setResultsSortKey} sortDir={resultsSortDir} onSortDirChange={setResultsSortDir} />
             )}
           </div>
         </div>
