@@ -93,6 +93,7 @@ def _aggregate_pitch_df(df, full_df=None):
             "ext": round(gdf["release_extension"].mean(), 1) if gdf["release_extension"].notna().any() else None,
             "ivb": round(gdf["pfx_z"].mean() * 12, 1) if gdf["pfx_z"].notna().any() else None,
             "ihb": round(gdf["pfx_x"].mean() * 12, 1) if gdf["pfx_x"].notna().any() else None,
+            "havaa": round(gdf["havaa"].mean(), 1) if "havaa" in gdf.columns and gdf["havaa"].notna().any() else None,
             "whiffs": whiffs,
             "zone_pct": round(in_zone / total * 100, 1) if total > 0 else 0,
             "o_swing_pct": round(o_swings / out_zone * 100, 1) if out_zone > 0 else 0,
@@ -192,17 +193,58 @@ def build_pitches_list(pdf):
                    "pitch_number", "outs_when_up", "batter_name", "events", "des",
                    "launch_speed", "launch_angle", "hc_x", "hc_y", "release_extension",
                    "inning", "inning_topbot", "balls", "strikes", "on_1b", "on_2b", "on_3b",
-                   "game_pk", "game_date"]
+                   "game_pk", "game_date",
+                   "release_pos_x", "release_pos_z", "vx0", "vy0", "vz0", "ax", "ay", "az"]
     available_cols = [c for c in _pitch_cols if c in pdf.columns]
     pitch_df = pdf[available_cols].copy()
     if "pfx_x" in pitch_df.columns:
         pitch_df["pfx_x"] = pitch_df["pfx_x"] * 12
     if "pfx_z" in pitch_df.columns:
         pitch_df["pfx_z"] = pitch_df["pfx_z"] * 12
+    # Compute HAVAA (Height Adjusted Vertical Approach Angle)
+    # VAA = arctan(vz_plate / vy_plate), then adjust for pitch height relative to middle of zone
+    if all(c in pitch_df.columns for c in ["vy0", "vz0", "ay", "az", "plate_z"]):
+        import math
+        def _calc_havaa(row):
+            try:
+                vy0, vz0 = row["vy0"], row["vz0"]
+                ay_val, az_val = row["ay"], row["az"]
+                pz = row["plate_z"]
+                if any(pd.isna(v) for v in [vy0, vz0, ay_val, az_val, pz]):
+                    return None
+                # Time to plate: t ≈ -55 / vy0
+                t = -55.0 / vy0 if vy0 != 0 else 0
+                vz_plate = vz0 + az_val * t
+                vy_plate = vy0 + ay_val * t
+                # VAA in degrees (negative = descending)
+                vaa = math.degrees(math.atan2(vz_plate, -vy_plate))
+                # Height adjustment: normalize to mid-zone (2.5ft reference)
+                # Higher pitches have less steep VAA, lower pitches steeper
+                # Adjustment factor: ~0.5 degrees per foot of deviation from reference
+                havaa = vaa - 0.5 * (pz - 2.5)
+                return round(havaa, 1)
+            except Exception:
+                return None
+        pitch_df["havaa"] = pitch_df.apply(_calc_havaa, axis=1)
+    # Compute arm angle from release position
+    if all(c in pitch_df.columns for c in ["release_pos_x", "release_pos_z"]):
+        import math
+        def _calc_arm_angle(row):
+            try:
+                rx, rz = row["release_pos_x"], row["release_pos_z"]
+                if pd.isna(rx) or pd.isna(rz):
+                    return None
+                # Arm angle: angle from horizontal reference (mound height ~10in/0.83ft above ground)
+                # release_pos_z is height in feet, release_pos_x is horizontal displacement
+                mound_height = 0.83  # approximate mound reference height in feet
+                return round(math.degrees(math.atan2(rz - mound_height, abs(rx))), 1)
+            except Exception:
+                return None
+        pitch_df["arm_angle"] = pitch_df.apply(_calc_arm_angle, axis=1)
     pitches_raw = pitch_df.to_dict(orient="records")
     pitches = []
     _int_fields = {"zone", "at_bat_number", "pitch_number", "outs_when_up", "inning", "balls", "strikes", "game_pk"}
-    _float_fields = {"plate_x", "plate_z", "pfx_x", "pfx_z", "release_speed", "launch_speed", "launch_angle", "hc_x", "hc_y", "release_extension"}
+    _float_fields = {"plate_x", "plate_z", "pfx_x", "pfx_z", "release_speed", "launch_speed", "launch_angle", "hc_x", "hc_y", "release_extension", "release_pos_x", "release_pos_z", "havaa", "arm_angle"}
     _bool_fields = {"on_1b", "on_2b", "on_3b"}
     _str_defaults = {"pitch_name": "Unclassified", "description": "", "events": "", "des": "", "batter_name": "", "stand": "", "pitch_type": "", "game_date": ""}
     for row in pitches_raw:
@@ -251,7 +293,8 @@ def get_pitcher_card(date_str, pitcher_id, game_pk):
                    "release_speed", "stand", "description", "zone", "at_bat_number",
                    "pitch_number", "outs_when_up", "batter_name", "events", "des",
                    "launch_speed", "launch_angle", "hc_x", "hc_y", "release_extension",
-                   "inning", "inning_topbot", "balls", "strikes", "on_1b", "on_2b", "on_3b"]
+                   "inning", "inning_topbot", "balls", "strikes", "on_1b", "on_2b", "on_3b",
+                   "release_pos_x", "release_pos_z", "vx0", "vy0", "vz0", "ax", "ay", "az"]
     # Select only columns that exist
     available_cols = [c for c in _pitch_cols if c in pdf.columns]
     pitch_df = pdf[available_cols].copy()
@@ -260,11 +303,38 @@ def get_pitcher_card(date_str, pitcher_id, game_pk):
         pitch_df["pfx_x"] = pitch_df["pfx_x"] * 12
     if "pfx_z" in pitch_df.columns:
         pitch_df["pfx_z"] = pitch_df["pfx_z"] * 12
+    # Compute HAVAA and arm_angle (same as build_pitches_list)
+    if all(c in pitch_df.columns for c in ["vy0", "vz0", "ay", "az", "plate_z"]):
+        import math
+        def _calc_havaa2(row):
+            try:
+                vy0, vz0, ay_val, az_val, pz = row["vy0"], row["vz0"], row["ay"], row["az"], row["plate_z"]
+                if any(pd.isna(v) for v in [vy0, vz0, ay_val, az_val, pz]):
+                    return None
+                t = -55.0 / vy0 if vy0 != 0 else 0
+                vz_plate = vz0 + az_val * t
+                vy_plate = vy0 + ay_val * t
+                vaa = math.degrees(math.atan2(vz_plate, -vy_plate))
+                return round(vaa - 0.5 * (pz - 2.5), 1)
+            except Exception:
+                return None
+        pitch_df["havaa"] = pitch_df.apply(_calc_havaa2, axis=1)
+    if all(c in pitch_df.columns for c in ["release_pos_x", "release_pos_z"]):
+        import math
+        def _calc_arm2(row):
+            try:
+                rx, rz = row["release_pos_x"], row["release_pos_z"]
+                if pd.isna(rx) or pd.isna(rz):
+                    return None
+                return round(math.degrees(math.atan2(rz - 0.83, abs(rx))), 1)
+            except Exception:
+                return None
+        pitch_df["arm_angle"] = pitch_df.apply(_calc_arm2, axis=1)
     # Convert to list of dicts — sanitize NaN→None for JSON safety
     pitches_raw = pitch_df.to_dict(orient="records")
     pitches = []
     _int_fields = {"zone", "at_bat_number", "pitch_number", "outs_when_up", "inning", "balls", "strikes"}
-    _float_fields = {"plate_x", "plate_z", "pfx_x", "pfx_z", "release_speed", "launch_speed", "launch_angle", "hc_x", "hc_y", "release_extension"}
+    _float_fields = {"plate_x", "plate_z", "pfx_x", "pfx_z", "release_speed", "launch_speed", "launch_angle", "hc_x", "hc_y", "release_extension", "release_pos_x", "release_pos_z", "havaa", "arm_angle"}
     _bool_fields = {"on_1b", "on_2b", "on_3b"}
     _str_defaults = {"pitch_name": "Unclassified", "description": "", "events": "", "des": "", "batter_name": "", "stand": "", "pitch_type": ""}
     for row in pitches_raw:
@@ -388,6 +458,7 @@ def get_season_averages(pitcher_id, season_year):
         avg = {
             "velo": round(gdf["release_speed"].mean(), 1) if "release_speed" in gdf.columns and gdf["release_speed"].notna().any() else None,
             "ihb": round(gdf["pfx_x"].mean() * 12, 1) if "pfx_x" in gdf.columns and gdf["pfx_x"].notna().any() else None,
+            "havaa": round(gdf["havaa"].mean(), 1) if "havaa" in gdf.columns and gdf["havaa"].notna().any() else None,
             "ivb": round(gdf["pfx_z"].mean() * 12, 1) if "pfx_z" in gdf.columns and gdf["pfx_z"].notna().any() else None,
             "ext": round(gdf["release_extension"].mean(), 1) if "release_extension" in gdf.columns and gdf["release_extension"].notna().any() else None,
             "usage": round(count / total_pitches * 100, 1) if total_pitches > 0 else 0,
@@ -554,6 +625,7 @@ def aggregate_pitch_data_range(df, prepped=False):
             "ext": round(gdf["release_extension"].mean(), 1) if gdf["release_extension"].notna().any() else None,
             "ivb": round(gdf["pfx_z"].mean() * 12, 1) if gdf["pfx_z"].notna().any() else None,
             "ihb": round(gdf["pfx_x"].mean() * 12, 1) if gdf["pfx_x"].notna().any() else None,
+            "havaa": round(gdf["havaa"].mean(), 1) if "havaa" in gdf.columns and gdf["havaa"].notna().any() else None,
             "whiffs": whiffs,
             "zone_pct": round(in_zone / total * 100, 1) if total > 0 else 0,
             "o_swing_pct": round(o_swings / out_zone * 100, 1) if out_zone > 0 else 0,

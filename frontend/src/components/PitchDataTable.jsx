@@ -82,7 +82,7 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
 
   const pctKeys = ["usage", "usage_vs_r", "usage_vs_l", "strike_pct", "cs_pct", "swstr_pct", "csw_pct"];
   const gradientKeys = ["ivb", "ext"];
-  const HYPHEN_TOTAL_KEYS = new Set(["velo", "usage", "ivb", "ihb", "ext"]);
+  const HYPHEN_TOTAL_KEYS = new Set(["velo", "usage", "ivb", "ihb", "havaa", "ext"]);
 
   // Compute totals row from data (weighted averages for pct columns)
   const computeTotals = (rows) => {

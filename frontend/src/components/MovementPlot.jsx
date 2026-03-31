@@ -98,6 +98,40 @@ export default function MovementPlot({ pitches, hand, onReclassify, isMobile = f
     ctx.beginPath(); ctx.moveTo(cx, PAD.top); ctx.lineTo(cx, PAD.top + PLOT_H); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(PAD.left, cy); ctx.lineTo(PAD.left + PLOT_W, cy); ctx.stroke();
 
+    // Draw arm angle dotted line through origin
+    if (pitches && pitches.length) {
+      const armAngles = pitches.filter(p => p.arm_angle != null).map(p => p.arm_angle);
+      if (armAngles.length > 0) {
+        const avgArmAngle = armAngles.reduce((a, b) => a + b, 0) / armAngles.length;
+        // Convert arm angle (degrees from horizontal) to radians for drawing
+        // On the movement plot, the line should pass through (0,0) at the arm slot angle
+        const rad = avgArmAngle * Math.PI / 180;
+        const lineLen = Math.max(PLOT_W, PLOT_H) * 0.7;
+        // Direction: arm angle determines the tilt of movement axis
+        // cos(rad) = horizontal component, sin(rad) = vertical component
+        const dx = Math.cos(rad) * lineLen;
+        const dy = -Math.sin(rad) * lineLen; // negative because canvas y is inverted
+        ctx.save();
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(cx - dx, cy - dy);
+        ctx.lineTo(cx + dx, cy + dy);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // Label
+        ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+        ctx.font = "500 9px DM Sans, sans-serif";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        const labelX = cx + dx * 0.6 + 4;
+        const labelY = cy + dy * 0.6 - 8;
+        ctx.fillText(`${avgArmAngle.toFixed(0)}°`, labelX, labelY);
+        ctx.restore();
+      }
+    }
+
     const positions = [];
     if (pitches && pitches.length) {
       pitches.forEach((p, idx) => {
