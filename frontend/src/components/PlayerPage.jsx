@@ -233,7 +233,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
               <table className="card-gameline-table">
                 <thead>
                   <tr>
-                    <th>Date</th><th>Opp</th><th>IP</th><th>ER</th><th>R</th><th>Hits</th><th>BB</th>
+                    <th>Date</th><th>Opp</th><th>IP</th><th>R</th><th>ER</th><th>Hits</th><th>BB</th>
                     <th className="gameline-divider-right">K</th>
                     <th>Whiffs</th><th>CSW%</th><th>#</th><th>HR</th>
                   </tr>
@@ -248,8 +248,8 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                       <td>{row.date}</td>
                       <td>{displayAbbrev(row.opponent)}</td>
                       <td>{row.ip}</td>
-                      <td>{row.er}</td>
                       <td>{row.runs != null ? row.runs : "—"}</td>
+                      <td>{row.er}</td>
                       <td>{row.hits}</td>
                       <td>{row.bbs}</td>
                       <td className="gameline-divider-right">{row.ks}</td>

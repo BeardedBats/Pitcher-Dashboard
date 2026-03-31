@@ -67,8 +67,10 @@ export default function Scoreboard({ data, pitcherId, onInningClick }) {
   const tooltipPitcherId = tooltipPas.length > 0 ? tooltipPas[0]?.pitcher_id : null;
   const isFeaturedPitcherPitching = pitcherId && tooltipPitcherId === pitcherId;
 
-  // Compute total game pitch count for featured pitcher across all innings
-  const featuredPitcherTotalPitches = pitcherId && plays ? plays.reduce((sum, half) => {
+  // Compute cumulative pitch count for featured pitcher through the current tooltip's half-inning
+  const featuredPitcherTotalPitches = pitcherId && plays && tooltip ? plays.reduce((sum, half) => {
+    // Only count innings up to and including the current tooltip half-inning
+    if (half.inning > tooltip.inning || (half.inning === tooltip.inning && half.top === false && tooltip.top === true)) return sum;
     return sum + (half.pas || []).reduce((s, pa) => {
       return s + (pa.pitcher_id === pitcherId && pa.pitches ? pa.pitches.length : 0);
     }, 0);

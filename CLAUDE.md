@@ -66,7 +66,7 @@ All tooltips in StrikeZonePlot, VelocityTrend, PlayByPlayModal, PitcherCard:
 ## Totals Rows
 - Both PitchDataTable and ResultsTable use `.pp-total-row` CSS class (bold `font-weight: 700`, `background: rgba(255,255,255,0.04)`, `border-top: 2px solid var(--border)`)
 - Box Score season totals row also uses `.pp-total-row` + `.pp-total-label`
-- Box Score columns: Pitcher | IP | ER | R | Hits | BB | K | Whiffs | SwStr% | CSW% | Strike% | # | HR
+- Box Score columns: Pitcher | IP | R | ER | Hits | BB | K | Whiffs | SwStr% | CSW% | Strike% | # | HR
 
 ## Spring Training Date Range
 All season totals use `2026-02-10` as start date (includes WBC games). This is set in:

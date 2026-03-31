@@ -266,7 +266,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
             <table className="card-gameline-table">
               <thead>
                 <tr>
-                  <th>Pitcher</th><th>IP</th><th>ER</th><th>R</th><th>Hits</th><th>BB</th>
+                  <th>Pitcher</th><th>IP</th><th>R</th><th>ER</th><th>Hits</th><th>BB</th>
                   <th className="gameline-divider-right">K</th>
                   <th>Whiffs</th><th>SwStr%</th><th>CSW%</th><th>Strike%</th><th>#</th><th>HR</th>
                 </tr>
@@ -275,8 +275,8 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                 <tr>
                   <td className="card-pitcher-name" style={{ color: "#f0c040" }}>{name}</td>
                   <td>{result.ip}</td>
-                  <td>{result.er}</td>
                   <td>{result.runs != null ? result.runs : "-"}</td>
+                  <td>{result.er}</td>
                   <td>{result.hits}</td>
                   <td>{result.bbs}</td>
                   <td className="gameline-divider-right">{result.ks}</td>
