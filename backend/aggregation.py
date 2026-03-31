@@ -35,9 +35,8 @@ def _prep_df(df):
     # Compute HAVAA (Height Adjusted Vertical Approach Angle) vectorized
     # Uses proper kinematics: vy_f = -sqrt(vy0^2 - 2*ay*(50 - 17/12))
     # Then t = (vy_f - vy0)/ay, vz_f = vz0 + az*t
-    # VAA = -arctan(vz_f/vy_f) in degrees
+    # VAA = arctan(vz_f / vy_f) in degrees (using atan2 with -vy_f to get correct quadrant)
     # Height adjustment: +0.82 deg per foot above mid-zone (2.5ft reference)
-    # so pitches at different heights can be compared fairly
     if all(c in df.columns for c in ["vy0", "vz0", "ay", "az", "plate_z"]):
         vy0 = pd.to_numeric(df["vy0"], errors="coerce")
         vz0 = pd.to_numeric(df["vz0"], errors="coerce")
@@ -48,14 +47,14 @@ def _prep_df(df):
         dy = 50.0 - 17.0 / 12.0  # ~48.583 ft
         # vy_f = -sqrt(vy0^2 - 2*ay*dy)
         discriminant = vy0 ** 2 - 2 * ay_s * dy
-        discriminant = discriminant.clip(lower=0)  # avoid sqrt of negative
+        discriminant = discriminant.clip(lower=0)
         vy_f = -np.sqrt(discriminant)
-        # t = (vy_f - vy0) / ay
         t = np.where(ay_s != 0, (vy_f - vy0) / ay_s, 0)
         vz_f = vz0 + az_s * t
-        # VAA = -arctan(vz_f / vy_f) in degrees (negative = descending)
-        vaa = -np.degrees(np.arctan2(vz_f, vy_f))
-        # Height adjustment: adjust by +0.82 deg per foot above 2.5ft reference
+        # VAA: vy_f is negative (toward plate), vz_f is negative (dropping)
+        # atan2(vz_f, -vy_f) gives angle from horizontal: negative = descending
+        vaa = np.degrees(np.arctan2(vz_f, -vy_f))
+        # Height adjustment: +0.82 deg per foot above 2.5ft reference
         havaa = vaa + 0.82 * (pz - 2.5)
         df["havaa"] = np.round(havaa, 1)
     return df
@@ -240,7 +239,7 @@ def build_pitches_list(pdf):
         vy_f = -np.sqrt(discriminant)
         t = np.where(ay_v != 0, (vy_f - vy0) / ay_v, 0)
         vz_f = vz0 + az_v * t
-        vaa = -np.degrees(np.arctan2(vz_f, vy_f))
+        vaa = np.degrees(np.arctan2(vz_f, -vy_f))
         pitch_df["havaa"] = np.round(vaa + 0.82 * (pz - 2.5), 1)
     # Compute arm angle from release position
     if all(c in pitch_df.columns for c in ["release_pos_x", "release_pos_z"]):
@@ -331,7 +330,7 @@ def get_pitcher_card(date_str, pitcher_id, game_pk):
         vy_f = -np.sqrt(disc)
         t = np.where(ay_v != 0, (vy_f - vy0_v) / ay_v, 0)
         vz_f = vz0_v + az_v * t
-        vaa = -np.degrees(np.arctan2(vz_f, vy_f))
+        vaa = np.degrees(np.arctan2(vz_f, -vy_f))
         pitch_df["havaa"] = np.round(vaa + 0.82 * (pz_v - 2.5), 1)
     if all(c in pitch_df.columns for c in ["release_pos_x", "release_pos_z"]):
         import math
