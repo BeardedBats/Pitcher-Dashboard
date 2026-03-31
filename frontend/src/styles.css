@@ -170,6 +170,7 @@ thead th {
   text-transform: uppercase; letter-spacing: 0.04em;
 }
 thead th:hover { color: var(--accent-hover); }
+.sort-active { border-bottom: 2px solid var(--accent); padding-bottom: 1px; }
 
 tbody tr { border-bottom: 1px solid var(--row-border); transition: background 0.1s; }
 tbody tr:last-child { border-bottom: none; }
@@ -1187,7 +1188,7 @@ canvas { display: block; border: none; border-radius: var(--radius-sm); }
   tbody .mobile-sticky-col { z-index: 3 !important; }
   tbody .mobile-sticky-col-2 { z-index: 3 !important; }
   tr:hover .mobile-sticky-col,
-  tr:hover .mobile-sticky-col-2 { background: rgba(85, 232, 255, 0.06) !important; }
+  tr:hover .mobile-sticky-col-2 { background: #2a3048 !important; }
   thead .mobile-sticky-col,
   thead .mobile-sticky-col-2 { z-index: 5 !important; background: var(--surface2) !important; }
 

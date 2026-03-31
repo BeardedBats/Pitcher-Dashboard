@@ -81,6 +81,8 @@ export const CARD_RESULTS_COLUMNS = [
   { key: "hrs", label: "HRs", align: "right" },
   { key: "outs_bip", label: "Outs", align: "right" },
   { key: "bip", label: "BIP", align: "right", dividerRight: true },
+  { key: "gb_pct", label: "GB%", align: "right" },
+  { key: "fb_pct", label: "FB%", align: "right" },
   { key: "weak_pct", label: "Weak%", align: "right" },
   { key: "hard_pct", label: "Hard%", align: "right" },
 ];
@@ -92,6 +94,7 @@ export const PITCHER_RESULTS_COLUMNS = [
   { key: "opponent", label: "Opp", align: "left" },
   { key: "ip", label: "IP", align: "right" },
   { key: "er", label: "ER", align: "right" },
+  { key: "runs", label: "R", align: "right" },
   { key: "hits", label: "H", align: "right" },
   { key: "bbs", label: "BB", align: "right" },
   { key: "ks", label: "K", align: "right" },

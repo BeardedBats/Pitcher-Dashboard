@@ -91,6 +91,14 @@ export async function fetchRefresh() {
   return res.json();
 }
 
+export async function fetchPitcherSchedule(name, gameDate = "") {
+  const params = new URLSearchParams({ name });
+  if (gameDate) params.set("game_date", gameDate);
+  const res = await fetch(`${BASE}/api/pitcher-schedule?${params}`);
+  if (!res.ok) throw new Error("Failed to fetch pitcher schedule");
+  return res.json();
+}
+
 export async function fetchLastRefresh() {
   const res = await fetch(`${BASE}/api/last-refresh`);
   if (!res.ok) throw new Error("Failed to fetch last refresh");

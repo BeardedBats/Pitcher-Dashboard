@@ -78,7 +78,7 @@ export default function App() {
   const [toast, setToast] = useState(null); // { message, type: "success"|"error" }
 
   // Lifted sort state so it persists across card navigation
-  const [resultsSortKey, setResultsSortKey] = useState(null);
+  const [resultsSortKey, setResultsSortKey] = useState("er");
   const [resultsSortDir, setResultsSortDir] = useState("asc");
   const [pitchSortKey, setPitchSortKey] = useState(null);
   const [pitchSortDir, setPitchSortDir] = useState("asc");

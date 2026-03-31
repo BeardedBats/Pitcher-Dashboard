@@ -129,7 +129,7 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
                   className={isMobile && c.key === "pitcher" ? "mobile-sticky-col" : ""}
                   style={{ textAlign: c.align || "left", ...(isMobile && c.key === "pitcher" ? { left: 0, minWidth: 130 } : {}) }}
                   onClick={() => handleSort(c.key)}>
-                  {c.label}{sortKey === c.key ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : ""}
+                  <span className={sortKey === c.key ? "sort-active" : ""}>{c.label}</span>
                 </th>
               ))}
             </tr>

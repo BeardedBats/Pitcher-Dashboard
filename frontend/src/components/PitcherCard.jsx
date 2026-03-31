@@ -9,7 +9,7 @@ import VelocityTrend from "./VelocityTrend";
 import VelocityTrendV2 from "./VelocityTrendV2";
 import { PITCH_COLORS, PITCH_DESC_COLORS, RESULT_COLORS, CARD_PITCH_DATA_COLUMNS, displayAbbrev } from "../constants";
 import { getResultColor } from "../utils/formatting";
-import { fetchSeasonAverages, fetchPitcherSeasonTotals } from "../utils/api";
+import { fetchSeasonAverages, fetchPitcherSeasonTotals, fetchPitcherSchedule } from "../utils/api";
 import { classifyPitchResult, isRunScored, isStrikeoutPitch, isBallInPlay, classifyBIPQuality, classifyBattedBallFull, getTooltipResult, RESULT_FILTER_OPTIONS, RESULT_QUICK_ACTIONS } from "../utils/pitchFilters";
 
 function ordinal(n) {
@@ -97,6 +97,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
   const [seasonAvgs, setSeasonAvgs] = useState(null);
   const [loadingAvgs, setLoadingAvgs] = useState(false);
   const [seasonTotals, setSeasonTotals] = useState(null);
+  const [schedule, setSchedule] = useState(null);
 
   // Pitch-type filter for plots (null = all selected on init)
   const [pitchTypeFilter, setPitchTypeFilter] = useState(null);
@@ -127,6 +128,15 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
         .catch(() => setSeasonTotals(null));
     }
   }, [pitcher_id, currentYear]);
+
+  // Fetch next scheduled starts
+  useEffect(() => {
+    if (name && date) {
+      fetchPitcherSchedule(name, date)
+        .then(data => setSchedule(data?.starts || []))
+        .catch(() => setSchedule(null));
+    }
+  }, [name, date]);
 
   // Select correct pitch table based on batter filter
   const activePitchTable = useMemo(() => {
@@ -231,6 +241,25 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
               <span>{dateDisplay} {oppPrefix} {displayAbbrev(opponent)}</span>
             )}
           </div>
+          {schedule && schedule.length > 0 && (
+            <div className="card-schedule" style={{ fontSize: 13, color: "var(--text-dim)", marginTop: 2 }}>
+              <span style={{ color: "var(--text)", fontWeight: 500 }}>Next: </span>
+              {schedule.map((s, i) => (
+                <span key={i}>
+                  {i > 0 && ", "}
+                  {s.date}: {s.is_away ? "@ " : "vs. "}{displayAbbrev(s.opponent)}
+                </span>
+              ))}
+              {schedule.length < 3 && Array.from({ length: 3 - schedule.length }).map((_, i) => (
+                <span key={`tbd-${i}`}>{schedule.length + i > 0 && ", "}TBD</span>
+              ))}
+            </div>
+          )}
+          {schedule && schedule.length === 0 && (
+            <div className="card-schedule" style={{ fontSize: 13, color: "var(--text-dim)", marginTop: 2 }}>
+              <span style={{ color: "var(--text)", fontWeight: 500 }}>Next: </span>TBD, TBD, TBD
+            </div>
+          )}
         </div>
         {result && (
           <div className="card-gameline-box">
@@ -259,7 +288,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                   <td>{result.pitches}</td>
                   <td>{result.hrs}</td>
                 </tr>
-                {seasonTotals && seasonTotals.games > 1 && (() => {
+                {seasonTotals && seasonTotals.games >= 1 && (() => {
                   const g = seasonTotals.games;
                   const gs = seasonTotals.games_started || 0;
                   const ipThirds = seasonTotals.ip_thirds || 0;

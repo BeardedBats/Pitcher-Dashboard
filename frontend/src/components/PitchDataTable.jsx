@@ -419,7 +419,7 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
                       className={[c.dividerRight ? "col-divider-right" : "", isSticky ? "mobile-sticky-col" : ""].filter(Boolean).join(" ")}
                       style={{ textAlign: c.align || "right", cursor: sortable ? "pointer" : "default", ...stickyStyle }}
                       onClick={() => handleSort(c.key)}>
-                    {c.label}{sortable && sortKey === c.key ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : ""}
+                    <span className={sortable && sortKey === c.key ? "sort-active" : ""}>{c.label}</span>
                   </th>
                 );
               })}

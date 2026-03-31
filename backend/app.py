@@ -1,6 +1,10 @@
 import os
+import csv
+import io
+import re
 from pathlib import Path
 from datetime import datetime
+import requests as http_requests
 from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -393,6 +397,109 @@ def manual_refresh():
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
+
+# ── Pitcher schedule (next starts from Google Sheet) ──
+_SCHEDULE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1IefgV82-jwgoDDkSxWNlDmKFqvGOnorX1HjAENKfjv0/export?format=csv&gid=1267593742"
+_schedule_cache = {"data": None, "ts": None}
+
+def _fetch_schedule_grid():
+    """Fetch and parse the starting pitcher grid from Google Sheets. Cache for 1 hour."""
+    now = datetime.now()
+    if _schedule_cache["data"] and _schedule_cache["ts"] and (now - _schedule_cache["ts"]).seconds < 3600:
+        return _schedule_cache["data"]
+    try:
+        resp = http_requests.get(_SCHEDULE_SHEET_URL, timeout=15, allow_redirects=True)
+        resp.raise_for_status()
+        text = resp.text
+    except Exception:
+        return _schedule_cache.get("data") or {}
+    reader = csv.reader(io.StringIO(text))
+    rows = list(reader)
+    # Find date header rows (contain "Tuesday -", "Monday -", etc.)
+    dates = []  # list of (col_index, date_str)  e.g. (1, "3/31"), (2, "4/1")
+    pitcher_starts = {}  # pitcher_name_lower -> [(date_str, opp_abbr, is_away)]
+    current_year = now.year
+    date_row_idx = None
+    for ri, row in enumerate(rows):
+        # Detect date header row
+        if any(re.search(r'(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s*-\s*\d+/\d+', cell) for cell in row):
+            dates = []
+            for ci, cell in enumerate(row):
+                m = re.search(r'(\d+/\d+)', cell)
+                if m:
+                    dates.append((ci, m.group(1)))
+            date_row_idx = ri
+            continue
+        if not dates:
+            continue
+        # Skip division header rows (like "AL East", "NL West")
+        first = (row[0] or "").strip()
+        if not first or first in ("", "AL East", "AL Central", "AL West", "NL East", "NL Central", "NL West"):
+            continue
+        # This is a team row
+        team_abbr = first
+        for ci, date_str in dates:
+            if ci >= len(row):
+                continue
+            cell = (row[ci] or "").strip()
+            if not cell or cell.upper() == "OFF":
+                continue
+            # Parse "Pitcher Name | OPP" or "Pitcher Name | @OPP"
+            if "|" in cell:
+                parts = cell.split("|", 1)
+                pitcher_name = parts[0].strip()
+                opp_raw = parts[1].strip()
+            else:
+                continue
+            is_away = opp_raw.startswith("@")
+            opp_abbr = opp_raw.lstrip("@").strip()
+            key = pitcher_name.lower()
+            if key not in pitcher_starts:
+                pitcher_starts[key] = []
+            pitcher_starts[key].append({
+                "date": date_str,
+                "opponent": opp_abbr,
+                "is_away": is_away,
+                "team": team_abbr,
+            })
+    _schedule_cache["data"] = pitcher_starts
+    _schedule_cache["ts"] = now
+    return pitcher_starts
+
+@app.get("/api/pitcher-schedule")
+def pitcher_schedule(name: str = Query(...), game_date: str = Query("")):
+    """Return next 3 scheduled starts for a pitcher after game_date."""
+    grid = _fetch_schedule_grid()
+    key = name.lower().strip()
+    starts = grid.get(key, [])
+    if not starts:
+        # Try partial match
+        for k, v in grid.items():
+            if key in k or k in key:
+                starts = v
+                break
+    if not starts:
+        return {"starts": []}
+    # Parse game_date to filter future starts
+    current_year = datetime.now().year
+    try:
+        gd = datetime.strptime(game_date, "%Y-%m-%d") if game_date else datetime.now()
+    except ValueError:
+        gd = datetime.now()
+    future = []
+    for s in starts:
+        try:
+            sd = datetime.strptime(f"{current_year}/{s['date']}", "%Y/%m/%d")
+        except ValueError:
+            continue
+        if sd > gd:
+            future.append({
+                "date": f"{sd.month}/{sd.day}",
+                "opponent": s["opponent"],
+                "is_away": s["is_away"],
+            })
+    future.sort(key=lambda x: datetime.strptime(f"{current_year}/{x['date']}", "%Y/%m/%d"))
+    return {"starts": future[:3]}
 
 # ── Last refresh timestamp ──
 @app.get("/api/last-refresh")

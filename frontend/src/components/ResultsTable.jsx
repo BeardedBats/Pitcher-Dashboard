@@ -40,6 +40,7 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
       let balls = 0, bbs = 0, ks = 0;
       let bip = 0, hits = 0, outs = 0, hrs = 0;
       let weakBIP = 0, hardBIP = 0;
+      let gbCount = 0, fbCount = 0;
 
       for (const p of pitchArr) {
         const desc = (p.description || "").toLowerCase();
@@ -103,6 +104,12 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
           const quality = classifyBIPQuality(p.launch_speed, p.launch_angle);
           if (quality === "Weak") weakBIP++;
           else if (quality === "Hard") hardBIP++;
+
+          // GB/FB classification by launch angle
+          if (p.launch_angle != null) {
+            if (p.launch_angle < 10) gbCount++;
+            else if (p.launch_angle > 25) fbCount++;
+          }
         }
       }
 
@@ -123,6 +130,8 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
         hits,
         outs_bip: outs,
         hrs,
+        gb_pct: bip > 0 ? Math.round((gbCount / bip) * 100) : 0,
+        fb_pct: bip > 0 ? Math.round((fbCount / bip) * 100) : 0,
         weak_pct: bip > 0 ? Math.round((weakBIP / bip) * 100) : 0,
         hard_pct: bip > 0 ? Math.round((hardBIP / bip) * 100) : 0,
       });
@@ -141,6 +150,7 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
     let totalBBs = 0, totalKs = 0;
     let totalBIP = 0, totalHits = 0, totalOuts = 0, totalHRs = 0;
     let totalWeakBIP = 0, totalHardBIP = 0;
+    let totalGB = 0, totalFB = 0;
 
     // Re-aggregate from raw pitches (not from rounded per-pitch-type rows)
     let fp = pitches || [];
@@ -178,6 +188,11 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
         const quality = classifyBIPQuality(p.launch_speed, p.launch_angle);
         if (quality === "Weak") totalWeakBIP++;
         else if (quality === "Hard") totalHardBIP++;
+
+        if (p.launch_angle != null) {
+          if (p.launch_angle < 10) totalGB++;
+          else if (p.launch_angle > 25) totalFB++;
+        }
       }
     }
     const csw = totalWhiffs + totalCS;
@@ -197,6 +212,8 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
       hits: totalHits,
       outs_bip: totalOuts,
       hrs: totalHRs,
+      gb_pct: totalBIP > 0 ? Math.round((totalGB / totalBIP) * 100) : 0,
+      fb_pct: totalBIP > 0 ? Math.round((totalFB / totalBIP) * 100) : 0,
       weak_pct: totalBIP > 0 ? Math.round((totalWeakBIP / totalBIP) * 100) : 0,
       hard_pct: totalBIP > 0 ? Math.round((totalHardBIP / totalBIP) * 100) : 0,
     };
@@ -205,7 +222,7 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
   if (resultData.length === 0) return <div className="no-data">No result data available.</div>;
 
   const cols = CARD_RESULTS_COLUMNS;
-  const pctKeys = new Set(["zone_pct", "o_swing_pct", "csw_pct", "strike_pct", "weak_pct", "hard_pct"]);
+  const pctKeys = new Set(["zone_pct", "o_swing_pct", "csw_pct", "strike_pct", "gb_pct", "fb_pct", "weak_pct", "hard_pct"]);
 
   const renderCell = (row, col, isTotal) => {
     const v = row[col.key];

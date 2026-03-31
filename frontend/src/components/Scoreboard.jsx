@@ -1,6 +1,20 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { displayAbbrev } from "../constants";
 
+// Map PA result events to play-by-play card colors
+function getResultColor(result) {
+  if (!result) return null;
+  const r = result.toLowerCase().replace(/\s+/g, "_");
+  if (r === "strikeout" || r === "strikeout_double_play") return "#65FF9C";
+  if (r === "walk" || r === "intent_walk") return "#FFAB6E";
+  if (r === "hit_by_pitch") return "#FFAB6E";
+  if (r === "home_run") return "#FF5EDC";
+  if (r === "single" || r === "double" || r === "triple") return "#feffa3";
+  if (r.includes("out") || r.includes("play") || r.includes("force") || r === "fielders_choice" || r === "sac_fly" || r === "sac_bunt" || r === "field_error") return "#65BAFF";
+  if (r === "catcher_interf") return "#FFAB6E";
+  return null;
+}
+
 export default function Scoreboard({ data, pitcherId, onInningClick }) {
   const [tooltip, setTooltip] = useState(null); // { inning, top, x, y, above }
   const [clampedPos, setClampedPos] = useState(null); // { left, top, bottom }
@@ -52,6 +66,18 @@ export default function Scoreboard({ data, pitcherId, onInningClick }) {
   // Check if featured pitcher is pitching in this tooltip's inning
   const tooltipPitcherId = tooltipPas.length > 0 ? tooltipPas[0]?.pitcher_id : null;
   const isFeaturedPitcherPitching = pitcherId && tooltipPitcherId === pitcherId;
+
+  // Compute total game pitch count for featured pitcher across all innings
+  const featuredPitcherTotalPitches = pitcherId && plays ? plays.reduce((sum, half) => {
+    return sum + (half.pas || []).reduce((s, pa) => {
+      return s + (pa.pitcher_id === pitcherId && pa.pitches ? pa.pitches.length : 0);
+    }, 0);
+  }, 0) : 0;
+
+  // Compute pitch count in the current tooltip half-inning for featured pitcher
+  const tooltipInningPitches = tooltipPas.reduce((sum, pa) => {
+    return sum + (pa.pitcher_id === pitcherId && pa.pitches ? pa.pitches.length : 0);
+  }, 0);
 
   // Handle tooltip viewport clamping
   useEffect(() => {
@@ -185,9 +211,17 @@ export default function Scoreboard({ data, pitcherId, onInningClick }) {
               {displayAbbrev(tooltip.top ? home_team : away_team)}
             </span>
           </div>
+          {isFeaturedPitcherPitching && (
+            <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 6, display: "flex", gap: 12 }}>
+              <span>Total Pitches: <span style={{ color: "var(--text-bright)", fontWeight: 600 }}>{featuredPitcherTotalPitches}</span></span>
+              <span>Pitches: <span style={{ color: "var(--text-bright)", fontWeight: 600 }}>{tooltipInningPitches}</span></span>
+            </div>
+          )}
           {tooltipPas.map((pa, i) => {
             const prevPa = i > 0 ? tooltipPas[i - 1] : null;
             const isPitcherChange = prevPa && prevPa.pitcher_id !== pa.pitcher_id;
+            const isFeaturedPa = isFeaturedPitcherPitching && pa.pitcher_id === pitcherId;
+            const resultColor = isFeaturedPa ? getResultColor(pa.result) : null;
 
             return (
               <React.Fragment key={i}>
@@ -196,9 +230,9 @@ export default function Scoreboard({ data, pitcherId, onInningClick }) {
                     {prevPa.pitcher} relieved by {pa.pitcher}
                   </div>
                 )}
-                <div className={`sb-tooltip-pa${isFeaturedPitcherPitching && pa.pitcher_id === pitcherId ? " sb-hl" : ""}`}
-                  style={isFeaturedPitcherPitching && pa.pitcher_id === pitcherId ? {
-                    color: "var(--text-bright)",
+                <div className={`sb-tooltip-pa${isFeaturedPa ? " sb-hl" : ""}`}
+                  style={isFeaturedPa ? {
+                    color: resultColor || "var(--text-bright)",
                     fontWeight: 600,
                   } : {}}>
                   {pa.description || `${pa.batter}: ${pa.result}`}
