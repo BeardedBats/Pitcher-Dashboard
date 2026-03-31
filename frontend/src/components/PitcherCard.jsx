@@ -250,8 +250,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
               {schedule.map((s, i) => (
                 <div key={i} style={{ lineHeight: 1.5 }}>
                   <span style={{ color: "#c8cbe0", fontWeight: 600 }}>{s.date}:</span>{" "}
-                  {s.is_away ? "@ " : "vs. "}
-                  <span style={{ color: getOpponentTierColor(s.opponent, s.is_away), fontWeight: 700 }}>{displayAbbrev(s.opponent)}</span>
+                  <span style={{ color: getOpponentTierColor(s.opponent, s.is_away), fontWeight: 700 }}>{s.is_away ? "@ " : "vs. "}{displayAbbrev(s.opponent)}</span>
                   {s.day && <span style={{ color: "var(--text-dim)" }}> ({s.day})</span>}
                 </div>
               ))}
