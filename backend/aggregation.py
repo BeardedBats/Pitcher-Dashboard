@@ -33,17 +33,31 @@ def _prep_df(df):
     # Vectorized strike check on type column
     df["is_strike"] = df["type"].isin(_STRIKE_TYPES) if "type" in df.columns else False
     # Compute HAVAA (Height Adjusted Vertical Approach Angle) vectorized
+    # Uses proper kinematics: vy_f = -sqrt(vy0^2 - 2*ay*(50 - 17/12))
+    # Then t = (vy_f - vy0)/ay, vz_f = vz0 + az*t
+    # VAA = -arctan(vz_f/vy_f) in degrees
+    # Height adjustment: +0.82 deg per foot above mid-zone (2.5ft reference)
+    # so pitches at different heights can be compared fairly
     if all(c in df.columns for c in ["vy0", "vz0", "ay", "az", "plate_z"]):
         vy0 = pd.to_numeric(df["vy0"], errors="coerce")
         vz0 = pd.to_numeric(df["vz0"], errors="coerce")
         ay_s = pd.to_numeric(df["ay"], errors="coerce")
         az_s = pd.to_numeric(df["az"], errors="coerce")
         pz = pd.to_numeric(df["plate_z"], errors="coerce")
-        t = -55.0 / vy0
-        vz_plate = vz0 + az_s * t
-        vy_plate = vy0 + ay_s * t
-        vaa = np.degrees(np.arctan2(vz_plate, -vy_plate))
-        df["havaa"] = np.round(vaa - 0.5 * (pz - 2.5), 1)
+        # Distance from y0=50ft to front of plate at y=17/12 ft
+        dy = 50.0 - 17.0 / 12.0  # ~48.583 ft
+        # vy_f = -sqrt(vy0^2 - 2*ay*dy)
+        discriminant = vy0 ** 2 - 2 * ay_s * dy
+        discriminant = discriminant.clip(lower=0)  # avoid sqrt of negative
+        vy_f = -np.sqrt(discriminant)
+        # t = (vy_f - vy0) / ay
+        t = np.where(ay_s != 0, (vy_f - vy0) / ay_s, 0)
+        vz_f = vz0 + az_s * t
+        # VAA = -arctan(vz_f / vy_f) in degrees (negative = descending)
+        vaa = -np.degrees(np.arctan2(vz_f, vy_f))
+        # Height adjustment: adjust by +0.82 deg per foot above 2.5ft reference
+        havaa = vaa + 0.82 * (pz - 2.5)
+        df["havaa"] = np.round(havaa, 1)
     return df
 
 
@@ -214,31 +228,20 @@ def build_pitches_list(pdf):
         pitch_df["pfx_x"] = pitch_df["pfx_x"] * 12
     if "pfx_z" in pitch_df.columns:
         pitch_df["pfx_z"] = pitch_df["pfx_z"] * 12
-    # Compute HAVAA (Height Adjusted Vertical Approach Angle)
-    # VAA = arctan(vz_plate / vy_plate), then adjust for pitch height relative to middle of zone
+    # Compute HAVAA (Height Adjusted Vertical Approach Angle) — vectorized
     if all(c in pitch_df.columns for c in ["vy0", "vz0", "ay", "az", "plate_z"]):
-        import math
-        def _calc_havaa(row):
-            try:
-                vy0, vz0 = row["vy0"], row["vz0"]
-                ay_val, az_val = row["ay"], row["az"]
-                pz = row["plate_z"]
-                if any(pd.isna(v) for v in [vy0, vz0, ay_val, az_val, pz]):
-                    return None
-                # Time to plate: t ≈ -55 / vy0
-                t = -55.0 / vy0 if vy0 != 0 else 0
-                vz_plate = vz0 + az_val * t
-                vy_plate = vy0 + ay_val * t
-                # VAA in degrees (negative = descending)
-                vaa = math.degrees(math.atan2(vz_plate, -vy_plate))
-                # Height adjustment: normalize to mid-zone (2.5ft reference)
-                # Higher pitches have less steep VAA, lower pitches steeper
-                # Adjustment factor: ~0.5 degrees per foot of deviation from reference
-                havaa = vaa - 0.5 * (pz - 2.5)
-                return round(havaa, 1)
-            except Exception:
-                return None
-        pitch_df["havaa"] = pitch_df.apply(_calc_havaa, axis=1)
+        vy0 = pd.to_numeric(pitch_df["vy0"], errors="coerce")
+        vz0 = pd.to_numeric(pitch_df["vz0"], errors="coerce")
+        ay_v = pd.to_numeric(pitch_df["ay"], errors="coerce")
+        az_v = pd.to_numeric(pitch_df["az"], errors="coerce")
+        pz = pd.to_numeric(pitch_df["plate_z"], errors="coerce")
+        dy = 50.0 - 17.0 / 12.0
+        discriminant = (vy0 ** 2 - 2 * ay_v * dy).clip(lower=0)
+        vy_f = -np.sqrt(discriminant)
+        t = np.where(ay_v != 0, (vy_f - vy0) / ay_v, 0)
+        vz_f = vz0 + az_v * t
+        vaa = -np.degrees(np.arctan2(vz_f, vy_f))
+        pitch_df["havaa"] = np.round(vaa + 0.82 * (pz - 2.5), 1)
     # Compute arm angle from release position
     if all(c in pitch_df.columns for c in ["release_pos_x", "release_pos_z"]):
         import math
@@ -316,22 +319,20 @@ def get_pitcher_card(date_str, pitcher_id, game_pk):
         pitch_df["pfx_x"] = pitch_df["pfx_x"] * 12
     if "pfx_z" in pitch_df.columns:
         pitch_df["pfx_z"] = pitch_df["pfx_z"] * 12
-    # Compute HAVAA and arm_angle (same as build_pitches_list)
+    # Compute HAVAA and arm_angle (same as build_pitches_list) — vectorized
     if all(c in pitch_df.columns for c in ["vy0", "vz0", "ay", "az", "plate_z"]):
-        import math
-        def _calc_havaa2(row):
-            try:
-                vy0, vz0, ay_val, az_val, pz = row["vy0"], row["vz0"], row["ay"], row["az"], row["plate_z"]
-                if any(pd.isna(v) for v in [vy0, vz0, ay_val, az_val, pz]):
-                    return None
-                t = -55.0 / vy0 if vy0 != 0 else 0
-                vz_plate = vz0 + az_val * t
-                vy_plate = vy0 + ay_val * t
-                vaa = math.degrees(math.atan2(vz_plate, -vy_plate))
-                return round(vaa - 0.5 * (pz - 2.5), 1)
-            except Exception:
-                return None
-        pitch_df["havaa"] = pitch_df.apply(_calc_havaa2, axis=1)
+        vy0_v = pd.to_numeric(pitch_df["vy0"], errors="coerce")
+        vz0_v = pd.to_numeric(pitch_df["vz0"], errors="coerce")
+        ay_v = pd.to_numeric(pitch_df["ay"], errors="coerce")
+        az_v = pd.to_numeric(pitch_df["az"], errors="coerce")
+        pz_v = pd.to_numeric(pitch_df["plate_z"], errors="coerce")
+        dy = 50.0 - 17.0 / 12.0
+        disc = (vy0_v ** 2 - 2 * ay_v * dy).clip(lower=0)
+        vy_f = -np.sqrt(disc)
+        t = np.where(ay_v != 0, (vy_f - vy0_v) / ay_v, 0)
+        vz_f = vz0_v + az_v * t
+        vaa = -np.degrees(np.arctan2(vz_f, vy_f))
+        pitch_df["havaa"] = np.round(vaa + 0.82 * (pz_v - 2.5), 1)
     if all(c in pitch_df.columns for c in ["release_pos_x", "release_pos_z"]):
         import math
         def _calc_arm2(row):
