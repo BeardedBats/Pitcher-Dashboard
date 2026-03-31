@@ -54,8 +54,10 @@ def _prep_df(df):
         # VAA: vy_f is negative (toward plate), vz_f is negative (dropping)
         # atan2(vz_f, -vy_f) gives angle from horizontal: negative = descending
         vaa = np.degrees(np.arctan2(vz_f, -vy_f))
-        # Height adjustment: +0.82 deg per foot above 2.5ft reference
-        havaa = vaa + 0.82 * (pz - 2.5)
+        # Height adjustment: subtract expected VAA at that plate_z
+        # expected_VAA = 3.0 * plate_z - 14.0 (calibrated from league data)
+        # Positive HAVAA = flatter than expected = more ride
+        havaa = vaa - (3.0 * pz - 14.0)
         df["havaa"] = np.round(havaa, 1)
     return df
 
@@ -240,7 +242,7 @@ def build_pitches_list(pdf):
         t = np.where(ay_v != 0, (vy_f - vy0) / ay_v, 0)
         vz_f = vz0 + az_v * t
         vaa = np.degrees(np.arctan2(vz_f, -vy_f))
-        pitch_df["havaa"] = np.round(vaa + 0.82 * (pz - 2.5), 1)
+        pitch_df["havaa"] = np.round(vaa - (3.0 * pz - 14.0), 1)
     # Compute arm angle from release position
     if all(c in pitch_df.columns for c in ["release_pos_x", "release_pos_z"]):
         import math
@@ -331,7 +333,7 @@ def get_pitcher_card(date_str, pitcher_id, game_pk):
         t = np.where(ay_v != 0, (vy_f - vy0_v) / ay_v, 0)
         vz_f = vz0_v + az_v * t
         vaa = np.degrees(np.arctan2(vz_f, -vy_f))
-        pitch_df["havaa"] = np.round(vaa + 0.82 * (pz_v - 2.5), 1)
+        pitch_df["havaa"] = np.round(vaa - (3.0 * pz_v - 14.0), 1)
     if all(c in pitch_df.columns for c in ["release_pos_x", "release_pos_z"]):
         import math
         def _calc_arm2(row):
