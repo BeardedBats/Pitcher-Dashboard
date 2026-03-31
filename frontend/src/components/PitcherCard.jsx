@@ -7,7 +7,7 @@ import PitchFilterDropdown from "./PitchFilterDropdown";
 import ResultsTable from "./ResultsTable";
 import VelocityTrend from "./VelocityTrend";
 import VelocityTrendV2 from "./VelocityTrendV2";
-import { PITCH_COLORS, PITCH_DESC_COLORS, RESULT_COLORS, CARD_PITCH_DATA_COLUMNS, displayAbbrev } from "../constants";
+import { PITCH_COLORS, PITCH_DESC_COLORS, RESULT_COLORS, CARD_PITCH_DATA_COLUMNS, displayAbbrev, getOpponentTierColor } from "../constants";
 import { getResultColor } from "../utils/formatting";
 import { fetchSeasonAverages, fetchPitcherSeasonTotals, fetchPitcherSchedule } from "../utils/api";
 import { classifyPitchResult, isRunScored, isStrikeoutPitch, isBallInPlay, classifyBIPQuality, classifyBattedBallFull, getTooltipResult, RESULT_FILTER_OPTIONS, RESULT_QUICK_ACTIONS } from "../utils/pitchFilters";
@@ -241,23 +241,20 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
               <span>{dateDisplay} {oppPrefix} {displayAbbrev(opponent)}</span>
             )}
           </div>
-          {schedule && schedule.length > 0 && (
-            <div className="card-schedule" style={{ fontSize: 13, color: "var(--text-dim)", marginTop: 2 }}>
-              <span style={{ color: "var(--text)", fontWeight: 500 }}>Next: </span>
+          {schedule && (
+            <div className="card-schedule" style={{ fontSize: 13, color: "var(--text-dim)", marginTop: 4 }}>
+              <div style={{ color: "var(--text)", fontWeight: 500, marginBottom: 2 }}>Next Three Starts:</div>
               {schedule.map((s, i) => (
-                <span key={i}>
-                  {i > 0 && ", "}
-                  {s.date}: {s.is_away ? "@ " : "vs. "}{displayAbbrev(s.opponent)}
-                </span>
+                <div key={i} style={{ lineHeight: 1.5 }}>
+                  <span style={{ color: "#c8cbe0", fontWeight: 600 }}>{s.date}:</span>{" "}
+                  {s.is_away ? "@ " : "vs. "}
+                  <span style={{ color: getOpponentTierColor(s.opponent, s.is_away), fontWeight: 700 }}>{displayAbbrev(s.opponent)}</span>
+                  {s.day && <span style={{ color: "var(--text-dim)" }}> ({s.day})</span>}
+                </div>
               ))}
-              {schedule.length < 3 && Array.from({ length: 3 - schedule.length }).map((_, i) => (
-                <span key={`tbd-${i}`}>{schedule.length + i > 0 && ", "}TBD</span>
+              {Array.from({ length: Math.max(0, 3 - (schedule.length || 0)) }).map((_, i) => (
+                <div key={`tbd-${i}`} style={{ lineHeight: 1.5 }}>TBD</div>
               ))}
-            </div>
-          )}
-          {schedule && schedule.length === 0 && (
-            <div className="card-schedule" style={{ fontSize: 13, color: "var(--text-dim)", marginTop: 2 }}>
-              <span style={{ color: "var(--text)", fontWeight: 500 }}>Next: </span>TBD, TBD, TBD
             </div>
           )}
         </div>

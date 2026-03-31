@@ -493,8 +493,10 @@ def pitcher_schedule(name: str = Query(...), game_date: str = Query("")):
         except ValueError:
             continue
         if sd > gd:
+            day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
             future.append({
                 "date": f"{sd.month}/{sd.day}",
+                "day": day_names[sd.weekday()],
                 "opponent": s["opponent"],
                 "is_away": s["is_away"],
             })

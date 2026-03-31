@@ -262,3 +262,44 @@ export const PITCH_RESULT_SHAPES = {
   hit_by_pitch: "diamond",
   pitchout: "circle-border",
 };
+
+// PLV Projection Offense tiers — determines opponent team color in schedule display.
+// @ prefix = away matchup (at their park), no prefix = home matchup (they visit you).
+// Updated from Google Sheet: https://docs.google.com/spreadsheets/d/11ZObUMWsSxIMMU7OQsH5K1UKrZB1eyJ0xWMfm_Cvpy0
+// Check weekly on Tuesdays for changes.
+const _OFFENSE_TIER_COLORS = {
+  top: "#FF839B",     // Four-seamer Red
+  solid: "#CE66FF",   // Slider Pink
+  average: "#feffa3", // Single Yellow
+  weak: "#55e8ff",    // Header Blue
+  poor: "#6DE95D",    // Changeup Green
+};
+// home lookup (opponent comes to you) — key without @
+const _OFFENSE_HOME = {
+  ATH: "solid", ATL: "solid", BAL: "solid", BOS: "average", DET: "solid",
+  HOU: "solid", SDP: "solid", SEA: "solid",
+  ARI: "average", KCR: "average", MIA: "average", MIL: "average", SFG: "average", TEX: "average",
+  CHC: "top", LAD: "top", NYM: "top", NYY: "top", PHI: "top", TOR: "top",
+  MIN: "weak", PIT: "weak", STL: "weak",
+  CHW: "poor", CIN: "poor", CLE: "poor", COL: "poor", LAA: "poor", TBR: "poor", WSN: "poor",
+};
+// away lookup (you go to them) — maps from opponent abbrev when is_away=true
+const _OFFENSE_AWAY = {
+  ATH: "top", BOS: "solid",
+  CIN: "weak", COL: "weak", SEA: "weak", TEX: "weak",
+  STL: "poor",
+};
+/**
+ * Get the color for an opponent team based on offense tier.
+ * @param {string} teamAbbrev - Opponent team abbreviation
+ * @param {boolean} isAway - True if the pitcher's team is away (at opponent's park)
+ * @returns {string} CSS color string
+ */
+export function getOpponentTierColor(teamAbbrev, isAway) {
+  const abbr = (teamAbbrev || "").replace(/^@/, "").toUpperCase();
+  // Check away-specific override first, then fall back to home lookup
+  const tier = isAway && _OFFENSE_AWAY[abbr]
+    ? _OFFENSE_AWAY[abbr]
+    : _OFFENSE_HOME[abbr] || "average";
+  return _OFFENSE_TIER_COLORS[tier];
+}
