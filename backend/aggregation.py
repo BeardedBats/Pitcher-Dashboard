@@ -20,6 +20,7 @@ _TRIPLE_PLAY_EVENTS = frozenset(["triple_play"])
 
 def _prep_df(df):
     """Add computed boolean columns to a DataFrame for aggregation (vectorized)."""
+    import math
     df = df.copy()
     # Vectorized zone check: convert to numeric, check 1-9
     zone_num = pd.to_numeric(df["zone"], errors="coerce")
@@ -31,6 +32,18 @@ def _prep_df(df):
     df["is_called_strike"] = desc == "called_strike"
     # Vectorized strike check on type column
     df["is_strike"] = df["type"].isin(_STRIKE_TYPES) if "type" in df.columns else False
+    # Compute HAVAA (Height Adjusted Vertical Approach Angle) vectorized
+    if all(c in df.columns for c in ["vy0", "vz0", "ay", "az", "plate_z"]):
+        vy0 = pd.to_numeric(df["vy0"], errors="coerce")
+        vz0 = pd.to_numeric(df["vz0"], errors="coerce")
+        ay_s = pd.to_numeric(df["ay"], errors="coerce")
+        az_s = pd.to_numeric(df["az"], errors="coerce")
+        pz = pd.to_numeric(df["plate_z"], errors="coerce")
+        t = -55.0 / vy0
+        vz_plate = vz0 + az_s * t
+        vy_plate = vy0 + ay_s * t
+        vaa = np.degrees(np.arctan2(vz_plate, -vy_plate))
+        df["havaa"] = np.round(vaa - 0.5 * (pz - 2.5), 1)
     return df
 
 

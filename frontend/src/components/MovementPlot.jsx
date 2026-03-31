@@ -98,36 +98,49 @@ export default function MovementPlot({ pitches, hand, onReclassify, isMobile = f
     ctx.beginPath(); ctx.moveTo(cx, PAD.top); ctx.lineTo(cx, PAD.top + PLOT_H); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(PAD.left, cy); ctx.lineTo(PAD.left + PLOT_W, cy); ctx.stroke();
 
-    // Draw arm angle dotted line through origin
+    // Draw arm angle radius line from center outward (right for RHP, left for LHP)
     if (pitches && pitches.length) {
       const armAngles = pitches.filter(p => p.arm_angle != null).map(p => p.arm_angle);
       if (armAngles.length > 0) {
         const avgArmAngle = armAngles.reduce((a, b) => a + b, 0) / armAngles.length;
-        // Convert arm angle (degrees from horizontal) to radians for drawing
-        // On the movement plot, the line should pass through (0,0) at the arm slot angle
         const rad = avgArmAngle * Math.PI / 180;
-        const lineLen = Math.max(PLOT_W, PLOT_H) * 0.7;
-        // Direction: arm angle determines the tilt of movement axis
-        // cos(rad) = horizontal component, sin(rad) = vertical component
-        const dx = Math.cos(rad) * lineLen;
-        const dy = -Math.sin(rad) * lineLen; // negative because canvas y is inverted
+        // RHP releases to the right (positive x), LHP to the left
+        const isRHP = hand === "R";
+        const dir = isRHP ? 1 : -1;
+        // Line from center to edge of plot
+        const lineLen = Math.max(PLOT_W, PLOT_H) * 0.55;
+        const dx = dir * Math.cos(rad) * lineLen;
+        const dy = -Math.sin(rad) * lineLen; // canvas y is inverted
         ctx.save();
         ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
         ctx.lineWidth = 1.2;
-        ctx.setLineDash([6, 4]);
+        ctx.setLineDash([5, 4]);
         ctx.beginPath();
-        ctx.moveTo(cx - dx, cy - dy);
+        ctx.moveTo(cx, cy);
         ctx.lineTo(cx + dx, cy + dy);
         ctx.stroke();
         ctx.setLineDash([]);
-        // Label
-        ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
-        ctx.font = "500 9px DM Sans, sans-serif";
+        // Framed box label at end of line, outside the circle
+        const labelText = `Arm Angle: ${avgArmAngle.toFixed(0)}°`;
+        ctx.font = "600 9px DM Sans, sans-serif";
+        const textWidth = ctx.measureText(labelText).width;
+        const boxPad = 4;
+        const boxW = textWidth + boxPad * 2;
+        const boxH = 16;
+        const endX = cx + dx;
+        const endY = cy + dy;
+        // Position box just past the line end
+        const boxX = isRHP ? endX + 4 : endX - boxW - 4;
+        const boxY = endY - boxH / 2;
+        // Draw frame
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(boxX, boxY, boxW, boxH);
+        // Draw text
+        ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
         ctx.textAlign = "left";
         ctx.textBaseline = "middle";
-        const labelX = cx + dx * 0.6 + 4;
-        const labelY = cy + dy * 0.6 - 8;
-        ctx.fillText(`${avgArmAngle.toFixed(0)}°`, labelX, labelY);
+        ctx.fillText(labelText, boxX + boxPad, endY);
         ctx.restore();
       }
     }
