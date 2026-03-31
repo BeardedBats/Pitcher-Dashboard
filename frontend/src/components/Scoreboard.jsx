@@ -223,6 +223,33 @@ export default function Scoreboard({ data, pitcherId, onInningClick }) {
             const isFeaturedPa = isFeaturedPitcherPitching && pa.pitcher_id === pitcherId;
             const resultColor = isFeaturedPa ? getResultColor(pa.result) : null;
 
+            // Detect runs scored on this PA by comparing scores
+            let runsScored = 0;
+            if (pa.home_score != null && pa.away_score != null) {
+              const prevHome = prevPa?.home_score ?? (i === 0 ? null : null);
+              const prevAway = prevPa?.away_score ?? (i === 0 ? null : null);
+              if (prevHome != null && prevAway != null) {
+                runsScored = (pa.home_score + pa.away_score) - (prevHome + prevAway);
+              } else if (i === 0) {
+                // First PA in half-inning: compare with start-of-inning score
+                // Look at previous half-inning's last PA for baseline
+                const prevHalfPlays = tooltip ? getPlays(
+                  tooltip.top ? tooltip.inning - 1 : tooltip.inning,
+                  tooltip.top ? false : true
+                ) : [];
+                const lastPrevPa = prevHalfPlays.length > 0 ? prevHalfPlays[prevHalfPlays.length - 1] : null;
+                if (lastPrevPa && lastPrevPa.home_score != null && lastPrevPa.away_score != null) {
+                  runsScored = (pa.home_score + pa.away_score) - (lastPrevPa.home_score + lastPrevPa.away_score);
+                } else if (pa.rbi > 0) {
+                  runsScored = pa.rbi;
+                }
+              }
+            }
+            if (runsScored < 0) runsScored = 0;
+            // Determine which team scored (batting team)
+            const scoringTeam = tooltip.top ? away_team : home_team;
+            const nonScoringTeam = tooltip.top ? home_team : away_team;
+
             return (
               <React.Fragment key={i}>
                 {isPitcherChange && (
@@ -237,6 +264,19 @@ export default function Scoreboard({ data, pitcherId, onInningClick }) {
                   } : {}}>
                   {pa.description || `${pa.batter}: ${pa.result}`}
                 </div>
+                {runsScored > 0 && pa.home_score != null && (
+                  <div style={{ fontSize: 10, padding: "1px 0 3px 0", lineHeight: 1.3 }}>
+                    <span style={{ color: "#FF5EDC", fontWeight: 600 }}>
+                      {runsScored} run{runsScored > 1 ? "s" : ""} score{runsScored === 1 ? "s" : ""}
+                    </span>
+                    {" "}
+                    <span style={{ color: "var(--text-bright)" }}>
+                      <span style={{ color: tooltip.top ? "#fb9e2a" : "var(--text-bright)" }}>{displayAbbrev(away_team)}</span>
+                      {" "}{pa.away_score} - {pa.home_score}{" "}
+                      <span style={{ color: tooltip.top ? "var(--text-bright)" : "#fb9e2a" }}>{displayAbbrev(home_team)}</span>
+                    </span>
+                  </div>
+                )}
               </React.Fragment>
             );
           })}
