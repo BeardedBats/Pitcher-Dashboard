@@ -2,6 +2,7 @@ import os
 import csv
 import io
 import re
+import unicodedata
 from pathlib import Path
 from datetime import datetime
 import requests as http_requests
@@ -453,7 +454,7 @@ def _fetch_schedule_grid():
                 continue
             is_away = opp_raw.startswith("@")
             opp_abbr = opp_raw.lstrip("@").strip()
-            key = pitcher_name.lower()
+            key = _strip_accents(pitcher_name.lower())
             if key not in pitcher_starts:
                 pitcher_starts[key] = []
             pitcher_starts[key].append({
@@ -466,16 +467,21 @@ def _fetch_schedule_grid():
     _schedule_cache["ts"] = now
     return pitcher_starts
 
+def _strip_accents(s):
+    """Remove accent marks from characters (é→e, ñ→n, etc.)."""
+    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+
 @app.get("/api/pitcher-schedule")
 def pitcher_schedule(name: str = Query(...), game_date: str = Query("")):
     """Return next 3 scheduled starts for a pitcher after game_date."""
     grid = _fetch_schedule_grid()
-    key = name.lower().strip()
+    key = _strip_accents(name.lower().strip())
     starts = grid.get(key, [])
     if not starts:
-        # Try partial match
+        # Try with accent-stripped keys
         for k, v in grid.items():
-            if key in k or k in key:
+            k_norm = _strip_accents(k)
+            if key == k_norm or key in k_norm or k_norm in key:
                 starts = v
                 break
     if not starts:
