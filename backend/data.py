@@ -412,6 +412,16 @@ def _fetch_game_from_mlb_api(game_pk, date_str):
                     # Negate breakHorizontal: MLB API sign convention is opposite to Savant's pfx_x
                     "pfx_x": -breaks.get("breakHorizontal") / 12 if breaks.get("breakHorizontal") is not None else None,
                     "pfx_z": breaks.get("breakVerticalInduced") / 12 if breaks.get("breakVerticalInduced") is not None else None,
+                    # Velocity/acceleration for HAVAA calculation
+                    "vx0": coords.get("vX0"),
+                    "vy0": coords.get("vY0"),
+                    "vz0": coords.get("vZ0"),
+                    "ax": coords.get("aX"),
+                    "ay": coords.get("aY"),
+                    "az": coords.get("aZ"),
+                    # Release position for arm angle
+                    "release_pos_x": coords.get("x0"),
+                    "release_pos_z": coords.get("z0"),
                     "sz_top": pitch_data.get("strikeZoneTop"),
                     "sz_bot": pitch_data.get("strikeZoneBottom"),
                     "zone": pitch_data.get("zone"),
