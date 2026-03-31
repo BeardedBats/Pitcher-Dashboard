@@ -29,6 +29,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
   const [pitchTypeFilter, setPitchTypeFilter] = useState(null);
   const [resultFilter, setResultFilter] = useState(null);
   const [contactFilter, setContactFilter] = useState("all");
+  const [crossHoverPitch, setCrossHoverPitch] = useState(null);
 
   // Game filter for plots AND pitch metrics
   const [gameFilter, setGameFilter] = useState("all");
@@ -435,19 +436,19 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                   {(batterFilter === "all" || batterFilter === "L") && (
                     <div className="viz-card">
                       <div className="viz-card-label">vs LHB</div>
-                      <StrikeZonePlot pitches={filteredPitches} szTop={data.sz_top} szBot={data.sz_bot} stand="L" colorMode={szColorMode} isMobile={isMobile} />
+                      <StrikeZonePlot pitches={filteredPitches} szTop={data.sz_top} szBot={data.sz_bot} stand="L" colorMode={szColorMode} isMobile={isMobile} highlightPitch={crossHoverPitch} onPitchHover={setCrossHoverPitch} />
                     </div>
                   )}
                   {(batterFilter === "all" || batterFilter === "R") && (
                     <div className="viz-card">
                       <div className="viz-card-label">vs RHB</div>
-                      <StrikeZonePlot pitches={filteredPitches} szTop={data.sz_top} szBot={data.sz_bot} stand="R" colorMode={szColorMode} isMobile={isMobile} />
+                      <StrikeZonePlot pitches={filteredPitches} szTop={data.sz_top} szBot={data.sz_bot} stand="R" colorMode={szColorMode} isMobile={isMobile} highlightPitch={crossHoverPitch} onPitchHover={setCrossHoverPitch} />
                     </div>
                   )}
                 </div>
                 <div className="viz-card">
                   <div className="viz-card-label">Pitch Movement</div>
-                  <MovementPlot pitches={filteredPitches} hand={info.hand} isMobile={isMobile} />
+                  <MovementPlot pitches={filteredPitches} hand={info.hand} isMobile={isMobile} highlightPitch={crossHoverPitch} onPitchHover={setCrossHoverPitch} />
                 </div>
               </div>
             </div>

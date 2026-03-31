@@ -31,7 +31,12 @@ function basesString(on1b, on2b, on3b) {
   return bases.join(" & ");
 }
 
-export default function MovementPlot({ pitches, hand, onReclassify, isMobile = false }) {
+function pitchMatch(a, b) {
+  if (!a || !b) return false;
+  return a.at_bat_number === b.at_bat_number && a.pitch_number === b.pitch_number && a.game_pk === b.game_pk;
+}
+
+export default function MovementPlot({ pitches, hand, onReclassify, isMobile = false, highlightPitch, onPitchHover }) {
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
   const containerRef = useRef(null);
@@ -103,12 +108,13 @@ export default function MovementPlot({ pitches, hand, onReclassify, isMobile = f
         if (x < PAD.left - 8 || x > PAD.left + PLOT_W + 8 || y < PAD.top - 8 || y > PAD.top + PLOT_H + 8) return;
         positions.push({ x, y, idx, pitch: p });
         const color = PITCH_COLORS[p.pitch_name] || "#D9D9D9";
-        ctx.globalAlpha = 0.85;
+        const isDimmed = highlightPitch && !pitchMatch(p, highlightPitch);
+        ctx.globalAlpha = isDimmed ? 0.12 : 0.85;
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(x, y, 4.5, 0, Math.PI * 2);
         ctx.fill();
-        ctx.globalAlpha = 0.3;
+        ctx.globalAlpha = isDimmed ? 0.08 : 0.3;
         ctx.strokeStyle = "#111";
         ctx.lineWidth = 0.8;
         ctx.stroke();
@@ -116,7 +122,7 @@ export default function MovementPlot({ pitches, hand, onReclassify, isMobile = f
       ctx.globalAlpha = 1;
     }
     pitchPositions.current = positions;
-  }, [pitches, hand, isMobile]);
+  }, [pitches, hand, isMobile, highlightPitch]);
 
   const findNearest = useCallback((mx, my) => {
     let closest = null;
@@ -144,12 +150,17 @@ export default function MovementPlot({ pitches, hand, onReclassify, isMobile = f
         x: e.clientX,
         y: e.clientY,
       });
+      if (onPitchHover) onPitchHover(nearest.pitch);
     } else {
       setHover(null);
+      if (onPitchHover) onPitchHover(null);
     }
-  }, [findNearest, isMobile]);
+  }, [findNearest, isMobile, onPitchHover]);
 
-  const handleMouseLeave = useCallback(() => setHover(null), []);
+  const handleMouseLeave = useCallback(() => {
+    setHover(null);
+    if (onPitchHover) onPitchHover(null);
+  }, [onPitchHover]);
 
   const handleClick = useCallback((e) => {
     const canvas = canvasRef.current;
