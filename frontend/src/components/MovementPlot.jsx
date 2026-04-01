@@ -120,7 +120,7 @@ export default function MovementPlot({ pitches, hand, onReclassify, isMobile = f
         ctx.lineTo(cx + dx, cy + dy);
         ctx.stroke();
         ctx.setLineDash([]);
-        // Framed box label at end of line, outside the circle
+        // Framed box label at end of line, clamped inside canvas
         const labelText = `${avgArmAngle.toFixed(0)}°`;
         ctx.font = "700 10px DM Sans, sans-serif";
         const textWidth = ctx.measureText(labelText).width;
@@ -130,8 +130,11 @@ export default function MovementPlot({ pitches, hand, onReclassify, isMobile = f
         const endX = cx + dx;
         const endY = cy + dy;
         // Position box just past the line end
-        const boxX = isRHP ? endX + 4 : endX - boxW - 4;
-        const boxY = endY - boxH / 2;
+        let boxX = isRHP ? endX + 4 : endX - boxW - 4;
+        let boxY = endY - boxH / 2;
+        // Clamp to stay inside canvas
+        boxX = Math.max(2, Math.min(boxX, W - boxW - 2));
+        boxY = Math.max(2, Math.min(boxY, H - boxH - 2));
         // Draw frame
         ctx.strokeStyle = "#f0f1f5";
         ctx.lineWidth = 1;
@@ -140,7 +143,7 @@ export default function MovementPlot({ pitches, hand, onReclassify, isMobile = f
         ctx.fillStyle = "#f0f1f5";
         ctx.textAlign = "left";
         ctx.textBaseline = "middle";
-        ctx.fillText(labelText, boxX + boxPad, endY);
+        ctx.fillText(labelText, boxX + boxPad, boxY + boxH / 2);
         ctx.restore();
       }
     }

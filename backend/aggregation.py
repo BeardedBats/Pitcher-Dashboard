@@ -222,7 +222,8 @@ def build_pitches_list(pdf):
                    "launch_speed", "launch_angle", "hc_x", "hc_y", "release_extension",
                    "inning", "inning_topbot", "balls", "strikes", "on_1b", "on_2b", "on_3b",
                    "game_pk", "game_date",
-                   "release_pos_x", "release_pos_z", "vx0", "vy0", "vz0", "ax", "ay", "az"]
+                   "release_pos_x", "release_pos_z", "vx0", "vy0", "vz0", "ax", "ay", "az",
+                   "arm_angle"]
     available_cols = [c for c in _pitch_cols if c in pdf.columns]
     pitch_df = pdf[available_cols].copy()
     if "pfx_x" in pitch_df.columns:
@@ -243,21 +244,15 @@ def build_pitches_list(pdf):
         vz_f = vz0 + az_v * t
         vaa = np.degrees(np.arctan2(vz_f, -vy_f))
         pitch_df["havaa"] = np.round(vaa - (3.0 * pz - 14.0), 1)
-    # Compute arm angle from release position
-    if all(c in pitch_df.columns for c in ["release_pos_x", "release_pos_z"]):
-        import math
-        def _calc_arm_angle(row):
-            try:
-                rx, rz = row["release_pos_x"], row["release_pos_z"]
-                if pd.isna(rx) or pd.isna(rz):
-                    return None
-                # Arm angle: angle from horizontal reference (mound height ~10in/0.83ft above ground)
-                # release_pos_z is height in feet, release_pos_x is horizontal displacement
-                mound_height = 0.83  # approximate mound reference height in feet
-                return round(math.degrees(math.atan2(rz - mound_height, abs(rx))), 1)
-            except Exception:
-                return None
-        pitch_df["arm_angle"] = pitch_df.apply(_calc_arm_angle, axis=1)
+    # Use native arm_angle from Statcast if available, otherwise approximate
+    if "arm_angle" in pitch_df.columns and pitch_df["arm_angle"].notna().any():
+        pass  # already have Hawk-Eye arm angle data
+    elif all(c in pitch_df.columns for c in ["release_pos_x", "release_pos_z"]):
+        # Approximate: arm_angle ≈ 4.45*|x| + 23.64*z - 106.0
+        # (linear fit against Statcast Hawk-Eye arm angles, MAE ~3.6°)
+        rx = pd.to_numeric(pitch_df["release_pos_x"], errors="coerce").abs()
+        rz = pd.to_numeric(pitch_df["release_pos_z"], errors="coerce")
+        pitch_df["arm_angle"] = np.round(4.45 * rx + 23.64 * rz - 106.0, 1)
     pitches_raw = pitch_df.to_dict(orient="records")
     pitches = []
     _int_fields = {"zone", "at_bat_number", "pitch_number", "outs_when_up", "inning", "balls", "strikes", "game_pk"}
@@ -311,7 +306,8 @@ def get_pitcher_card(date_str, pitcher_id, game_pk):
                    "pitch_number", "outs_when_up", "batter_name", "events", "des",
                    "launch_speed", "launch_angle", "hc_x", "hc_y", "release_extension",
                    "inning", "inning_topbot", "balls", "strikes", "on_1b", "on_2b", "on_3b",
-                   "release_pos_x", "release_pos_z", "vx0", "vy0", "vz0", "ax", "ay", "az"]
+                   "release_pos_x", "release_pos_z", "vx0", "vy0", "vz0", "ax", "ay", "az",
+                   "arm_angle"]
     # Select only columns that exist
     available_cols = [c for c in _pitch_cols if c in pdf.columns]
     pitch_df = pdf[available_cols].copy()
@@ -334,17 +330,12 @@ def get_pitcher_card(date_str, pitcher_id, game_pk):
         vz_f = vz0_v + az_v * t
         vaa = np.degrees(np.arctan2(vz_f, -vy_f))
         pitch_df["havaa"] = np.round(vaa - (3.0 * pz_v - 14.0), 1)
-    if all(c in pitch_df.columns for c in ["release_pos_x", "release_pos_z"]):
-        import math
-        def _calc_arm2(row):
-            try:
-                rx, rz = row["release_pos_x"], row["release_pos_z"]
-                if pd.isna(rx) or pd.isna(rz):
-                    return None
-                return round(math.degrees(math.atan2(rz - 0.83, abs(rx))), 1)
-            except Exception:
-                return None
-        pitch_df["arm_angle"] = pitch_df.apply(_calc_arm2, axis=1)
+    if "arm_angle" in pitch_df.columns and pitch_df["arm_angle"].notna().any():
+        pass  # already have Hawk-Eye arm angle data
+    elif all(c in pitch_df.columns for c in ["release_pos_x", "release_pos_z"]):
+        rx = pd.to_numeric(pitch_df["release_pos_x"], errors="coerce").abs()
+        rz = pd.to_numeric(pitch_df["release_pos_z"], errors="coerce")
+        pitch_df["arm_angle"] = np.round(4.45 * rx + 23.64 * rz - 106.0, 1)
     # Convert to list of dicts — sanitize NaN→None for JSON safety
     pitches_raw = pitch_df.to_dict(orient="records")
     pitches = []
