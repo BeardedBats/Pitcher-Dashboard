@@ -42,7 +42,13 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
         // Sort team column by full name, not abbreviation
         if (sortKey === "team") { av = TEAM_FULL_NAMES[av] || av; bv = TEAM_FULL_NAMES[bv] || bv; }
         if (typeof av === "string") return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
-        return sortDir === "asc" ? av - bv : bv - av;
+        const primary = sortDir === "asc" ? av - bv : bv - av;
+        if (primary === 0 && sortKey === "er") {
+          const aip = parseFloat(a.ip) || 0;
+          const bip = parseFloat(b.ip) || 0;
+          return bip - aip; // higher IP first on ER tie
+        }
+        return primary;
       });
     }
     return [...filtered].sort((a, b) => {
