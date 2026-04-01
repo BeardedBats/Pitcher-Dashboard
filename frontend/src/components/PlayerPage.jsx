@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { PITCH_COLORS, CARD_PITCH_DATA_COLUMNS, displayAbbrev } from "../constants";
-import { fetchSeasonAverages } from "../utils/api";
+import { fetchSeasonAverages, fetchPitcherSchedule } from "../utils/api";
+import { getOpponentTierColor } from "../constants";
 import useIsMobile from "../hooks/useIsMobile";
 import PitchDataTable from "./PitchDataTable";
 import StrikeZonePlot from "./StrikeZonePlot";
@@ -24,6 +25,8 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
   const [batterFilter, setBatterFilter] = useState("all");
   const [szColorMode, setSzColorMode] = useState("pitch-type");
   const [metricsView, setMetricsView] = useState("pitch-data"); // "pitch-data" | "results" | "velocity-trend"
+
+  const [schedule, setSchedule] = useState(null);
 
   // Pitch-type, result, and contact filters for plots
   const [pitchTypeFilter, setPitchTypeFilter] = useState(null);
@@ -99,6 +102,16 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
     return [...data.game_log].sort((a, b) => a.date.localeCompare(b.date));
   }, [data]);
 
+  // Fetch next scheduled starts (must be after sortedLog definition)
+  useEffect(() => {
+    if (data?.info?.name) {
+      const lastGame = sortedLog.length > 0 ? sortedLog[sortedLog.length - 1].date : "";
+      fetchPitcherSchedule(data.info.name, lastGame)
+        .then(d => setSchedule(d?.starts || []))
+        .catch(() => setSchedule(null));
+    }
+  }, [data?.info?.name, sortedLog]);
+
   // Game options for dropdown: numbered by date order
   const gameOptions = useMemo(() => {
     return sortedLog.map((g, i) => ({
@@ -106,7 +119,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
       date: g.date,
       game_pk: g.game_pk,
       opponent: g.opponent,
-      label: `${i + 1}. ${formatShortDate(g.date)} vs ${displayAbbrev(g.opponent)}`,
+      label: `${i + 1}. ${formatCompactDate(g.date)} vs ${displayAbbrev(g.opponent)}`,
     }));
   }, [sortedLog]);
 
@@ -233,30 +246,46 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
               <table className="card-gameline-table">
                 <thead>
                   <tr>
-                    <th>Date</th><th>Opp</th><th>IP</th><th>R</th><th>ER</th><th>Hits</th><th>BB</th>
+                    <th>Date</th><th>Opp</th><th>Dec.</th><th>IP</th><th>R</th><th>ER</th><th>Hits</th><th>BB</th>
                     <th className="gameline-divider-right">K</th>
-                    <th>Whiffs</th><th>CSW%</th><th>#</th><th>HR</th>
+                    <th>Whiffs</th><th>SwStr%</th><th>CSW%</th><th>#</th><th>HR</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedLog.map((row, i) => (
-                    <tr key={row.game_pk + "-" + i}
-                      className="pp-log-row"
-                      onClick={(e) => onGameClick(row.date, pitcherId, row.game_pk, e)}
-                      onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); onGameClick(row.date, pitcherId, row.game_pk, e); } }}
-                    >
-                      <td>{row.date}</td>
-                      <td>{displayAbbrev(row.opponent)}</td>
-                      <td>{row.ip}</td>
-                      <td>{row.runs != null ? row.runs : "—"}</td>
-                      <td>{row.er}</td>
-                      <td>{row.hits}</td>
-                      <td>{row.bbs}</td>
-                      <td className="gameline-divider-right">{row.ks}</td>
-                      <td>{row.whiffs}</td>
-                      <td>{row.csw_pct != null ? row.csw_pct.toFixed(1) : "—"}</td>
-                      <td>{row.pitches}</td>
-                      <td>{row.hrs}</td>
+                  {sortedLog.map((row, i) => {
+                    const dec = row.decision || "";
+                    const decColor = dec === "W" ? "#6DE95D" : dec === "L" ? "#FF839B" : undefined;
+                    const dateParts = row.date ? row.date.replace(/^\d{4}-/, "").split("-") : [];
+                    const dateShort = dateParts.length === 2 ? `${parseInt(dateParts[0], 10)}-${dateParts[1]}` : row.date;
+                    return (
+                      <tr key={row.game_pk + "-" + i}
+                        className="pp-log-row"
+                        onClick={(e) => onGameClick(row.date, pitcherId, row.game_pk, e)}
+                        onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); onGameClick(row.date, pitcherId, row.game_pk, e); } }}
+                      >
+                        <td>{dateShort}</td>
+                        <td>{displayAbbrev(row.opponent)}</td>
+                        <td style={decColor ? { color: decColor, fontWeight: 700 } : {}}>{dec || "ND"}</td>
+                        <td>{row.ip}</td>
+                        <td>{row.runs != null ? row.runs : "—"}</td>
+                        <td>{row.er}</td>
+                        <td>{row.hits}</td>
+                        <td>{row.bbs}</td>
+                        <td className="gameline-divider-right">{row.ks}</td>
+                        <td>{row.whiffs}</td>
+                        <td>{row.swstr_pct != null ? Math.round(row.swstr_pct) + "%" : "—"}</td>
+                        <td>{row.csw_pct != null ? row.csw_pct.toFixed(1) : "—"}</td>
+                        <td>{row.pitches}</td>
+                        <td>{row.hrs}</td>
+                      </tr>
+                    );
+                  })}
+                  {/* Next three games */}
+                  {schedule && schedule.map((s, i) => (
+                    <tr key={`sched-${i}`} className="pp-log-row pp-schedule-row">
+                      <td>{s.date ? s.date.replace("/", "-") : "TBD"}</td>
+                      <td style={{ color: getOpponentTierColor(s.opponent, s.is_away), fontWeight: 700 }}>{s.is_away ? "@ " : ""}{displayAbbrev(s.opponent)}</td>
+                      <td colSpan={12} style={{ textAlign: "left", color: "var(--text-dim)", fontStyle: "italic" }}>{s.day || ""}</td>
                     </tr>
                   ))}
                   {/* Total row — matches Box Score format with rate labels */}
@@ -266,6 +295,8 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                     const ipThirds = rs.ip_thirds || 0;
                     const ip = ipThirds / 3;
                     const bf = rs.batters_faced || 0;
+                    const wins = rs.wins || 0;
+                    const losses = rs.losses || 0;
                     const ipg = ip > 0 && g > 0 ? (ip / g).toFixed(1) : "—";
                     const era = ip > 0 ? ((rs.er / ip) * 9).toFixed(2) : "—";
                     const whip = ip > 0 ? (((rs.hits || 0) + (rs.bbs || 0)) / ip).toFixed(2) : "—";
@@ -278,7 +309,8 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                     const gamesLabel = gs > 0 && gs !== g ? `${g} Games (${gs} GS)` : `${g} Games`;
                     return (
                       <tr className="pp-total-row">
-                        <td className="pp-total-label"><span className="rate-label">Season Total</span>{gamesLabel}</td>
+                        <td colSpan={2} className="pp-total-label"><span className="rate-label">Season Total</span>{gamesLabel}</td>
+                        <td><span className="rate-label">Dec.</span>{wins}-{losses}</td>
                         <td><span className="rate-label">IP/G</span>{ipg}</td>
                         <td><span className="rate-label">ERA</span>{era}</td>
                         <td><span className="rate-label">WHIP</span>{whip}</td>
@@ -461,12 +493,11 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
   );
 }
 
-function formatShortDate(dateStr) {
+function formatCompactDate(dateStr) {
   if (!dateStr) return "";
   const parts = dateStr.split("-");
   if (parts.length < 3) return dateStr;
   const m = parseInt(parts[1], 10);
   const d = parseInt(parts[2], 10);
-  const y = parts[0].slice(2);
-  return `${m}/${d}/${y}`;
+  return `${m}-${parts[2]}`;
 }

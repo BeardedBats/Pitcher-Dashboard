@@ -984,6 +984,8 @@ def compute_player_page(df, pitcher_id):
             "strike_pct": round(sum(g.get("strikes", 0) for g in game_log) / total_pitches * 100, 1) if total_pitches > 0 else 0,
             "ip_thirds": total_ip_thirds,
             "pitches": total_pitches,
+            "wins": sum(1 for g in game_log if g.get("decision") == "W"),
+            "losses": sum(1 for g in game_log if g.get("decision") == "L"),
         }
     else:
         results_summary = {}
@@ -1236,7 +1238,15 @@ def _get_boxscore_stats(game_pk):
                 hrs = stats.get("homeRuns")
                 bf = stats.get("battersFaced")
                 gs = stats.get("gamesStarted")
+                note = stats.get("note", "")
                 if er is not None or ip is not None:
+                    # Parse decision from note, e.g. "(W, 1-0)" -> "W"
+                    decision = ""
+                    if note:
+                        import re as _re
+                        dm = _re.match(r"\(([WLS])", note)
+                        if dm:
+                            decision = dm.group(1)
                     stats_map[pid] = {
                         "er": er if er is not None else 0,
                         "runs": runs if runs is not None else 0,
@@ -1247,6 +1257,7 @@ def _get_boxscore_stats(game_pk):
                         "hrs": hrs if hrs is not None else 0,
                         "batters_faced": bf if bf is not None else 0,
                         "games_started": gs if gs is not None else 0,
+                        "decision": decision,
                     }
         _boxscore_cache[game_pk] = stats_map
         # Store in Redis with string keys (JSON requirement)

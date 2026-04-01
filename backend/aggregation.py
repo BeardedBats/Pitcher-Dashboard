@@ -423,10 +423,12 @@ def get_pitcher_card(date_str, pitcher_id, game_pk):
         pitcher_result["ks"] = pbox.get("ks", ks_r)
         pitcher_result["hrs"] = pbox.get("hrs", hrs_r)
         pitcher_result["batters_faced"] = pbox.get("batters_faced", 0)
+        pitcher_result["decision"] = pbox.get("decision", "")
     else:
         pitcher_result["er"] = 0
         pitcher_result["runs"] = 0
         pitcher_result["batters_faced"] = 0
+        pitcher_result["decision"] = ""
     return {
         "pitcher_id": pitcher_id, "game_pk": game_pk,
         "name": name, "team": team, "hand": hand, "opponent": opp,
@@ -686,6 +688,7 @@ def get_pitcher_game_log(df, pitcher_id):
         runs = 0
         batters_faced = 0
         game_started = 0
+        decision = ""
         box = box_maps.get(int(game_pk), {})
         pbox = box.get(int(pitcher_id))
         if pbox:
@@ -699,6 +702,7 @@ def get_pitcher_game_log(df, pitcher_id):
             hrs = pbox.get("hrs", hrs)
             batters_faced = pbox.get("batters_faced", 0)
             game_started = pbox.get("games_started", 0)
+            decision = pbox.get("decision", "")
 
         results.append({
             "game_pk": int(game_pk),
@@ -714,6 +718,7 @@ def get_pitcher_game_log(df, pitcher_id):
             "runs": runs,
             "batters_faced": batters_faced,
             "games_started": game_started,
+            "decision": decision,
             "whiffs": whiffs,
             "swstr_pct": round(whiffs / total_pitches * 100, 1) if total_pitches > 0 else 0,
             "csw_pct": round((called_strikes + whiffs) / total_pitches * 100, 1) if total_pitches > 0 else 0,

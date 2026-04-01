@@ -1115,6 +1115,17 @@ canvas { display: block; border: none; border-radius: var(--radius-sm); }
   letter-spacing: 0.3px;
 }
 
+/* Schedule rows in game log */
+.pp-schedule-row td {
+  color: var(--text-dim) !important;
+  font-style: italic;
+  opacity: 0.7;
+}
+.pp-schedule-row:hover td {
+  background: transparent !important;
+  cursor: default;
+}
+
 /* ======== PLAYER PAGE — Centered card layout (matches card-outer) ======== */
 .pp-outer-centered {
   display: table; margin: 0 auto;

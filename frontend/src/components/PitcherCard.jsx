@@ -266,7 +266,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
             <table className="card-gameline-table">
               <thead>
                 <tr>
-                  <th>Pitcher</th><th>IP</th><th>R</th><th>ER</th><th>Hits</th><th>BB</th>
+                  <th>Pitcher</th><th>Dec.</th><th>IP</th><th>R</th><th>ER</th><th>Hits</th><th>BB</th>
                   <th className="gameline-divider-right">K</th>
                   <th>Whiffs</th><th>SwStr%</th><th>CSW%</th><th>Strike%</th><th>#</th><th>HR</th>
                 </tr>
@@ -274,6 +274,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
               <tbody>
                 <tr>
                   <td className="card-pitcher-name" style={{ color: "#f0c040" }}>{name}</td>
+                  <td style={result.decision === "W" ? { color: "#6DE95D", fontWeight: 700 } : result.decision === "L" ? { color: "#FF839B", fontWeight: 700 } : {}}>{result.decision || "ND"}</td>
                   <td>{result.ip}</td>
                   <td>{result.runs != null ? result.runs : "-"}</td>
                   <td>{result.er}</td>
@@ -293,6 +294,8 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                   const ipThirds = seasonTotals.ip_thirds || 0;
                   const ip = ipThirds / 3;
                   const bf = seasonTotals.batters_faced || 0;
+                  const wins = seasonTotals.wins || 0;
+                  const losses = seasonTotals.losses || 0;
                   const ipg = ip > 0 ? (ip / g).toFixed(1) : "-";
                   const era = ip > 0 ? ((seasonTotals.er / ip) * 9).toFixed(2) : "-";
                   const whip = ip > 0 ? ((seasonTotals.hits + seasonTotals.bbs) / ip).toFixed(2) : "-";
@@ -306,6 +309,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                   return (
                     <tr className="pp-total-row">
                       <td className="card-pitcher-name pp-total-label"><span className="rate-label">Season Total</span>{gamesLabel}</td>
+                      <td><span className="rate-label">Dec.</span>{wins}-{losses}</td>
                       <td><span className="rate-label">IP/G</span>{ipg}</td>
                       <td><span className="rate-label">ERA</span>{era}</td>
                       <td><span className="rate-label">WHIP</span>{whip}</td>

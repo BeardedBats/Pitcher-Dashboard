@@ -183,6 +183,8 @@ def pitcher_season_totals(pitcher_id: int = Query(...), start_date: str = Query(
         "csw_pct": round(sum(g.get("csw_pct", 0) * g.get("pitches", 0) for g in game_log) / total_pitches, 1) if total_pitches > 0 else 0,
         "strike_pct": round(total_strikes / total_pitches * 100, 1) if total_pitches > 0 else 0,
         "pitches": total_pitches,
+        "wins": sum(1 for g in game_log if g.get("decision") == "W"),
+        "losses": sum(1 for g in game_log if g.get("decision") == "L"),
     }
     set_agg_cache(agg_key, result)
     return result
