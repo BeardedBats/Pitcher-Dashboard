@@ -249,10 +249,10 @@ tbody tr.clickable-row:hover { background: var(--hover-tint); }
 }
 .card-info { min-width: 240px; }
 .card-name {
-  font-size: 28px; font-weight: 800; margin-bottom: 3px;
-  color: var(--accent);
+  font-size: 28px; font-weight: 800; margin-bottom: 1px;
+  color: var(--accent); line-height: 1.1;
 }
-.card-meta { font-size: 15px; color: var(--meta); font-weight: 500; }
+.card-meta { font-size: 15px; color: var(--meta); font-weight: 500; margin-bottom: 2px; }
 .card-game-link {
   color: var(--accent-soft); cursor: pointer; text-decoration: underline;
   text-decoration-color: rgba(112, 212, 240, 0.4); text-underline-offset: 2px;
@@ -265,6 +265,7 @@ tbody tr.clickable-row:hover { background: var(--hover-tint); }
   flex-shrink: 0;
 }
 .card-gameline-header {
+  display: flex; align-items: baseline; gap: 12px;
   font-size: 16px; font-weight: 700; color: var(--label);
   padding: 0 0 8px; letter-spacing: 0; text-transform: none;
   text-shadow: 0 0 16px rgba(251, 158, 42, 0.15);

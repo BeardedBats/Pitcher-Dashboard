@@ -270,11 +270,11 @@ export const PITCH_RESULT_SHAPES = {
 // Updated from Google Sheet: https://docs.google.com/spreadsheets/d/11ZObUMWsSxIMMU7OQsH5K1UKrZB1eyJ0xWMfm_Cvpy0
 // Check weekly on Tuesdays for changes.
 const _OFFENSE_TIER_COLORS = {
-  top: "#FF839B",     // Four-seamer Red
-  solid: "#CE66FF",   // Slider Pink
-  average: "#feffa3", // Single Yellow
-  weak: "#55e8ff",    // Header Blue
-  poor: "#6DE95D",    // Changeup Green
+  top: "#ff8282",
+  solid: "#ffd2b8",
+  average: "#d3b3ab",
+  weak: "#9ed1f5",
+  poor: "#6de95d",
 };
 // home lookup (opponent comes to you) — key without @
 const _OFFENSE_HOME = {

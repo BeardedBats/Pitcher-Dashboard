@@ -81,6 +81,22 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
   const isHome = result && result.home_team === team;
   const oppPrefix = isHome ? "vs." : "@";
 
+  // Determine if game is final and compute projected decision for live games
+  const isFinal = linescoreData?.is_final !== false; // default to true if unknown
+  const gameLive = linescoreData && linescoreData.is_final === false;
+  const projectedDecision = useMemo(() => {
+    if (!gameLive || !linescoreData?.totals || !result) return null;
+    const dec = result.decision;
+    if (dec) return null; // already has a real decision
+    const homeRuns = linescoreData.totals.home?.runs || 0;
+    const awayRuns = linescoreData.totals.away?.runs || 0;
+    const teamRuns = isHome ? homeRuns : awayRuns;
+    const oppRuns = isHome ? awayRuns : homeRuns;
+    if (teamRuns > oppRuns) return "W";
+    if (teamRuns < oppRuns) return "L";
+    return "ND";
+  }, [gameLive, linescoreData, result, isHome]);
+
   // Batter hand filter
   const [batterFilter, setBatterFilter] = useState("all");
 
@@ -255,7 +271,10 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
         </div>
         {result && (
           <div className="card-gameline-box">
-            <div className="card-gameline-header">Box Score</div>
+            <div className="card-gameline-header">
+              <span>Box Score</span>
+              {gameLive && <span style={{ fontSize: 10, color: "var(--text-dim)", fontWeight: 400, marginLeft: "auto" }}>* = Decision if the game ended now</span>}
+            </div>
             <table className="card-gameline-table">
               <thead>
                 <tr>
@@ -267,7 +286,13 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
               <tbody>
                 <tr>
                   <td className="card-pitcher-name" style={{ color: "#f0c040" }}>{name}</td>
-                  <td style={result.decision === "W" ? { color: "#6DE95D", fontWeight: 700 } : result.decision === "L" ? { color: "#FF839B", fontWeight: 700 } : {}}>{result.decision || "ND"}</td>
+                  {(() => {
+                    const dec = result.decision || (projectedDecision ? projectedDecision : "ND");
+                    const isProjected = !result.decision && projectedDecision;
+                    const label = isProjected ? dec + "*" : dec;
+                    const color = dec === "W" ? "#6DE95D" : dec === "L" ? "#FF839B" : "#8a8eb0";
+                    return <td style={{ color, fontWeight: dec !== "ND" ? 700 : 500 }}>{label}</td>;
+                  })()}
                   <td>{result.ip}</td>
                   <td>{result.runs != null ? result.runs : "-"}</td>
                   <td>{result.er}</td>
@@ -302,7 +327,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                   return (
                     <tr className="pp-total-row">
                       <td className="card-pitcher-name pp-total-label"><span className="rate-label">Season Total</span>{gamesLabel}</td>
-                      <td><span className="rate-label">Dec.</span>{wins}-{losses}</td>
+                      <td><span className="rate-label">W-L</span>{wins}-{losses}</td>
                       <td><span className="rate-label">IP/G</span>{ipg}</td>
                       <td><span className="rate-label">ERA</span>{era}</td>
                       <td><span className="rate-label">WHIP</span>{whip}</td>

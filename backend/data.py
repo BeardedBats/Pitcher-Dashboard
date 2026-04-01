@@ -1512,6 +1512,10 @@ def get_game_linescore(game_pk, pitcher_id=None):
             "mid_inning": mid_inning,
         }
 
+    # Game status
+    game_status = game_data.get("status", {}).get("detailedState", "")
+    is_final = game_status in ("Final", "Game Over", "Completed Early")
+
     return {
         "away_team": away_abbrev,
         "home_team": home_abbrev,
@@ -1519,4 +1523,5 @@ def get_game_linescore(game_pk, pitcher_id=None):
         "totals": totals,
         "plays": plays,
         "pitcher_exit": pitcher_exit,
+        "is_final": is_final,
     }

@@ -253,8 +253,8 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                 </thead>
                 <tbody>
                   {sortedLog.map((row, i) => {
-                    const dec = row.decision || "";
-                    const decColor = dec === "W" ? "#6DE95D" : dec === "L" ? "#FF839B" : undefined;
+                    const dec = row.decision || "ND";
+                    const decColor = dec === "W" ? "#6DE95D" : dec === "L" ? "#FF839B" : "#8a8eb0";
                     const dateParts = row.date ? row.date.replace(/^\d{4}-/, "").split("-") : [];
                     const dateShort = dateParts.length === 2 ? `${parseInt(dateParts[0], 10)}-${dateParts[1]}` : row.date;
                     return (
@@ -265,7 +265,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                       >
                         <td>{dateShort}</td>
                         <td>{displayAbbrev(row.opponent)}</td>
-                        <td style={decColor ? { color: decColor, fontWeight: 700 } : {}}>{dec || "ND"}</td>
+                        <td style={{ color: decColor, fontWeight: dec !== "ND" ? 700 : 500 }}>{dec}</td>
                         <td>{row.ip}</td>
                         <td>{row.runs != null ? row.runs : "—"}</td>
                         <td>{row.er}</td>
@@ -310,7 +310,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                     return (
                       <tr className="pp-total-row">
                         <td colSpan={2} className="pp-total-label"><span className="rate-label">Season Total</span>{gamesLabel}</td>
-                        <td><span className="rate-label">Dec.</span>{wins}-{losses}</td>
+                        <td><span className="rate-label">W-L</span>{wins}-{losses}</td>
                         <td><span className="rate-label">IP/G</span>{ipg}</td>
                         <td><span className="rate-label">ERA</span>{era}</td>
                         <td><span className="rate-label">WHIP</span>{whip}</td>
