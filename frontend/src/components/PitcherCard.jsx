@@ -9,7 +9,7 @@ import VelocityTrend from "./VelocityTrend";
 import VelocityTrendV2 from "./VelocityTrendV2";
 import { PITCH_COLORS, PITCH_DESC_COLORS, RESULT_COLORS, CARD_PITCH_DATA_COLUMNS, displayAbbrev, getOpponentTierColor } from "../constants";
 import { getResultColor } from "../utils/formatting";
-import { fetchSeasonAverages, fetchPitcherSeasonTotals, fetchPitcherSchedule } from "../utils/api";
+import { fetchSeasonAverages, fetchPitcherSchedule } from "../utils/api";
 import { classifyPitchResult, isRunScored, isStrikeoutPitch, isBallInPlay, classifyBIPQuality, classifyBattedBallFull, getTooltipResult, RESULT_FILTER_OPTIONS, RESULT_QUICK_ACTIONS } from "../utils/pitchFilters";
 
 function ordinal(n) {
@@ -74,7 +74,8 @@ function computeInningStats(pas, pitcherId) {
 export default function PitcherCard({ cardData, date, linescoreData, onGameClick, onReclassify, onPlayerClick, isMobile }) {
   if (!cardData) return null;
   const { name, team, hand, opponent, pitches, sz_top, sz_bot,
-    pitch_table, pitch_table_vs_l, pitch_table_vs_r, result, pitcher_id } = cardData;
+    pitch_table, pitch_table_vs_l, pitch_table_vs_r, result, pitcher_id,
+    season_totals: inlineSeasonTotals } = cardData;
 
   const dateDisplay = date || "";
   const isHome = result && result.home_team === team;
@@ -96,7 +97,6 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
 
   const [seasonAvgs, setSeasonAvgs] = useState(null);
   const [loadingAvgs, setLoadingAvgs] = useState(false);
-  const [seasonTotals, setSeasonTotals] = useState(null);
   const [schedule, setSchedule] = useState(null);
 
   // Cross-component pitch hover highlight (shared between SZ plots and movement plot)
@@ -122,15 +122,8 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
     }
   }, [seasonAvgs, pitcher_id, prevSeason]);
 
-  // Fetch regular season totals for box score
-  useEffect(() => {
-    if (pitcher_id) {
-      const seasonStart = `${currentYear}-03-25`;
-      fetchPitcherSeasonTotals(pitcher_id, seasonStart)
-        .then(totals => setSeasonTotals(totals && totals.games ? totals : null))
-        .catch(() => setSeasonTotals(null));
-    }
-  }, [pitcher_id, currentYear]);
+  // Use inline season totals from card response (no separate fetch needed)
+  const seasonTotals = inlineSeasonTotals && inlineSeasonTotals.games ? inlineSeasonTotals : null;
 
   // Fetch next scheduled starts
   useEffect(() => {

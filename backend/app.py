@@ -128,21 +128,8 @@ def clear(date: str = Query(None)):
     clear_cache(date)
     return {"status": "ok", "cleared": date or "all"}
 
-@app.get("/api/pitcher-card")
-def pitcher_card(date: str = Query(...), pitcher_id: int = Query(...), game_pk: int = Query(...)):
-    agg_key = f"card_{date}_{pitcher_id}_{game_pk}"
-    cached = get_agg_cache(agg_key)
-    if cached is not None:
-        return cached
-    result = get_pitcher_card(date, pitcher_id, game_pk)
-    if result:
-        set_agg_cache(agg_key, result)
-    return result
-
-@app.get("/api/pitcher-season-totals")
-def pitcher_season_totals(pitcher_id: int = Query(...), start_date: str = Query("2026-03-25"), end_date: str = Query("")):
-    """Return aggregated season totals for a pitcher's box score row."""
-    end_date = _resolve_end_date(end_date)
+def _compute_season_totals(pitcher_id, start_date, end_date):
+    """Compute season totals for a pitcher. Returns dict or {} if no data."""
     agg_key = f"season_totals_{pitcher_id}_{start_date}_{end_date}"
     cached = get_agg_cache(agg_key)
     if cached is not None:
@@ -188,6 +175,30 @@ def pitcher_season_totals(pitcher_id: int = Query(...), start_date: str = Query(
     }
     set_agg_cache(agg_key, result)
     return result
+
+@app.get("/api/pitcher-card")
+def pitcher_card(date: str = Query(...), pitcher_id: int = Query(...), game_pk: int = Query(...)):
+    agg_key = f"card_{date}_{pitcher_id}_{game_pk}"
+    cached = get_agg_cache(agg_key)
+    if cached is not None:
+        result = cached
+    else:
+        result = get_pitcher_card(date, pitcher_id, game_pk)
+        if result:
+            set_agg_cache(agg_key, result)
+    # Inline season totals so the frontend doesn't need a separate request
+    if result and "season_totals" not in result:
+        current_year = date[:4]
+        season_start = f"{current_year}-03-25"
+        end_date = _resolve_end_date("")
+        result["season_totals"] = _compute_season_totals(pitcher_id, season_start, end_date)
+    return result
+
+@app.get("/api/pitcher-season-totals")
+def pitcher_season_totals(pitcher_id: int = Query(...), start_date: str = Query("2026-03-25"), end_date: str = Query("")):
+    """Return aggregated season totals for a pitcher's box score row."""
+    end_date = _resolve_end_date(end_date)
+    return _compute_season_totals(pitcher_id, start_date, end_date)
 
 @app.get("/api/game-linescore")
 def game_linescore(game_pk: int = Query(...)): return get_game_linescore(game_pk)
