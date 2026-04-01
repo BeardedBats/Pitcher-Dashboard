@@ -33,32 +33,26 @@ def _prep_df(df):
     # Vectorized strike check on type column
     df["is_strike"] = df["type"].isin(_STRIKE_TYPES) if "type" in df.columns else False
     # Compute HAVAA (Height Adjusted Vertical Approach Angle) vectorized
-    # Uses proper kinematics: vy_f = -sqrt(vy0^2 - 2*ay*(50 - 17/12))
-    # Then t = (vy_f - vy0)/ay, vz_f = vz0 + az*t
-    # VAA = arctan(vz_f / vy_f) in degrees (using atan2 with -vy_f to get correct quadrant)
-    # Height adjustment: +0.82 deg per foot above mid-zone (2.5ft reference)
+    # From pitch_angles.py reference implementation
     if all(c in df.columns for c in ["vy0", "vz0", "ay", "az", "plate_z"]):
         vy0 = pd.to_numeric(df["vy0"], errors="coerce")
         vz0 = pd.to_numeric(df["vz0"], errors="coerce")
         ay_s = pd.to_numeric(df["ay"], errors="coerce")
         az_s = pd.to_numeric(df["az"], errors="coerce")
         pz = pd.to_numeric(df["plate_z"], errors="coerce")
-        # Distance from y0=50ft to front of plate at y=17/12 ft
-        dy = 50.0 - 17.0 / 12.0  # ~48.583 ft
-        # vy_f = -sqrt(vy0^2 - 2*ay*dy)
-        discriminant = vy0 ** 2 - 2 * ay_s * dy
-        discriminant = discriminant.clip(lower=0)
-        vy_f = -np.sqrt(discriminant)
+        # vYf: velocity at plate (y direction), from y0=50 to y=17/12
+        vy_f = -1 * (vy0 ** 2 - (2 * ay_s * (50 - 17.0 / 12.0))).clip(lower=0) ** 0.5
+        # Time from y0=50 to plate
         t = np.where(ay_s != 0, (vy_f - vy0) / ay_s, 0)
+        # vZf: vertical velocity at plate
         vz_f = vz0 + az_s * t
-        # VAA: vy_f is negative (toward plate), vz_f is negative (dropping)
-        # atan2(vz_f, -vy_f) gives angle from horizontal: negative = descending
-        vaa = np.degrees(np.arctan2(vz_f, -vy_f))
-        # Height adjustment: subtract expected VAA at that plate_z
-        # expected_VAA = 3.0 * plate_z - 14.0 (calibrated from league data)
-        # Positive HAVAA = flatter than expected = more ride
-        havaa = vaa - (3.0 * pz - 14.0)
-        df["havaa"] = np.round(havaa, 1)
+        # Raw VAA
+        vaa = -1 * np.arctan(vz_f / vy_f) * (180.0 / np.pi)
+        # Piecewise height adjustment
+        vaa_z_adj = np.where(pz < 3.5,
+                             pz * 1.5635 + (-10.092),
+                             pz ** 2 * (-0.1996) + pz * 2.704 + (-11.69))
+        df["havaa"] = np.round(vaa - vaa_z_adj, 1)
     return df
 
 
@@ -237,13 +231,12 @@ def build_pitches_list(pdf):
         ay_v = pd.to_numeric(pitch_df["ay"], errors="coerce")
         az_v = pd.to_numeric(pitch_df["az"], errors="coerce")
         pz = pd.to_numeric(pitch_df["plate_z"], errors="coerce")
-        dy = 50.0 - 17.0 / 12.0
-        discriminant = (vy0 ** 2 - 2 * ay_v * dy).clip(lower=0)
-        vy_f = -np.sqrt(discriminant)
+        vy_f = -1 * (vy0 ** 2 - (2 * ay_v * (50 - 17.0 / 12.0))).clip(lower=0) ** 0.5
         t = np.where(ay_v != 0, (vy_f - vy0) / ay_v, 0)
         vz_f = vz0 + az_v * t
-        vaa = np.degrees(np.arctan2(vz_f, -vy_f))
-        pitch_df["havaa"] = np.round(vaa - (3.0 * pz - 14.0), 1)
+        vaa = -1 * np.arctan(vz_f / vy_f) * (180.0 / np.pi)
+        vaa_z_adj = np.where(pz < 3.5, pz * 1.5635 - 10.092, pz ** 2 * -0.1996 + pz * 2.704 - 11.69)
+        pitch_df["havaa"] = np.round(vaa - vaa_z_adj, 1)
     # Use native arm_angle from Statcast if available, otherwise approximate
     if "arm_angle" in pitch_df.columns and pitch_df["arm_angle"].notna().any():
         pass  # already have Hawk-Eye arm angle data
@@ -323,13 +316,12 @@ def get_pitcher_card(date_str, pitcher_id, game_pk):
         ay_v = pd.to_numeric(pitch_df["ay"], errors="coerce")
         az_v = pd.to_numeric(pitch_df["az"], errors="coerce")
         pz_v = pd.to_numeric(pitch_df["plate_z"], errors="coerce")
-        dy = 50.0 - 17.0 / 12.0
-        disc = (vy0_v ** 2 - 2 * ay_v * dy).clip(lower=0)
-        vy_f = -np.sqrt(disc)
+        vy_f = -1 * (vy0_v ** 2 - (2 * ay_v * (50 - 17.0 / 12.0))).clip(lower=0) ** 0.5
         t = np.where(ay_v != 0, (vy_f - vy0_v) / ay_v, 0)
         vz_f = vz0_v + az_v * t
-        vaa = np.degrees(np.arctan2(vz_f, -vy_f))
-        pitch_df["havaa"] = np.round(vaa - (3.0 * pz_v - 14.0), 1)
+        vaa = -1 * np.arctan(vz_f / vy_f) * (180.0 / np.pi)
+        vaa_z_adj = np.where(pz_v < 3.5, pz_v * 1.5635 - 10.092, pz_v ** 2 * -0.1996 + pz_v * 2.704 - 11.69)
+        pitch_df["havaa"] = np.round(vaa - vaa_z_adj, 1)
     if "arm_angle" in pitch_df.columns and pitch_df["arm_angle"].notna().any():
         pass  # already have Hawk-Eye arm angle data
     elif all(c in pitch_df.columns for c in ["release_pos_x", "release_pos_z"]):
