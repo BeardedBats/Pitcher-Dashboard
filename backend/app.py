@@ -406,12 +406,14 @@ _schedule_cache = {"data": None, "ts": None}
 def _fetch_schedule_grid():
     """Fetch and parse the starting pitcher grid from Google Sheets. Cache for 1 hour."""
     now = datetime.now()
-    if _schedule_cache["data"] and _schedule_cache["ts"] and (now - _schedule_cache["ts"]).seconds < 3600:
+    if _schedule_cache["data"] and _schedule_cache["ts"] and (now - _schedule_cache["ts"]).total_seconds() < 3600:
         return _schedule_cache["data"]
     try:
         resp = http_requests.get(_SCHEDULE_SHEET_URL, timeout=15, allow_redirects=True)
         resp.raise_for_status()
-        text = resp.text
+        # Force UTF-8 — Google's redirect may not send charset header,
+        # causing requests to fall back to ISO-8859-1 and garble accented names.
+        text = resp.content.decode("utf-8", errors="replace")
     except Exception:
         return _schedule_cache.get("data") or {}
     reader = csv.reader(io.StringIO(text))
