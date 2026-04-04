@@ -541,10 +541,10 @@ export default function App() {
             <>
               <div className="controls-row">
                 <button className={`view-btn${view === "pitcher-results" ? " active" : ""}`} onClick={() => setView("pitcher-results")}>
-                  All Pitcher Results
+                  Pitcher Results
                 </button>
                 <button className={`view-btn${view === "pitch-data" ? " active" : ""}`} onClick={() => setView("pitch-data")}>
-                  All Pitch Data
+                  Pitch Data
                 </button>
                 <div className="toggle-group">
                   <label className="toggle-label">
@@ -553,11 +553,11 @@ export default function App() {
                   </label>
                   <label className="toggle-label">
                     <input type="checkbox" checked={splitByTeam} onChange={e => setSplitByTeam(e.target.checked)} />
-                    <span>Separate by Team</span>
+                    <span>By Team</span>
                   </label>
                   <label className="toggle-label">
                     <input type="checkbox" checked={top400Only} onChange={e => setTop400Only(e.target.checked)} />
-                    <span>Top 400 Only</span>
+                    <span>Top 400 SP</span>
                   </label>
                   {view === "pitcher-results" && (
                     <div className="col-filter-inline">
