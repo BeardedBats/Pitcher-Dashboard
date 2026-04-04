@@ -5,21 +5,14 @@ import { isTop400 } from "../top400";
 
 const TEAM_SPLIT_HIDE = ["team", "opponent"];
 const MOBILE_HIDE = ["hand"];
-const DEFAULT_HIDDEN = ["team", "hand"];
 
-export default function PitcherResultsTable({ data, onPitcherClick, spOnly, splitByTeam, top400Names, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange }) {
+export default function PitcherResultsTable({ data, onPitcherClick, spOnly, splitByTeam, top400Names, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, hiddenCols = [] }) {
   const [sortKeyLocal, setSortKeyLocal] = useState(null);
   const [sortDirLocal, setSortDirLocal] = useState("asc");
   const sortKey = onSortKeyChange ? sortKeyProp : sortKeyLocal;
   const setSortKey = onSortKeyChange || setSortKeyLocal;
   const sortDir = onSortDirChange ? sortDirProp : sortDirLocal;
   const setSortDir = onSortDirChange || setSortDirLocal;
-  const [hiddenCols, setHiddenCols] = useState(DEFAULT_HIDDEN);
-  const [showColFilter, setShowColFilter] = useState(false);
-
-  const toggleCol = (key) => {
-    setHiddenCols(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
-  };
 
   const handleSort = (key) => {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -133,9 +126,6 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
     return `${prefix} ${displayAbbrev(first.opponent)}`;
   };
 
-  // Filterable columns (exclude "pitcher" — always visible)
-  const filterableCols = PITCHER_RESULTS_COLUMNS.filter(c => c.key !== "pitcher");
-
   const renderTable = (rows, teamLabel, isCard) => {
     let cols = isCard ? PITCHER_RESULTS_COLUMNS.filter(c => !TEAM_SPLIT_HIDE.includes(c.key)) : PITCHER_RESULTS_COLUMNS;
     if (!isCard) cols = cols.filter(c => !hiddenCols.includes(c.key));
@@ -202,24 +192,5 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
     return <div className="team-cards-grid">{teamOrder.map(team => renderTable(teamMap[team], TEAM_FULL_NAMES[team] || team, true))}</div>;
   }
 
-  return (
-    <div>
-      <div className="col-filter-bar">
-        <button className="col-filter-toggle" onClick={() => setShowColFilter(v => !v)}>
-          Columns {showColFilter ? "\u25B2" : "\u25BC"}
-        </button>
-        {showColFilter && (
-          <div className="col-filter-checkboxes">
-            {filterableCols.map(c => (
-              <label key={c.key} className="col-filter-label">
-                <input type="checkbox" checked={!hiddenCols.includes(c.key)} onChange={() => toggleCol(c.key)} />
-                {c.label}
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
-      {renderTable(sorted, null, false)}
-    </div>
-  );
+  return renderTable(sorted, null, false);
 }

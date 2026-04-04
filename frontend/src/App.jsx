@@ -12,7 +12,7 @@ import SearchBar from "./components/SearchBar";
 const TeamPage = lazy(() => import("./components/TeamPage"));
 const PlayerPage = lazy(() => import("./components/PlayerPage"));
 import { fetchGames, fetchPitchData, fetchPitcherResults, fetchPitcherCard, fetchDefaultDate, fetchGameLinescore, reclassifyPitch, fetchInitialLoad, fetchRefresh, fetchLastRefresh } from "./utils/api";
-import { PITCH_TYPE_FILTERS, PITCH_COLORS, TEAMS_LIST } from "./constants";
+import { PITCH_TYPE_FILTERS, PITCH_COLORS, TEAMS_LIST, PITCHER_RESULTS_COLUMNS } from "./constants";
 import { TOP_400_NAMES, isTop400 } from "./top400";
 import useIsMobile from "./hooks/useIsMobile";
 
@@ -67,6 +67,8 @@ export default function App() {
   const [splitByTeam, setSplitByTeam] = useState(false);
   const [pitchFilter, setPitchFilter] = useState("Four-Seamer");
   const [top400Only, setTop400Only] = useState(false);
+  const [resultsHiddenCols, setResultsHiddenCols] = useState(["team", "hand"]);
+  const [showColFilter, setShowColFilter] = useState(false);
   const [linescoreData, setLinescoreData] = useState(null);
   const [pbpModal, setPbpModal] = useState(null); // { inning, isTop } or null
   const [reclassifyPitch_, setReclassifyPitch] = useState(null); // pitch object to reclassify
@@ -557,6 +559,23 @@ export default function App() {
                     <input type="checkbox" checked={top400Only} onChange={e => setTop400Only(e.target.checked)} />
                     <span>Top 400 Only</span>
                   </label>
+                  {view === "pitcher-results" && (
+                    <div className="col-filter-inline">
+                      <button className="col-filter-toggle" onClick={() => setShowColFilter(v => !v)}>
+                        Columns {showColFilter ? "\u25B2" : "\u25BC"}
+                      </button>
+                      {showColFilter && (
+                        <div className="col-filter-checkboxes">
+                          {PITCHER_RESULTS_COLUMNS.filter(c => c.key !== "pitcher").map(c => (
+                            <label key={c.key} className="col-filter-label">
+                              <input type="checkbox" checked={!resultsHiddenCols.includes(c.key)} onChange={() => setResultsHiddenCols(prev => prev.includes(c.key) ? prev.filter(k => k !== c.key) : [...prev, c.key])} />
+                              {c.label}
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -590,7 +609,7 @@ export default function App() {
               <PitchDataTable data={filteredPitchData} onPitcherClick={openCard} splitByTeam={splitByTeam} spOnly={spOnly} top400Names={TOP_400_NAMES} isMobile={isMobile} sortKey={pitchSortKey} onSortKeyChange={setPitchSortKey} sortDir={pitchSortDir} onSortDirChange={setPitchSortDir} />
             )}
             {view === "pitcher-results" && (
-              <PitcherResultsTable data={filteredResultsData} onPitcherClick={openCard} spOnly={spOnly} splitByTeam={splitByTeam} top400Names={TOP_400_NAMES} isMobile={isMobile} sortKey={resultsSortKey} onSortKeyChange={setResultsSortKey} sortDir={resultsSortDir} onSortDirChange={setResultsSortDir} />
+              <PitcherResultsTable data={filteredResultsData} onPitcherClick={openCard} spOnly={spOnly} splitByTeam={splitByTeam} top400Names={TOP_400_NAMES} isMobile={isMobile} sortKey={resultsSortKey} onSortKeyChange={setResultsSortKey} sortDir={resultsSortDir} onSortDirChange={setResultsSortDir} hiddenCols={resultsHiddenCols} />
             )}
           </div>
         </div>

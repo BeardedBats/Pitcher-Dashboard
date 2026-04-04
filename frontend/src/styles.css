@@ -226,10 +226,10 @@ tbody tr.clickable-row:hover { background: var(--hover-tint); }
   overflow: visible; white-space: nowrap;
 }
 .team-card-wrapper { }
-/* Column filter bar */
-.col-filter-bar {
+/* Column filter */
+.col-filter-inline {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-  margin-bottom: 8px;
+  margin-left: 4px;
 }
 .col-filter-toggle {
   background: var(--surface2); color: var(--text-muted); border: 1px solid var(--border);
