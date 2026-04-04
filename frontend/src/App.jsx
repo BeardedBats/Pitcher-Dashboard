@@ -565,7 +565,7 @@ export default function App() {
                         Columns {showColFilter ? "\u25B2" : "\u25BC"}
                       </button>
                       {showColFilter && (
-                        <div className="col-filter-checkboxes">
+                        <div className="col-filter-dropdown">
                           {PITCHER_RESULTS_COLUMNS.filter(c => c.key !== "pitcher").map(c => (
                             <label key={c.key} className="col-filter-label">
                               <input type="checkbox" checked={!resultsHiddenCols.includes(c.key)} onChange={() => setResultsHiddenCols(prev => prev.includes(c.key) ? prev.filter(k => k !== c.key) : [...prev, c.key])} />
