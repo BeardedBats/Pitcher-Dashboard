@@ -86,7 +86,6 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
   const formatGameLine = (row) => {
     if (!row.opponent) return <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
     const isHome = row.home_team && row.team === row.home_team;
-    const prefix = isHome ? "vs." : "@";
     const teamAbbr = displayAbbrev(row.team) || row.team;
     const oppAbbr = displayAbbrev(row.opponent) || row.opponent;
     const homeScore = row.home_score != null ? row.home_score : "";
@@ -94,10 +93,15 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
     const teamScore = isHome ? homeScore : awayScore;
     const oppScore = isHome ? awayScore : homeScore;
     const gs = row.game_state || "";
+    const hi = { color: "#d0d0d0", fontWeight: 600 };
     if (teamScore === "" && oppScore === "") {
-      return `${teamAbbr} ${prefix} ${oppAbbr}`;
+      return <span style={{ fontSize: 12, color: "#a5a5a5" }}><span style={hi}>{teamAbbr}</span> - {oppAbbr}</span>;
     }
-    return `${teamAbbr} ${teamScore} ${prefix} ${oppAbbr} ${oppScore}${gs ? ` (${gs})` : ""}`;
+    return (
+      <span style={{ fontSize: 12, color: "#a5a5a5" }}>
+        <span style={hi}>{teamAbbr} {teamScore}</span> - {oppAbbr} {oppScore}{gs ? ` (${gs})` : ""}
+      </span>
+    );
   };
 
   const renderCell = (row, col) => {
