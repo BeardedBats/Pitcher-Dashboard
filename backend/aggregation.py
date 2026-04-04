@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from data import fetch_date, fetch_pitcher_season, get_earned_runs, get_boxscore_ip, get_boxscore_full
+from data import fetch_date, fetch_pitcher_season, get_earned_runs, get_boxscore_ip, get_boxscore_full, get_game_state
 
 # ── Vectorized classification sets ──
 _SWING_DESCS = frozenset(["hit_into_play", "foul", "swinging_strike", "foul_tip", "swinging_strike_blocked", "foul_bunt", "missed_bunt", "bunt_foul_tip"])
@@ -204,6 +204,12 @@ def aggregate_pitcher_results(date_str, game_pk=None):
             r["er"] = 0
             r["runs"] = 0
             r["batters_faced"] = 0
+    # Add game state (scores, inning, status) to each row
+    for r in results:
+        gs = get_game_state(r["game_pk"])
+        r["home_score"] = gs.get("home_score", 0)
+        r["away_score"] = gs.get("away_score", 0)
+        r["game_state"] = gs.get("game_state", "")
     results.sort(key=lambda r: (r["team"], r["appearance_order"]))
     return results
 

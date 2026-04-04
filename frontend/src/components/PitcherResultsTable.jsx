@@ -5,6 +5,7 @@ import { isTop400 } from "../top400";
 
 const TEAM_SPLIT_HIDE = ["team", "opponent"];
 const MOBILE_HIDE = ["hand"];
+const DEFAULT_HIDDEN = ["team", "hand"];
 
 export default function PitcherResultsTable({ data, onPitcherClick, spOnly, splitByTeam, top400Names, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange }) {
   const [sortKeyLocal, setSortKeyLocal] = useState(null);
@@ -13,6 +14,12 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
   const setSortKey = onSortKeyChange || setSortKeyLocal;
   const sortDir = onSortDirChange ? sortDirProp : sortDirLocal;
   const setSortDir = onSortDirChange || setSortDirLocal;
+  const [hiddenCols, setHiddenCols] = useState(DEFAULT_HIDDEN);
+  const [showColFilter, setShowColFilter] = useState(false);
+
+  const toggleCol = (key) => {
+    setHiddenCols(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+  };
 
   const handleSort = (key) => {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -69,11 +76,29 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
   const getColWidth = (key) => {
     if (key === "pitcher") return isMobile ? 130 : maxPitcherWidth;
     if (key === "hand") return 52;
+    if (key === "opponent") return 175;
     if (key === "csw_pct") return 65;
     return 50;
   };
 
   const dim = (val) => (val === "--" || val === "-") ? <span style={{ color: "rgb(180, 185, 219)" }}>{val}</span> : val;
+
+  const formatGameLine = (row) => {
+    if (!row.opponent) return <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
+    const isHome = row.home_team && row.team === row.home_team;
+    const prefix = isHome ? "vs." : "@";
+    const teamAbbr = displayAbbrev(row.team) || row.team;
+    const oppAbbr = displayAbbrev(row.opponent) || row.opponent;
+    const homeScore = row.home_score != null ? row.home_score : "";
+    const awayScore = row.away_score != null ? row.away_score : "";
+    const teamScore = isHome ? homeScore : awayScore;
+    const oppScore = isHome ? awayScore : homeScore;
+    const gs = row.game_state || "";
+    if (teamScore === "" && oppScore === "") {
+      return `${teamAbbr} ${prefix} ${oppAbbr}`;
+    }
+    return `${teamAbbr} ${teamScore} ${prefix} ${oppAbbr} ${oppScore}${gs ? ` (${gs})` : ""}`;
+  };
 
   const renderCell = (row, col) => {
     const v = row[col.key];
@@ -88,11 +113,7 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
       if (!v) return <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
       return v === "R" ? "RHP" : v === "L" ? "LHP" : v;
     }
-    if (col.key === "opponent") {
-      if (!v) return <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
-      const prefix = row.home_team && row.team === row.home_team ? "vs." : "@";
-      return `${prefix} ${displayAbbrev(v)}`;
-    }
+    if (col.key === "opponent") return formatGameLine(row);
     if (col.key === "csw_pct") return dim(fmtPct(v));
     if (col.key === "ip") return v != null ? v : <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
     return dim(fmtInt(v));
@@ -108,8 +129,12 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
     return `${prefix} ${displayAbbrev(first.opponent)}`;
   };
 
+  // Filterable columns (exclude "pitcher" — always visible)
+  const filterableCols = PITCHER_RESULTS_COLUMNS.filter(c => c.key !== "pitcher");
+
   const renderTable = (rows, teamLabel, isCard) => {
     let cols = isCard ? PITCHER_RESULTS_COLUMNS.filter(c => !TEAM_SPLIT_HIDE.includes(c.key)) : PITCHER_RESULTS_COLUMNS;
+    if (!isCard) cols = cols.filter(c => !hiddenCols.includes(c.key));
     if (isMobile) cols = cols.filter(c => !MOBILE_HIDE.includes(c.key));
     const oppLabel = isCard ? getTeamOppLabel(rows) : "";
     const totalWidth = isCard && !isMobile ? cols.reduce((sum, c) => sum + getColWidth(c.key), 0) : undefined;
@@ -173,5 +198,24 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
     return <div className="team-cards-grid">{teamOrder.map(team => renderTable(teamMap[team], TEAM_FULL_NAMES[team] || team, true))}</div>;
   }
 
-  return renderTable(sorted, null, false);
+  return (
+    <div>
+      <div className="col-filter-bar">
+        <button className="col-filter-toggle" onClick={() => setShowColFilter(v => !v)}>
+          Columns {showColFilter ? "\u25B2" : "\u25BC"}
+        </button>
+        {showColFilter && (
+          <div className="col-filter-checkboxes">
+            {filterableCols.map(c => (
+              <label key={c.key} className="col-filter-label">
+                <input type="checkbox" checked={!hiddenCols.includes(c.key)} onChange={() => toggleCol(c.key)} />
+                {c.label}
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+      {renderTable(sorted, null, false)}
+    </div>
+  );
 }

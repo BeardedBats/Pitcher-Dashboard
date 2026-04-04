@@ -93,7 +93,7 @@ export const PITCHER_RESULTS_COLUMNS = [
   { key: "pitcher", label: "Pitcher", align: "left" },
   { key: "team", label: "Team", align: "left" },
   { key: "hand", label: "Hand", align: "left" },
-  { key: "opponent", label: "Opp", align: "left" },
+  { key: "opponent", label: "Game", align: "left" },
   { key: "ip", label: "IP", align: "right" },
   { key: "runs", label: "R", align: "right" },
   { key: "er", label: "ER", align: "right" },

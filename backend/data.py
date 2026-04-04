@@ -1204,6 +1204,7 @@ def get_games(date_str):
     return sorted(games, key=lambda g: g["label"])
 
 _boxscore_cache = {}
+_game_state_cache = {}  # { game_pk: { home_score, away_score, inning, inning_half, status } }
 
 def _get_boxscore_stats(game_pk):
     """Fetch pitching stats per pitcher from MLB Stats API boxscore.
@@ -1216,6 +1217,10 @@ def _get_boxscore_stats(game_pk):
         # Redis stores string keys; convert back to int keys
         converted = {int(k): v for k, v in redis_val.items()}
         _boxscore_cache[game_pk] = converted
+        # Also restore game state from Redis
+        gs_val = redis_get(f"gamestate:{game_pk}")
+        if gs_val is not None:
+            _game_state_cache[game_pk] = gs_val
         return converted
     try:
         url = f"https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live"
@@ -1259,6 +1264,29 @@ def _get_boxscore_stats(game_pk):
                         "games_started": gs if gs is not None else 0,
                         "decision": decision,
                     }
+        # Extract game state (scores, inning, status) from linescore
+        linescore = data.get("liveData", {}).get("linescore", {})
+        game_status = data.get("gameData", {}).get("status", {})
+        detailed_state = game_status.get("detailedState", "")
+        abstract_state = game_status.get("abstractGameState", "")
+        home_score = linescore.get("teams", {}).get("home", {}).get("runs", 0)
+        away_score = linescore.get("teams", {}).get("away", {}).get("runs", 0)
+        current_inning = linescore.get("currentInning", 0)
+        inning_half = linescore.get("inningHalf", "")  # "Top" or "Bottom"
+        # Build game state string: F (Final), T7 (Top 7), B3 (Bottom 3)
+        if abstract_state == "Final" or "Final" in detailed_state:
+            game_state_str = "F"
+        elif inning_half and current_inning:
+            game_state_str = ("T" if inning_half == "Top" else "B") + str(current_inning)
+        else:
+            game_state_str = ""
+        gs_data = {
+            "home_score": home_score if home_score is not None else 0,
+            "away_score": away_score if away_score is not None else 0,
+            "game_state": game_state_str,
+        }
+        _game_state_cache[game_pk] = gs_data
+        redis_set(f"gamestate:{game_pk}", gs_data)
         _boxscore_cache[game_pk] = stats_map
         # Store in Redis with string keys (JSON requirement)
         redis_set(f"boxscore:{game_pk}", {str(k): v for k, v in stats_map.items()})
@@ -1267,6 +1295,13 @@ def _get_boxscore_stats(game_pk):
         print(f"Error fetching boxscore for game {game_pk}: {e}")
         _boxscore_cache[game_pk] = {}
         return {}
+
+def get_game_state(game_pk):
+    """Return game state dict: { home_score, away_score, game_state }."""
+    if game_pk not in _game_state_cache:
+        # Trigger boxscore fetch which populates game state cache
+        _get_boxscore_stats(game_pk)
+    return _game_state_cache.get(game_pk, {})
 
 def get_earned_runs(game_pk):
     """Backward-compatible wrapper: returns { pitcher_id: earned_runs }"""
@@ -1396,56 +1431,86 @@ def get_game_linescore(game_pk, pitcher_id=None):
         pa_total_distance = pa_hit.get("totalDistance")
         pa_outs = about.get("outs", 0) if about else 0
 
-        # Build pitch list
-        pitch_events = [ev for ev in pa.get("playEvents", []) if ev.get("isPitch")]
+        # Build pitch list (including non-pitch events like pickoffs, stolen bases)
+        all_play_events = pa.get("playEvents", [])
         pitches = []
         balls = 0
         strikes = 0
-        for pidx, ev in enumerate(pitch_events):
-            is_last_p = (pidx == len(pitch_events) - 1)
+        pitch_num = 0
+        # Pre-compute last pitch index
+        last_pitch_idx = max((i for i, e in enumerate(all_play_events) if e.get("isPitch")), default=-1)
+        for eidx, ev in enumerate(all_play_events):
             det = ev.get("details", {})
-            pd_ = ev.get("pitchData", {})
-            pitch_type_code = det.get("type", {}).get("code", "")
-            pitch_type_name = PITCH_TYPE_MAP.get(pitch_type_code, pitch_type_code)
-            speed = pd_.get("startSpeed")
-            desc = det.get("description", "")
-            # Normalize: foul tip and swinging strike (blocked) → Swinging Strike
-            if desc in ("Foul Tip", "Swinging Strike (Blocked)"):
-                desc = "Swinging Strike"
-            code = det.get("code", "")
-            p_coords = pd_.get("coordinates", {})
-            p_breaks = pd_.get("breaks", {})
+            if ev.get("isPitch"):
+                pitch_num += 1
+                is_last_p = (eidx == last_pitch_idx)
+                pd_ = ev.get("pitchData", {})
+                pitch_type_code = det.get("type", {}).get("code", "")
+                pitch_type_name = PITCH_TYPE_MAP.get(pitch_type_code, pitch_type_code)
+                speed = pd_.get("startSpeed")
+                desc = det.get("description", "")
+                # Normalize: foul tip and swinging strike (blocked) → Swinging Strike
+                if desc in ("Foul Tip", "Swinging Strike (Blocked)"):
+                    desc = "Swinging Strike"
+                code = det.get("code", "")
+                p_coords = pd_.get("coordinates", {})
+                p_breaks = pd_.get("breaks", {})
 
-            count_str = f"{balls}-{strikes}"
+                count_str = f"{balls}-{strikes}"
 
-            pitches.append({
-                "num": len(pitches) + 1,
-                "type": pitch_type_name,
-                "type_code": pitch_type_code,
-                "speed": round(speed, 1) if speed else None,
-                "desc": desc,
-                "count": count_str,
-                # Location & break for strikezone + hover
-                "plate_x": p_coords.get("pX"),
-                "plate_z": p_coords.get("pZ"),
-                "pfx_x": round(-p_breaks.get("breakHorizontal", 0), 1) if p_breaks.get("breakHorizontal") is not None else None,
-                "pfx_z": round(p_breaks.get("breakVerticalInduced", 0), 1) if p_breaks.get("breakVerticalInduced") is not None else None,
-                "zone": pd_.get("zone"),
-                # Hit data on last pitch only
-                "launch_speed": pa_ls if is_last_p else None,
-                "launch_angle": pa_la if is_last_p else None,
-                "hc_x": pa_hcx if is_last_p else None,
-                "hc_y": pa_hcy if is_last_p else None,
-            })
+                pitches.append({
+                    "num": pitch_num,
+                    "type": pitch_type_name,
+                    "type_code": pitch_type_code,
+                    "speed": round(speed, 1) if speed else None,
+                    "desc": desc,
+                    "count": count_str,
+                    # Location & break for strikezone + hover
+                    "plate_x": p_coords.get("pX"),
+                    "plate_z": p_coords.get("pZ"),
+                    "pfx_x": round(-p_breaks.get("breakHorizontal", 0), 1) if p_breaks.get("breakHorizontal") is not None else None,
+                    "pfx_z": round(p_breaks.get("breakVerticalInduced", 0), 1) if p_breaks.get("breakVerticalInduced") is not None else None,
+                    "zone": pd_.get("zone"),
+                    # Hit data on last pitch only
+                    "launch_speed": pa_ls if is_last_p else None,
+                    "launch_angle": pa_la if is_last_p else None,
+                    "hc_x": pa_hcx if is_last_p else None,
+                    "hc_y": pa_hcy if is_last_p else None,
+                })
 
-            # Update count for next pitch
-            if code in ("B", "H", "P", "I", "V", "*B"):
-                balls = min(balls + 1, 4)
-            elif code in ("C", "S", "T", "M", "L", "A", "*S"):
-                strikes = min(strikes + 1, 2)
-            elif code == "F" and strikes < 2:
-                strikes += 1
-            # X (in play) doesn't change count
+                # Update count for next pitch
+                if code in ("B", "H", "P", "I", "V", "*B"):
+                    balls = min(balls + 1, 4)
+                elif code in ("C", "S", "T", "M", "L", "A", "*S"):
+                    strikes = min(strikes + 1, 2)
+                elif code == "F" and strikes < 2:
+                    strikes += 1
+                # X (in play) doesn't change count
+            else:
+                # Non-pitch event: pickoff, stolen base, balk, wild pitch, etc.
+                event_type = det.get("eventType", "") or det.get("event", "") or ""
+                desc = det.get("description", "")
+                if not desc and not event_type:
+                    continue
+                # Determine if a run scored on this action
+                runner_events = ev.get("runners", [])
+                action_scored = any(
+                    r.get("movement", {}).get("end") == "score"
+                    for r in runner_events
+                ) if runner_events else False
+                # Determine if it was an error
+                action_is_error = any(
+                    r.get("details", {}).get("isScoringEvent") and "error" in (r.get("details", {}).get("event", "") or "").lower()
+                    for r in runner_events
+                ) if runner_events else ("error" in desc.lower())
+                pitches.append({
+                    "is_action": True,
+                    "event_type": event_type,
+                    "desc": desc,
+                    "scored": action_scored,
+                    "is_error": action_is_error,
+                    "count": f"{balls}-{strikes}",
+                })
 
         pa_obj = {
             "batter": batter_name,
