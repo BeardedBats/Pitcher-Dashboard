@@ -506,16 +506,14 @@ def manual_refresh():
 
 
 # ── Pitcher schedule (next starts from Google Sheet) ──
-_SCHEDULE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1IefgV82-jwgoDDkSxWNlDmKFqvGOnorX1HjAENKfjv0/export?format=csv&gid=0"
+_SCHEDULE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1IefgV82-jwgoDDkSxWNlDmKFqvGOnorX1HjAENKfjv0/export?format=csv&gid=2116137360"
 _schedule_cache = {"data": None, "ts": None}
 
-_DIVISION_HEADERS = {"AL East", "AL Central", "AL West", "NL East", "NL Central", "NL West"}
-
 def _fetch_schedule_grid():
-    """Fetch and parse the starting pitcher grid from Google Sheets. Cache for 1 hour.
-    Sheet format: Row 0 has date headers like 'Mon\\n4/1'. Team rows have cells like
-    'OPP\\nPitcher Name (R)' or '@ OPP\\nPitcher Name (L)'. Division header rows repeat
-    the date headers and are skipped."""
+    """Fetch and parse the Probables tab from Google Sheets. Cache for 1 hour.
+    Header row: 'Team', 'Sunday - 4/5', 'Monday - 4/6', ...
+    Team rows: 'PIT', 'Braxton Ashcraft | BAL', 'OFF', ...
+    Cell format: 'Pitcher Name | OPP' or 'Pitcher Name | @OPP'."""
     now = datetime.now()
     if _schedule_cache["data"] and _schedule_cache["ts"] and (now - _schedule_cache["ts"]).total_seconds() < 3600:
         return _schedule_cache["data"]
@@ -527,47 +525,37 @@ def _fetch_schedule_grid():
         return _schedule_cache.get("data") or {}
     reader = csv.reader(io.StringIO(text))
     rows = list(reader)
-    # Parse date columns from the first date-header row encountered
-    # Format: "Mon\n4/1", "Tue\n4/2", etc.
-    dates = []  # list of (col_index, date_str)  e.g. (1, "4/1"), (2, "4/2")
+    if not rows:
+        return {}
+    # Parse date columns from header row
+    # Format: "Sunday - 4/5", "Monday - 4/6", or doubleheader "4/5/2026-2nd - ..."
+    header = rows[0]
+    dates = []  # list of (col_index, date_str)  e.g. (1, "4/5"), (2, "4/6")
+    for ci, cell in enumerate(header):
+        if ci == 0:
+            continue
+        m = re.search(r'(\d+/\d+)', cell)
+        if m:
+            dates.append((ci, m.group(1)))
     pitcher_starts = {}  # pitcher_name_lower -> [{ date, opponent, is_away, team }]
-    for ri, row in enumerate(rows):
-        first = (row[0] or "").strip() if row else ""
-        # Detect date header row: first cell is a division name or "AL East"/etc,
-        # and other cells contain day-of-week + date like "Mon\n4/1"
-        is_date_row = False
-        if any(re.search(r'\d+/\d+', cell) for cell in row[1:8]):
-            # Check if this looks like a header (division or first row)
-            if first in _DIVISION_HEADERS or first == "" or ri == 0:
-                is_date_row = True
-        if is_date_row:
-            dates = []
-            for ci, cell in enumerate(row):
-                m = re.search(r'(\d+/\d+)', cell)
-                if m:
-                    dates.append((ci, m.group(1)))
+    for ri, row in enumerate(rows[1:], start=1):
+        team_abbr = (row[0] or "").strip()
+        if not team_abbr:
             continue
-        if not dates:
-            continue
-        # Skip empty rows or division headers
-        if not first or first in _DIVISION_HEADERS:
-            continue
-        # This is a team row — team_abbr is in col 0
-        team_abbr = first
         for ci, date_str in dates:
             if ci >= len(row):
                 continue
             cell = (row[ci] or "").strip()
             if not cell or cell.upper() == "OFF":
                 continue
-            # Format: "OPP\nPitcher Name (R)" or "@ OPP\nPitcher Name (L)"
-            lines = cell.split("\n")
-            if len(lines) < 2:
+            # Format: "Pitcher Name | OPP" or "Pitcher Name | @OPP"
+            parts = cell.split("|")
+            if len(parts) < 2:
                 continue
-            opp_raw = lines[0].strip()
-            pitcher_raw = lines[1].strip()
+            pitcher_name = parts[0].strip()
+            opp_raw = parts[1].strip()
             # Strip hand indicator like "(R)" or "(L)"
-            pitcher_name = re.sub(r'\s*\([RLS]\)\s*$', '', pitcher_raw).strip()
+            pitcher_name = re.sub(r'\s*\([RLS]\)\s*$', '', pitcher_name).strip()
             if not pitcher_name or pitcher_name == "(null)":
                 continue
             is_away = opp_raw.startswith("@")

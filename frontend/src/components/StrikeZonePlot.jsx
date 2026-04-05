@@ -379,7 +379,9 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
                     })()}
                     {(() => {
                       const dotX = 12 + ((-p.plate_x + 0.83) / 1.66) * 41;
-                      const dotY = 17 + ((3.5 - p.plate_z) / 2.0) * 50;
+                      const szT = p.sz_top || 3.5;
+                      const szB = p.sz_bot || 1.5;
+                      const dotY = 17 + ((szT - p.plate_z) / (szT - szB)) * 50;
                       const pitchColor = PITCH_COLORS[p.pitch_name] || "#D9D9D9";
                       return (
                         <circle cx={dotX} cy={dotY} r="4" fill={pitchColor} stroke="rgba(0,0,0,0.4)" strokeWidth="0.8" />
