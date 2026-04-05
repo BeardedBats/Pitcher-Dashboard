@@ -239,6 +239,21 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
             <div className="card-meta">
               {info.teams?.map(t => displayAbbrev(t)).join("/") || ""} · {info.hand === "R" ? "RHP" : "LHP"}
             </div>
+            {schedule && (
+              <div className="card-schedule" style={{ fontSize: 13, color: "var(--text-dim)", marginTop: 4 }}>
+                <div style={{ color: "var(--text)", fontWeight: 500, marginBottom: 2 }}>Next Three Starts:</div>
+                {schedule.map((s, i) => (
+                  <div key={i} style={{ lineHeight: 1.5 }}>
+                    <span style={{ color: "#c8cbe0", fontWeight: 600 }}>{s.date}:</span>{" "}
+                    <span style={{ color: getOpponentTierColor(s.opponent, s.is_away), fontWeight: 700 }}>{s.is_away ? "@ " : "vs. "}{displayAbbrev(s.opponent)}</span>
+                    {s.day && <span style={{ color: "var(--text-dim)" }}> ({s.day})</span>}
+                  </div>
+                ))}
+                {Array.from({ length: Math.max(0, 3 - (schedule.length || 0)) }).map((_, i) => (
+                  <div key={`tbd-${i}`} style={{ lineHeight: 1.5 }}>TBD</div>
+                ))}
+              </div>
+            )}
           </div>
           {hasData && (
             <div className="card-gameline-box">
@@ -280,14 +295,6 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                       </tr>
                     );
                   })}
-                  {/* Next three games */}
-                  {schedule && schedule.map((s, i) => (
-                    <tr key={`sched-${i}`} className="pp-log-row pp-schedule-row">
-                      <td>{s.date ? s.date.replace("/", "-") : "TBD"}</td>
-                      <td style={{ color: getOpponentTierColor(s.opponent, s.is_away), fontWeight: 700 }}>{s.is_away ? "@ " : ""}{displayAbbrev(s.opponent)}</td>
-                      <td colSpan={12} style={{ textAlign: "left", color: "var(--text-dim)", fontStyle: "italic" }}>{s.day || ""}</td>
-                    </tr>
-                  ))}
                   {/* Total row — matches Box Score format with rate labels */}
                   {(() => {
                     const g = rs.games || 0;
