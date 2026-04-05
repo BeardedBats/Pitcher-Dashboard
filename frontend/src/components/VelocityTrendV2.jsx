@@ -529,7 +529,9 @@ function VelocityTooltipV2Mobile({ pitch: p, x, y, onClose }) {
           <span style={{ marginLeft: 6, color: "rgba(180,184,210,0.5)", fontSize: "0.85em" }}>#{p._seqNum}</span>
         </div>
         <div style={{ whiteSpace: "nowrap", color: result.color, fontWeight: 600, marginLeft: 12 }}>
-          {result.label}
+          {result.isError && result.errorOutType
+            ? <>{result.errorOutType} <span style={{ color: "#feffa3" }}>(Error)</span></>
+            : result.label}
           {result.isK && (
             result.isCalledStrikeThree
               ? <span style={{ marginLeft: 3 }}>(<span style={{ display: "inline-block", transform: "scaleX(-1)" }}>K</span>)</span>
@@ -640,7 +642,9 @@ function VelocityTooltipV2({ pitch: p, x, y }) {
           <span style={{ marginLeft: 6, color: "rgba(180,184,210,0.5)", fontSize: "0.85em" }}>#{p._seqNum}</span>
         </div>
         <div style={{ whiteSpace: "nowrap", color: result.color, fontWeight: 600, marginLeft: 12 }}>
-          {result.label}
+          {result.isError && result.errorOutType
+            ? <>{result.errorOutType} <span style={{ color: "#feffa3" }}>(Error)</span></>
+            : result.label}
           {result.isK && (
             result.isCalledStrikeThree
               ? <span style={{ marginLeft: 3 }}>(<span style={{ display: "inline-block", transform: "scaleX(-1)" }}>K</span>)</span>

@@ -31,7 +31,7 @@ const IHB_ARM_SIDE_TYPES = ["Four-Seamer", "Sinker", "Changeup"];
 
 const MOBILE_HIDE_COLS = ["hand", "team", "opponent"];
 
-export default function PitchDataTable({ data, onPitcherClick, columns, splitByTeam, spOnly, pitcherHand, sortable = true, showChange, seasonAvgs, batterFilter, top400Names, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange }) {
+export default function PitchDataTable({ data, onPitcherClick, columns, splitByTeam, spOnly, pitcherHand, sortable = true, showChange, seasonAvgs, batterFilter, top400Names, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, selectedPitchType, onPitchTypeClick }) {
   const [sortKeyLocal, setSortKeyLocal] = useState(null);
   const [sortDirLocal, setSortDirLocal] = useState("asc");
   const sortKey = onSortKeyChange ? sortKeyProp : sortKeyLocal;
@@ -426,9 +426,15 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={i} className={onPitcherClick ? "clickable-row" : ""}
-                  onClick={(e) => onPitcherClick && onPitcherClick(r.pitcher_id, r.game_pk, e)}
+            {rows.map((r, i) => {
+              const isDimmedRow = selectedPitchType && r.pitch_name !== selectedPitchType;
+              return (
+              <tr key={i} className={[onPitcherClick ? "clickable-row" : "", onPitchTypeClick ? "clickable-row" : ""].filter(Boolean).join(" ")}
+                  style={isDimmedRow ? { opacity: 0.4 } : undefined}
+                  onClick={(e) => {
+                    if (onPitchTypeClick && r.pitch_name) { onPitchTypeClick(r.pitch_name); }
+                    else if (onPitcherClick) { onPitcherClick(r.pitcher_id, r.game_pk, e); }
+                  }}
                   onMouseDown={(e) => { if (e.button === 1 && onPitcherClick) { e.preventDefault(); onPitcherClick(r.pitcher_id, r.game_pk, e); } }}>
                 {activeCols.map(c => {
                   const isSticky = stickyKeys.includes(c.key);
@@ -436,12 +442,13 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
                   return <td key={c.key} className={[c.dividerRight ? "col-divider-right" : "", isSticky ? "mobile-sticky-col" : ""].filter(Boolean).join(" ")} style={{ textAlign: c.align || "left", ...stickyStyle }}>{renderCell(r, c)}</td>;
                 })}
               </tr>
-            ))}
+              );
+            })}
             {(() => {
               const t = computeTotals(rows);
               if (!t) return null;
               return (
-                <tr className="pp-total-row" style={isMobile ? { position: "sticky", bottom: 0, zIndex: 2 } : undefined}>
+                <tr className="pp-total-row" style={{ ...(isMobile ? { position: "sticky", bottom: 0, zIndex: 2 } : {}), cursor: selectedPitchType && onPitchTypeClick ? "pointer" : undefined }} onClick={() => selectedPitchType && onPitchTypeClick && onPitchTypeClick(selectedPitchType)}>
                   {activeCols.map(c => {
                     let val;
                     if (c.key === "pitch_name") val = <span className="pp-total-label">Total</span>;

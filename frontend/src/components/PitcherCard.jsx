@@ -30,7 +30,6 @@ function formatResult(result, trajectory) {
     else if (t === "line_drive") outType = "Lineout";
     else if (t === "popup") outType = "Pop Out";
     if (outType) {
-      if (r === "force_out") return outType + " (FC)";
       if (r === "fielders_choice" || r === "fielders_choice_out") return "Fielder's Choice";
       return outType;
     }
@@ -57,7 +56,7 @@ function computeInningStats(pas, pitcherId) {
   for (const pa of pas) {
     if (pitcherId && pa.pitcher_id !== pitcherId) continue;
     const r = (pa.result || "").toLowerCase();
-    totalPitches += pa.pitches ? pa.pitches.length : 0;
+    totalPitches += pa.pitches ? pa.pitches.filter(p => !p.is_action).length : 0;
     if (r === "strikeout" || r === "strikeout_double_play") ks++;
     if (r === "walk" || r === "intent_walk") bbs++;
     if (["single", "double", "triple", "home_run"].includes(r)) hits++;
@@ -117,6 +116,8 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
 
   // Cross-component pitch hover highlight (shared between SZ plots and movement plot)
   const [crossHoverPitch, setCrossHoverPitch] = useState(null);
+  // Pitch type selected by clicking a row in the pitch data table
+  const [selectedPitchType, setSelectedPitchType] = useState(null);
 
   // Pitch-type filter for plots (null = all selected on init)
   const [pitchTypeFilter, setPitchTypeFilter] = useState(null);
@@ -395,13 +396,17 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
               splitByTeam={false} spOnly={false} pitcherHand={hand}
               sortable={false}
               showChange={true} seasonAvgs={seasonAvgs}
-              batterFilter={batterFilter} isMobile={isMobile} />
+              batterFilter={batterFilter} isMobile={isMobile}
+              selectedPitchType={selectedPitchType}
+              onPitchTypeClick={(type) => setSelectedPitchType(prev => prev === type ? null : type)} />
             {loadingAvgs && <div className="loading-avgs">Loading season averages...</div>}
           </div>
         )}
         {metricsView === "results" && (
           <div className="metrics-card">
-            <ResultsTable pitches={pitches} batterFilter={batterFilter} gameFilter="all" isMobile={isMobile} />
+            <ResultsTable pitches={pitches} batterFilter={batterFilter} gameFilter="all" isMobile={isMobile}
+              selectedPitchType={selectedPitchType}
+              onPitchTypeClick={(type) => setSelectedPitchType(prev => prev === type ? null : type)} />
           </div>
         )}
         {metricsView === "velocity-trend" && (
@@ -432,7 +437,8 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                       const isActive = pbpActivePa === paKey;
                       const isExp = pbpExpanded[paKey];
                       const isK = isStrikeout(pa.result);
-                      const lastPitch = pa.pitches?.length > 0 ? pa.pitches[pa.pitches.length - 1] : null;
+                      const realPitches = pa.pitches?.filter(p => !p.is_action) || [];
+                      const lastPitch = realPitches.length > 0 ? realPitches[realPitches.length - 1] : null;
                       const bbType = !isK ? classifyBattedBallFull(pa.launch_speed, pa.launch_angle) : null;
                       const bbColor = bbType ? BATTED_BALL_COLORS[bbType] : null;
 
@@ -505,7 +511,9 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                                 )}
                               </div>
                               <span className="card-pbp-result" style={{ color: resultColor }}>
-                                {resultLabel}
+                                {paResult.isError && paResult.errorOutType
+                                  ? <>{paResult.errorOutType} <span style={{ color: "#feffa3" }}>(Error)</span></>
+                                  : resultLabel}
                                 {paResult.isK && (
                                   paResult.isCalledStrikeThree
                                     ? <span style={{ marginLeft: 3 }}>(<span style={{ display: "inline-block", transform: "scaleX(-1)" }}>K</span>)</span>
@@ -527,7 +535,12 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                               </span>
                             </div>
                             {pa.description && (
-                              <div className="card-pbp-desc" style={{ color: resultColor }}>{pa.description}</div>
+                              <div className="card-pbp-desc" style={{ color: resultColor }}>
+                                {paResult.isError ? pa.description.split(/(?<=\.\s*)/).map((sentence, idx) => {
+                                  const isErrorLine = /error/i.test(sentence);
+                                  return <span key={idx} style={isErrorLine ? { color: "#feffa3" } : undefined}>{sentence}</span>;
+                                }) : pa.description}
+                              </div>
                             )}
                             {!isK && pa.launch_speed != null && (
                               <div className="card-pbp-evla">
@@ -546,12 +559,23 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                                   <span className="pbp-ph-desc">RESULT</span>
                                 </div>
                                 {pa.pitches.map((p, j) => {
+                                  if (p.is_action) {
+                                    const actionColor = p.is_error ? "#feffa3" : p.scored ? "#FF5EDC" : "rgba(180,184,210,0.7)";
+                                    return (
+                                      <div key={j} className="pbp-pitch-row pbp-action-row">
+                                        <span className="pbp-action-desc" style={{ color: actionColor }}>{p.desc}</span>
+                                      </div>
+                                    );
+                                  }
                                   const pColor = PITCH_COLORS[p.type] || "#888";
+                                  const lastPitchIdx = pa.pitches.filter(x => !x.is_action).length - 1;
+                                  const pitchOnlyIdx = pa.pitches.filter((x, k) => !x.is_action && k <= j).length - 1;
+                                  const isLastPitch = pitchOnlyIdx === lastPitchIdx;
                                   const pResult = getTooltipResult(p, {
                                     desc: p.desc,
-                                    paResult: j === pa.pitches.length - 1 ? pa.result : null,
-                                    isLastPitch: j === pa.pitches.length - 1,
-                                    launchAngle: j === pa.pitches.length - 1 ? pa.launch_angle : null,
+                                    paResult: isLastPitch ? pa.result : null,
+                                    isLastPitch,
+                                    launchAngle: isLastPitch ? pa.launch_angle : null,
                                   });
                                   return (
                                     <div key={j} className="pbp-pitch-row">
@@ -567,10 +591,10 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                             )}
                           </div>
                           {/* Right: SZ plot (only next to active PA) */}
-                          {isActive && pa.pitches?.length > 0 && (
+                          {isActive && realPitches.length > 0 && (
                             <div className="card-pbp-sz" style={{ position: "absolute", top: 0, left: 689, zIndex: 10 }}>
                               <StrikeZonePBP
-                                pitches={pa.pitches}
+                                pitches={realPitches}
                                 pitchColors={PITCH_COLORS}
                                 result={pa.result}
                                 resultLabel={resultLabel}
@@ -589,7 +613,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                               {pbpPitchHover && (() => {
                                 const hp = pbpPitchHover.pitch;
                                 const hpColor = PITCH_COLORS[hp.type] || "#888";
-                                const isLastPitch = pa.pitches && pa.pitches.indexOf(hp) === pa.pitches.length - 1;
+                                const isLastPitch = realPitches.indexOf(hp) === realPitches.length - 1;
                                 const result = getTooltipResult(hp, {
                                   desc: hp.desc,
                                   paResult: pa.result,
@@ -629,7 +653,9 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                                         </span>
                                       </div>
                                       <div style={{ whiteSpace: "nowrap", color: result.color, fontWeight: 600, marginLeft: 12 }}>
-                                        {result.label}
+                                        {result.isError && result.errorOutType
+                                          ? <>{result.errorOutType} <span style={{ color: "#feffa3" }}>(Error)</span></>
+                                          : result.label}
                                         {result.isK && (
                                           result.isCalledStrikeThree
                                             ? <span style={{ marginLeft: 3 }}>(<span style={{ display: "inline-block", transform: "scaleX(-1)" }}>K</span>)</span>
@@ -785,19 +811,19 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
             {(batterFilter === "all" || batterFilter === "L") && (
               <div className="viz-card">
                 <div className="viz-card-label">vs LHB</div>
-                <StrikeZonePlot pitches={filteredPitches} szTop={sz_top} szBot={sz_bot} stand="L" colorMode={szColorMode} onReclassify={onReclassify} isMobile={isMobile} highlightPitch={crossHoverPitch} onPitchHover={setCrossHoverPitch} />
+                <StrikeZonePlot pitches={filteredPitches} szTop={sz_top} szBot={sz_bot} stand="L" colorMode={szColorMode} onReclassify={onReclassify} isMobile={isMobile} highlightPitch={crossHoverPitch} highlightType={!crossHoverPitch ? selectedPitchType : null} onPitchHover={setCrossHoverPitch} />
               </div>
             )}
             {(batterFilter === "all" || batterFilter === "R") && (
               <div className="viz-card">
                 <div className="viz-card-label">vs RHB</div>
-                <StrikeZonePlot pitches={filteredPitches} szTop={sz_top} szBot={sz_bot} stand="R" colorMode={szColorMode} onReclassify={onReclassify} isMobile={isMobile} highlightPitch={crossHoverPitch} onPitchHover={setCrossHoverPitch} />
+                <StrikeZonePlot pitches={filteredPitches} szTop={sz_top} szBot={sz_bot} stand="R" colorMode={szColorMode} onReclassify={onReclassify} isMobile={isMobile} highlightPitch={crossHoverPitch} highlightType={!crossHoverPitch ? selectedPitchType : null} onPitchHover={setCrossHoverPitch} />
               </div>
             )}
         </div>
           <div className="viz-card">
             <div className="viz-card-label">Pitch Movement</div>
-            <MovementPlot pitches={filteredPitches} hand={hand} onReclassify={onReclassify} isMobile={isMobile} highlightPitch={crossHoverPitch} onPitchHover={setCrossHoverPitch} />
+            <MovementPlot pitches={filteredPitches} hand={hand} onReclassify={onReclassify} isMobile={isMobile} highlightPitch={crossHoverPitch} highlightType={!crossHoverPitch ? selectedPitchType : null} onPitchHover={setCrossHoverPitch} />
           </div>
         </div>
       </div>

@@ -54,7 +54,7 @@ function computeInningStats(pas, pitcherId) {
   for (const pa of pas) {
     if (pitcherId && pa.pitcher_id !== pitcherId) continue;
     const r = (pa.result || "").toLowerCase();
-    const pitchCount = pa.pitches ? pa.pitches.length : 0;
+    const pitchCount = pa.pitches ? pa.pitches.filter(p => !p.is_action).length : 0;
     totalPitches += pitchCount;
 
     // Count events
@@ -209,7 +209,8 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
               const isExpanded = expanded[i];
               const isActive = activePaIndex === i;
               const isK = isStrikeout(pa.result);
-              const lastPitch = pa.pitches && pa.pitches.length > 0 ? pa.pitches[pa.pitches.length - 1] : null;
+              const realPitches = pa.pitches?.filter(p => !p.is_action) || [];
+              const lastPitch = realPitches.length > 0 ? realPitches[realPitches.length - 1] : null;
 
               // Use tooltip result system for consistent colors
               const paResult = getTooltipResult({}, {
@@ -265,7 +266,9 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                         )}
                       </div>
                       <span className="pbp-pa-result" style={{ color: resultColor }}>
-                        {resultLabel}
+                        {paResult.isError && paResult.errorOutType
+                          ? <>{paResult.errorOutType} <span style={{ color: "#feffa3" }}>(Error)</span></>
+                          : resultLabel}
                         {paResult.isK && (
                           paResult.isCalledStrikeThree
                             ? <span style={{ marginLeft: 3 }}>(<span style={{ display: "inline-block", transform: "scaleX(-1)" }}>K</span>)</span>
@@ -290,9 +293,14 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                       </span>
                     </div>
 
-                    {/* Row 3: Play description — colored to match result */}
+                    {/* Row 3: Play description — colored to match result; error lines in yellow */}
                     {pa.description && (
-                      <div className="pbp-pa-desc" onClick={() => setActivePaIndex(i)} style={{ cursor: "pointer", color: resultColor }}>{pa.description}</div>
+                      <div className="pbp-pa-desc" onClick={() => setActivePaIndex(i)} style={{ cursor: "pointer", color: resultColor }}>
+                        {paResult.isError ? pa.description.split(/(?<=\.\s*)/).map((sentence, idx) => {
+                          const isErrorLine = /error/i.test(sentence);
+                          return <span key={idx} style={isErrorLine ? { color: "#feffa3" } : undefined}>{sentence}</span>;
+                        }) : pa.description}
+                      </div>
                     )}
 
                     {/* Row 4: EV/LA + batted ball type (after description, for balls in play) */}
@@ -318,14 +326,25 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                           <span className="pbp-ph-desc">RESULT</span>
                         </div>
                         {pa.pitches.map((p, j) => {
+                          if (p.is_action) {
+                            const actionColor = p.is_error ? "#feffa3" : p.scored ? "#FF5EDC" : "rgba(180,184,210,0.7)";
+                            return (
+                              <div key={j} className="pbp-pitch-row pbp-action-row">
+                                <span className="pbp-action-desc" style={{ color: actionColor }}>{p.desc}</span>
+                              </div>
+                            );
+                          }
                           const color = PITCH_COLORS[p.type] || PITCH_COLORS[TYPE_TO_NAME[p.type]] || "#888";
                           const mph = p.speed != null ? Number(p.speed).toFixed(1) : "—";
                           // Color the pitch description using tooltip result colors
+                          const lastPitchIdx = pa.pitches.filter(x => !x.is_action).length - 1;
+                          const pitchOnlyIdx = pa.pitches.filter((x, k) => !x.is_action && k <= j).length - 1;
+                          const isLastPitch = pitchOnlyIdx === lastPitchIdx;
                           const pitchResult = getTooltipResult(p, {
                             desc: p.desc,
-                            paResult: j === pa.pitches.length - 1 ? pa.result : null,
-                            isLastPitch: j === pa.pitches.length - 1,
-                            launchAngle: j === pa.pitches.length - 1 ? pa.launch_angle : null,
+                            paResult: isLastPitch ? pa.result : null,
+                            isLastPitch,
+                            launchAngle: isLastPitch ? pa.launch_angle : null,
                           });
                           return (
                             <div key={j} className="pbp-pitch-row">
@@ -348,11 +367,14 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
           </div>
 
           <div className="pbp-sz-panel" style={{ position: "sticky", top: 12, alignSelf: "flex-start" }}>
-            {activePa && activePa.pitches && activePa.pitches.length > 0 && (
+            {activePa && activePa.pitches && activePa.pitches.length > 0 && (() => {
+              const activeRealPitches = activePa.pitches.filter(p => !p.is_action);
+              const activeLastPitch = activeRealPitches.length > 0 ? activeRealPitches[activeRealPitches.length - 1] : null;
+              return (
               <>
                 <StrikeZonePBP
                   key={`${currentInning}-${currentIsTop}-${activePaIndex}`}
-                  pitches={activePa.pitches}
+                  pitches={activeRealPitches}
                   pitchColors={PITCH_COLORS}
                   result={activePa.result}
                   resultLabel={formatResult(activePa.result, activePa.trajectory)}
@@ -365,7 +387,7 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                   battedBallType={classifyBattedBall(activePa.launch_speed, activePa.launch_angle)}
                   rbi={activePa.rbi || 0}
                   isStrikeoutResult={isStrikeout(activePa.result)}
-                  lastPitch={activePa.pitches[activePa.pitches.length - 1]}
+                  lastPitch={activeLastPitch}
                   onPitchHover={setPitchHover}
                   homeScore={activePa.home_score}
                   awayScore={activePa.away_score}
@@ -377,7 +399,7 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                 {pitchHover && (() => {
                   const hp = pitchHover.pitch;
                   const hpColor = PITCH_COLORS[hp.type] || "#888";
-                  const isLastPitch = activePa.pitches && activePa.pitches.indexOf(hp) === activePa.pitches.length - 1;
+                  const isLastPitch = activeRealPitches.indexOf(hp) === activeRealPitches.length - 1;
                   const result = getTooltipResult(hp, {
                     desc: hp.desc,
                     paResult: activePa.result,
@@ -418,7 +440,9 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                           </span>
                         </div>
                         <div style={{ whiteSpace: "nowrap", color: result.color, fontWeight: 600, marginLeft: 12 }}>
-                          {result.label}
+                          {result.isError && result.errorOutType
+                            ? <>{result.errorOutType} <span style={{ color: "#feffa3" }}>(Error)</span></>
+                            : result.label}
                           {result.isK && (
                             result.isCalledStrikeThree
                               ? <span style={{ marginLeft: 3 }}>(<span style={{ display: "inline-block", transform: "scaleX(-1)" }}>K</span>)</span>
@@ -503,7 +527,8 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                   );
                 })()}
               </>
-            )}
+              );
+            })()}
           </div>
         </div>
       </div>

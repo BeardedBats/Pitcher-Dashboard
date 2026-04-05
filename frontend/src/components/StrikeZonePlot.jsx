@@ -37,7 +37,7 @@ function pitchMatch(a, b) {
   return a.at_bat_number === b.at_bat_number && a.pitch_number === b.pitch_number && a.game_pk === b.game_pk;
 }
 
-export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode = "pitch-type", onReclassify, isMobile = false, highlightPitch, onPitchHover }) {
+export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode = "pitch-type", onReclassify, isMobile = false, highlightPitch, highlightType, onPitchHover }) {
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
   const containerRef = useRef(null);
@@ -125,19 +125,25 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
     if (colorMode === "pa-result") {
       filtered = filtered.filter(p => p.events);
     }
+    const isHighlighting = highlightPitch || highlightType;
+    // Sort: draw dimmed pitches first, highlighted on top to avoid stacking opacity
+    const withCoords = [];
     filtered.forEach((p) => {
       const [x, y] = toCanvas(-p.plate_x, p.plate_z, W, H);
       if (x < PAD.left - 8 || x > PAD.left + PLOT_W + 8 || y < PAD.top - 8 || y > PAD.top + PLOT_H + 8) return;
+      const isMatch = highlightPitch ? pitchMatch(p, highlightPitch) : (highlightType ? p.pitch_name === highlightType : true);
+      withCoords.push({ x, y, pitch: p, isMatch });
+    });
+    if (isHighlighting) withCoords.sort((a, b) => (a.isMatch ? 1 : 0) - (b.isMatch ? 1 : 0));
+    withCoords.forEach(({ x, y, pitch: p, isMatch }) => {
       positions.push({ x, y, pitch: p });
-      // Color based on mode
       let color;
       if (colorMode === "pitch-result") {
         color = getSZResultColor(p);
       } else {
-        // pitch-type and pa-result both use pitch type colors
         color = PITCH_COLORS[p.pitch_name] || "#D9D9D9";
       }
-      const isDimmed = highlightPitch && !pitchMatch(p, highlightPitch);
+      const isDimmed = isHighlighting && !isMatch;
       ctx.globalAlpha = isDimmed ? 0.12 : 0.85;
       ctx.fillStyle = color;
       ctx.beginPath();
@@ -150,7 +156,7 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
     });
     ctx.globalAlpha = 1;
     pitchPositions.current = positions;
-  }, [pitches, szTop, szBot, stand, colorMode, isMobile, highlightPitch]);
+  }, [pitches, szTop, szBot, stand, colorMode, isMobile, highlightPitch, highlightType]);
 
   const findNearest = useCallback((mx, my) => {
     let closest = null;
@@ -289,7 +295,9 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
                 </span>
               </div>
               <div style={{ whiteSpace: "nowrap", color: result.color, fontWeight: 600, marginLeft: 12 }}>
-                {result.label}
+                {result.isError && result.errorOutType
+                  ? <>{result.errorOutType} <span style={{ color: "#feffa3" }}>(Error)</span></>
+                  : result.label}
                 {result.isK && (
                   result.isCalledStrikeThree
                     ? <span style={{ marginLeft: 3 }}>(<span style={{ display: "inline-block", transform: "scaleX(-1)" }}>K</span>)</span>

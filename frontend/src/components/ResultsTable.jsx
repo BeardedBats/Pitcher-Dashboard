@@ -12,7 +12,7 @@ import { classifyBIPQuality } from "../utils/pitchFilters";
  *  - gameFilter: "all" | game_pk string
  *  - isMobile: boolean for mobile responsive design
  */
-export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobile }) {
+export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobile, selectedPitchType, onPitchTypeClick }) {
   const resultData = useMemo(() => {
     if (!pitches || pitches.length === 0) return [];
 
@@ -259,8 +259,13 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
         </tr>
       </thead>
       <tbody>
-        {resultData.map((r, i) => (
-          <tr key={i}>
+        {resultData.map((r, i) => {
+          const isDimmedRow = selectedPitchType && r.pitch_name !== selectedPitchType;
+          return (
+          <tr key={i}
+              className={onPitchTypeClick ? "clickable-row" : ""}
+              style={isDimmedRow ? { opacity: 0.4 } : undefined}
+              onClick={() => onPitchTypeClick && r.pitch_name && onPitchTypeClick(r.pitch_name)}>
             {cols.map((c, colIdx) => (
               <td key={c.key}
                   className={`${c.dividerRight ? "col-divider-right" : ""}${isMobile && colIdx === 0 ? " mobile-sticky-col" : ""}`}
@@ -278,9 +283,10 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
               </td>
             ))}
           </tr>
-        ))}
+          );
+        })}
         {totals && (
-          <tr className="pp-total-row" style={isMobile ? { position: "sticky", bottom: 0, zIndex: 2 } : undefined}>
+          <tr className="pp-total-row" style={{ ...(isMobile ? { position: "sticky", bottom: 0, zIndex: 2 } : {}), cursor: selectedPitchType && onPitchTypeClick ? "pointer" : undefined }} onClick={() => selectedPitchType && onPitchTypeClick && onPitchTypeClick(selectedPitchType)}>
             {cols.map((c, colIdx) => (
               <td key={c.key}
                   className={`${c.dividerRight ? "col-divider-right" : ""}${isMobile && colIdx === 0 ? " mobile-sticky-col" : ""}`}

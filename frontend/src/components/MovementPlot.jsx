@@ -36,7 +36,7 @@ function pitchMatch(a, b) {
   return a.at_bat_number === b.at_bat_number && a.pitch_number === b.pitch_number && a.game_pk === b.game_pk;
 }
 
-export default function MovementPlot({ pitches, hand, onReclassify, isMobile = false, highlightPitch, onPitchHover }) {
+export default function MovementPlot({ pitches, hand, onReclassify, isMobile = false, highlightPitch, highlightType, onPitchHover }) {
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
   const containerRef = useRef(null);
@@ -150,15 +150,22 @@ export default function MovementPlot({ pitches, hand, onReclassify, isMobile = f
 
     const positions = [];
     if (pitches && pitches.length) {
+      const isHighlighting = highlightPitch || highlightType;
+      const withCoords = [];
       pitches.forEach((p, idx) => {
         if (p.pfx_x == null || p.pfx_z == null) return;
         const ihb = -p.pfx_x;
         const ivb = p.pfx_z;
         const [x, y] = toCanvas(ihb, ivb, W, H);
         if (x < PAD.left - 8 || x > PAD.left + PLOT_W + 8 || y < PAD.top - 8 || y > PAD.top + PLOT_H + 8) return;
+        const isMatch = highlightPitch ? pitchMatch(p, highlightPitch) : (highlightType ? p.pitch_name === highlightType : true);
+        withCoords.push({ x, y, idx, pitch: p, isMatch });
+      });
+      if (isHighlighting) withCoords.sort((a, b) => (a.isMatch ? 1 : 0) - (b.isMatch ? 1 : 0));
+      withCoords.forEach(({ x, y, idx, pitch: p, isMatch }) => {
         positions.push({ x, y, idx, pitch: p });
         const color = PITCH_COLORS[p.pitch_name] || "#D9D9D9";
-        const isDimmed = highlightPitch && !pitchMatch(p, highlightPitch);
+        const isDimmed = isHighlighting && !isMatch;
         ctx.globalAlpha = isDimmed ? 0.12 : 0.85;
         ctx.fillStyle = color;
         ctx.beginPath();
@@ -172,7 +179,7 @@ export default function MovementPlot({ pitches, hand, onReclassify, isMobile = f
       ctx.globalAlpha = 1;
     }
     pitchPositions.current = positions;
-  }, [pitches, hand, isMobile, highlightPitch]);
+  }, [pitches, hand, isMobile, highlightPitch, highlightType]);
 
   const findNearest = useCallback((mx, my) => {
     let closest = null;
@@ -319,7 +326,9 @@ export default function MovementPlot({ pitches, hand, onReclassify, isMobile = f
                 </span>
               </div>
               <div style={{ whiteSpace: "nowrap", color: result.color, fontWeight: 600, marginLeft: 12 }}>
-                {result.label}
+                {result.isError && result.errorOutType
+                  ? <>{result.errorOutType} <span style={{ color: "#feffa3" }}>(Error)</span></>
+                  : result.label}
                 {result.isK && (
                   result.isCalledStrikeThree
                     ? <span style={{ marginLeft: 3 }}>(<span style={{ display: "inline-block", transform: "scaleX(-1)" }}>K</span>)</span>

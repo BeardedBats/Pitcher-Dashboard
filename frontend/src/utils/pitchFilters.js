@@ -237,13 +237,17 @@ export function getTooltipResult(pitch, opts) {
     if (ev === "sac_fly" || ev === "sac_fly_double_play") return { label: "Sac Fly", color: "#AAB9FF" };
     if (ev === "sac_bunt") return { label: "Sac Bunt", color: "#AAB9FF" };
     if (ev === "field_error") {
-      // Determine base reached from play description (des field)
-      const desText = (pitch.des || "").toLowerCase();
-      let errorBase = "Single";
-      if (desText.includes("scores") || desText.includes("homers")) errorBase = "HR";
-      else if (desText.includes("to third") || desText.includes("to 3rd")) errorBase = "Triple";
-      else if (desText.includes("to second") || desText.includes("to 2nd")) errorBase = "Double";
-      return { label: `Error (${errorBase})`, color: "#65BAFF" };
+      // Trajectory-based out label in blue, "(Error)" suffix in single yellow
+      const la = pitch.launch_angle != null ? pitch.launch_angle : (opts?.launchAngle ?? null);
+      let outType = null;
+      if (la != null) {
+        if (la < 10) outType = "Groundout";
+        else if (la <= 25) outType = "Lineout";
+        else if (la <= 50) outType = "Flyout";
+        else outType = "Popout";
+      }
+      const label = outType ? `${outType} (Error)` : "Error";
+      return { label, color: "#65BAFF", isError: true, errorOutType: outType };
     }
     if (ev === "catcher_interf") return { label: "Catcher Int.", color: "#FFAB6E" };
     // Outs with trajectory-based labels (includes fielder's choice, force outs, double plays)
@@ -257,9 +261,7 @@ export function getTooltipResult(pitch, opts) {
         else label = "Popout";
       }
       const isDp = ev.includes("double_play") || ev === "grounded_into_double_play";
-      const isFc = ev === "force_out" || ev === "fielders_choice" || ev === "fielders_choice_out";
-      if (isDp) label += " (DP)";
-      else if (isFc) label += " (FC)";
+      if (isDp) label += " Into Double Play";
       return { label, color: "#65BAFF" };
     }
 
