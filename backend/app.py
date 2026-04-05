@@ -5,6 +5,7 @@ import re
 import unicodedata
 from pathlib import Path
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests as http_requests
 from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -365,34 +366,126 @@ def cron_warmup_players(request: Request, batch: int = Query(1), batch_size: int
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
-# ── Daily 4:30 AM cron: refresh data + update only pitchers who played yesterday ──
+# ── Daily 5:30 AM ET cron: refresh data + leaderboard/team aggregations ──
 @app.get("/api/cron/warmup-daily")
 def cron_warmup_daily(request: Request):
-    """Nightly cron: fetches fresh data, updates team aggregations,
-    then re-computes player pages only for Top 400 pitchers who pitched yesterday."""
+    """Daily cron (5:30 AM ET / 9:30 UTC): fetches fresh Savant data,
+    re-computes leaderboard and team aggregations. Subsequent cron jobs
+    (warmup-daily-players at 5:40, warmup-daily-cards at 5:50) handle
+    player pages and pitcher cards."""
     auth = request.headers.get("authorization")
     cron_secret = os.environ.get("CRON_SECRET")
     if _IS_SERVERLESS and cron_secret and auth != f"Bearer {cron_secret}":
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     try:
-        # Step 1: Full warmup (fetches fresh data + teams + leaderboards)
         warmup_range_data()
+        now = _now_et().isoformat()
+        redis_set("last_refresh", now)
+        return {"status": "ok", "timestamp": now}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ── Daily 5:40 AM ET cron: re-compute player pages for yesterday's pitchers ──
+@app.get("/api/cron/warmup-daily-players")
+def cron_warmup_daily_players(request: Request):
+    """Daily cron (5:40 AM ET / 9:40 UTC): re-computes player pages
+    for Top 400 pitchers who pitched yesterday."""
+    auth = request.headers.get("authorization")
+    cron_secret = os.environ.get("CRON_SECRET")
+    if _IS_SERVERLESS and cron_secret and auth != f"Bearer {cron_secret}":
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    try:
         start_date = "2026-03-25"
         end_date = _resolve_end_date("")
-        # Step 2: Re-fetch data (instant cache hit after warmup)
         df = fetch_date_range(start_date, end_date)
         if df.empty:
             return {"status": "no_data"}
-        # Step 3: Find yesterday's date and compute player pages for those who pitched
         yesterday = get_default_date()
         result = warmup_player_pages(df, start_date, end_date, only_date=yesterday)
-        now = _now_et().isoformat()
-        redis_set("last_refresh", now)
         return {
-            "status": "ok", "timestamp": now, "date_updated": yesterday,
+            "status": "ok", "date_updated": yesterday,
             "players_computed": result["computed"],
             "players_skipped": result["skipped"],
             "total_top400_in_data": result["total_top400_in_data"],
+        }
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ── Daily 5:50 AM ET cron: pre-compute game feeds, season avgs, pitcher cards ──
+@app.get("/api/cron/warmup-daily-cards")
+def cron_warmup_daily_cards(request: Request):
+    """Daily cron (5:50 AM ET / 9:50 UTC): pre-computes game feeds,
+    season averages, and pitcher cards for yesterday's games."""
+    auth = request.headers.get("authorization")
+    cron_secret = os.environ.get("CRON_SECRET")
+    if _IS_SERVERLESS and cron_secret and auth != f"Bearer {cron_secret}":
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    try:
+        start_date = "2026-03-25"
+        end_date = _resolve_end_date("")
+        df = fetch_date_range(start_date, end_date)
+        if df.empty:
+            return {"status": "no_data"}
+        yesterday = get_default_date()
+        cards_computed = 0
+        feeds_warmed = 0
+        avgs_warmed = 0
+        day_df = df[df["game_date"] == yesterday] if "game_date" in df.columns else df.head(0)
+        if not day_df.empty:
+            # Pre-fetch game feeds (linescore/PBP) for all yesterday's games
+            game_pks = [int(gpk) for gpk in day_df["game_pk"].unique()]
+            def _warm_feed(gpk):
+                try:
+                    return bool(get_game_linescore(gpk))
+                except Exception as e:
+                    print(f"[DailyCards] Feed error {gpk}: {e}")
+                    return False
+            with ThreadPoolExecutor(max_workers=10) as pool:
+                for ok in pool.map(_warm_feed, game_pks):
+                    if ok:
+                        feeds_warmed += 1
+
+            # Pre-compute season averages for all yesterday's pitchers
+            prev_season = int(yesterday[:4]) - 1
+            pitcher_ids = [int(pid) for pid in day_df["pitcher"].unique()]
+            uncached_pids = [pid for pid in pitcher_ids if get_agg_cache(f"season_avg_{pid}_{prev_season}") is None]
+            def _warm_avg(pid):
+                try:
+                    avg_result = get_season_averages(pid, prev_season)
+                    if avg_result:
+                        set_agg_cache(f"season_avg_{pid}_{prev_season}", avg_result)
+                        return True
+                except Exception as e:
+                    print(f"[DailyCards] Season avg error {pid}: {e}")
+                return False
+            with ThreadPoolExecutor(max_workers=10) as pool:
+                for ok in pool.map(_warm_avg, uncached_pids):
+                    if ok:
+                        avgs_warmed += 1
+
+            # Pre-compute pitcher cards with inlined season totals
+            combos = day_df.groupby(["pitcher", "game_pk"]).size().reset_index()[["pitcher", "game_pk"]]
+            for _, row in combos.iterrows():
+                pid, gpk = int(row["pitcher"]), int(row["game_pk"])
+                agg_key = f"card_{yesterday}_{pid}_{gpk}"
+                if get_agg_cache(agg_key) is not None:
+                    continue
+                try:
+                    card = get_pitcher_card(yesterday, pid, gpk)
+                    if card:
+                        card["season_totals"] = _compute_season_totals(pid, start_date, end_date)
+                        set_agg_cache(agg_key, card)
+                        cards_computed += 1
+                except Exception as e:
+                    print(f"[DailyCards] Card error {pid}/{gpk}: {e}")
+
+        return {
+            "status": "ok", "date_updated": yesterday,
+            "cards_computed": cards_computed,
+            "feeds_warmed": feeds_warmed,
+            "avgs_warmed": avgs_warmed,
         }
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -413,46 +506,53 @@ def manual_refresh():
 
 
 # ── Pitcher schedule (next starts from Google Sheet) ──
-_SCHEDULE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1IefgV82-jwgoDDkSxWNlDmKFqvGOnorX1HjAENKfjv0/export?format=csv&gid=1267593742"
+_SCHEDULE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1IefgV82-jwgoDDkSxWNlDmKFqvGOnorX1HjAENKfjv0/export?format=csv&gid=0"
 _schedule_cache = {"data": None, "ts": None}
 
+_DIVISION_HEADERS = {"AL East", "AL Central", "AL West", "NL East", "NL Central", "NL West"}
+
 def _fetch_schedule_grid():
-    """Fetch and parse the starting pitcher grid from Google Sheets. Cache for 1 hour."""
+    """Fetch and parse the starting pitcher grid from Google Sheets. Cache for 1 hour.
+    Sheet format: Row 0 has date headers like 'Mon\\n4/1'. Team rows have cells like
+    'OPP\\nPitcher Name (R)' or '@ OPP\\nPitcher Name (L)'. Division header rows repeat
+    the date headers and are skipped."""
     now = datetime.now()
     if _schedule_cache["data"] and _schedule_cache["ts"] and (now - _schedule_cache["ts"]).total_seconds() < 3600:
         return _schedule_cache["data"]
     try:
         resp = http_requests.get(_SCHEDULE_SHEET_URL, timeout=15, allow_redirects=True)
         resp.raise_for_status()
-        # Force UTF-8 — Google's redirect may not send charset header,
-        # causing requests to fall back to ISO-8859-1 and garble accented names.
         text = resp.content.decode("utf-8", errors="replace")
     except Exception:
         return _schedule_cache.get("data") or {}
     reader = csv.reader(io.StringIO(text))
     rows = list(reader)
-    # Find date header rows (contain "Tuesday -", "Monday -", etc.)
-    dates = []  # list of (col_index, date_str)  e.g. (1, "3/31"), (2, "4/1")
-    pitcher_starts = {}  # pitcher_name_lower -> [(date_str, opp_abbr, is_away)]
-    current_year = now.year
-    date_row_idx = None
+    # Parse date columns from the first date-header row encountered
+    # Format: "Mon\n4/1", "Tue\n4/2", etc.
+    dates = []  # list of (col_index, date_str)  e.g. (1, "4/1"), (2, "4/2")
+    pitcher_starts = {}  # pitcher_name_lower -> [{ date, opponent, is_away, team }]
     for ri, row in enumerate(rows):
-        # Detect date header row
-        if any(re.search(r'(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s*-\s*\d+/\d+', cell) for cell in row):
+        first = (row[0] or "").strip() if row else ""
+        # Detect date header row: first cell is a division name or "AL East"/etc,
+        # and other cells contain day-of-week + date like "Mon\n4/1"
+        is_date_row = False
+        if any(re.search(r'\d+/\d+', cell) for cell in row[1:8]):
+            # Check if this looks like a header (division or first row)
+            if first in _DIVISION_HEADERS or first == "" or ri == 0:
+                is_date_row = True
+        if is_date_row:
             dates = []
             for ci, cell in enumerate(row):
                 m = re.search(r'(\d+/\d+)', cell)
                 if m:
                     dates.append((ci, m.group(1)))
-            date_row_idx = ri
             continue
         if not dates:
             continue
-        # Skip division header rows (like "AL East", "NL West")
-        first = (row[0] or "").strip()
-        if not first or first in ("", "AL East", "AL Central", "AL West", "NL East", "NL Central", "NL West"):
+        # Skip empty rows or division headers
+        if not first or first in _DIVISION_HEADERS:
             continue
-        # This is a team row
+        # This is a team row — team_abbr is in col 0
         team_abbr = first
         for ci, date_str in dates:
             if ci >= len(row):
@@ -460,12 +560,15 @@ def _fetch_schedule_grid():
             cell = (row[ci] or "").strip()
             if not cell or cell.upper() == "OFF":
                 continue
-            # Parse "Pitcher Name | OPP" or "Pitcher Name | @OPP"
-            if "|" in cell:
-                parts = cell.split("|", 1)
-                pitcher_name = parts[0].strip()
-                opp_raw = parts[1].strip()
-            else:
+            # Format: "OPP\nPitcher Name (R)" or "@ OPP\nPitcher Name (L)"
+            lines = cell.split("\n")
+            if len(lines) < 2:
+                continue
+            opp_raw = lines[0].strip()
+            pitcher_raw = lines[1].strip()
+            # Strip hand indicator like "(R)" or "(L)"
+            pitcher_name = re.sub(r'\s*\([RLS]\)\s*$', '', pitcher_raw).strip()
+            if not pitcher_name or pitcher_name == "(null)":
                 continue
             is_away = opp_raw.startswith("@")
             opp_abbr = opp_raw.lstrip("@").strip()
