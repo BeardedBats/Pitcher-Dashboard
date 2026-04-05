@@ -677,15 +677,17 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                                       </div>
                                     )}
 
+                                    {/* vs Batter (left) | Strikeout sub-label (right) — full width above body columns */}
+                                    <div className="pt-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: "0.85em" }}>
+                                      <span>vs {pa.batter}</span>
+                                      {result.isK && result.subLabel && (
+                                        <span style={{ color: "rgba(180,184,210,0.7)" }}>{result.subLabel}</span>
+                                      )}
+                                    </div>
+
                                     {/* Body: text left, strikezone right */}
                                     <div style={{ display: "flex", gap: 10 }}>
                                       <div style={{ flex: 1 }}>
-                                        <div className="pt-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: "0.85em" }}>
-                                          <span>vs {pa.batter}</span>
-                                          {result.isK && result.subLabel && (
-                                            <span style={{ color: "rgba(180,184,210,0.7)" }}>{result.subLabel}</span>
-                                          )}
-                                        </div>
                                         <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
                                           {seg.isTop ? "Top" : "Bot"} {ordinal(seg.inning)} | {pa.outs || 0} Out{(pa.outs || 0) !== 1 ? "s" : ""}
                                         </div>

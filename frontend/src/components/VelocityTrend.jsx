@@ -443,16 +443,16 @@ function VelocityTooltipMobile({ pitch: p, x, y, onClose }) {
           )}
         </div>
       )}
+      {(p.batter_name || p.batter) && (
+        <div className="pt-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: "0.85em" }}>
+          <span>vs {p.batter_name || p.batter}</span>
+          {result.isK && result.subLabel && (
+            <span style={{ color: "rgba(180,184,210,0.7)" }}>{result.subLabel}</span>
+          )}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
-          {(p.batter_name || p.batter) && (
-            <div className="pt-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: "0.85em" }}>
-              <span>vs {p.batter_name || p.batter}</span>
-              {result.isK && result.subLabel && (
-                <span style={{ color: "rgba(180,184,210,0.7)" }}>{result.subLabel}</span>
-              )}
-            </div>
-          )}
           {p.inning != null && p.inning_topbot && (
             <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
               {p.inning_topbot === "Top" ? "Top" : "Bot"} {ordinal(p.inning)} | {basesString(p.on_1b, p.on_2b, p.on_3b)}

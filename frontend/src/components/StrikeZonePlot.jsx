@@ -321,19 +321,19 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
               </div>
             )}
 
+            {/* vs Batter (left) | Strikeout sub-label (right) — full width above body columns */}
+            {(p.batter_name || p.batter) && (
+              <div className="pt-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: "0.85em" }}>
+                <span>vs {p.batter_name || p.batter}</span>
+                {result.isK && result.subLabel && (
+                  <span style={{ color: "rgba(180,184,210,0.7)" }}>{result.subLabel}</span>
+                )}
+              </div>
+            )}
+
             {/* Body: text left, strikezone right */}
             <div style={{ display: "flex", gap: 10 }}>
               <div style={{ flex: 1 }}>
-                {/* vs Batter (left) | Strikeout sub-label (right) */}
-                {(p.batter_name || p.batter) && (
-                  <div className="pt-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: "0.85em" }}>
-                    <span>vs {p.batter_name || p.batter}</span>
-                    {result.isK && result.subLabel && (
-                      <span style={{ color: "rgba(180,184,210,0.7)" }}>{result.subLabel}</span>
-                    )}
-                  </div>
-                )}
-
                 {/* Inning + bases */}
                 {p.inning != null && p.inning_topbot && (
                   <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>

@@ -464,17 +464,17 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                         </div>
                       )}
 
+                      {/* vs Batter (left) | Strikeout sub-label (right) — full width above body columns */}
+                      <div className="pt-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: "0.85em" }}>
+                        <span>vs {activePa.batter}</span>
+                        {result.isK && result.subLabel && (
+                          <span style={{ color: "rgba(180,184,210,0.7)" }}>{result.subLabel}</span>
+                        )}
+                      </div>
+
                       {/* Body: text left, strikezone right */}
                       <div style={{ display: "flex", gap: 10 }}>
                         <div style={{ flex: 1 }}>
-                          {/* vs Batter (left) | Strikeout sub-label (right) */}
-                          <div className="pt-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: "0.85em" }}>
-                            <span>vs {activePa.batter}</span>
-                            {result.isK && result.subLabel && (
-                              <span style={{ color: "rgba(180,184,210,0.7)" }}>{result.subLabel}</span>
-                            )}
-                          </div>
-
                           {/* Inning + bases */}
                           <div className="pt-row" style={{ marginBottom: 4, fontSize: "0.85em" }}>
                             {currentIsTop ? "Top" : "Bot"} {ordinal(currentInning)} | {activePa.outs || 0} Out{(activePa.outs || 0) !== 1 ? "s" : ""}
