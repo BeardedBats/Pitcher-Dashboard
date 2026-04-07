@@ -278,17 +278,17 @@ const _OFFENSE_TIER_COLORS = {
 };
 // home lookup (opponent comes to you) — key without @
 const _OFFENSE_HOME = {
-  ATH: "solid", ATL: "solid", BAL: "solid", BOS: "average", DET: "solid",
-  HOU: "solid", SDP: "solid", SEA: "solid",
-  ARI: "average", KCR: "average", MIA: "average", MIL: "average", SFG: "average", TEX: "average",
-  CHC: "top", LAD: "top", NYM: "top", NYY: "top", PHI: "top", TOR: "top",
-  MIN: "weak", PIT: "weak", STL: "weak",
-  CHW: "poor", CIN: "poor", CLE: "poor", COL: "poor", LAA: "poor", TBR: "poor", WSN: "poor",
+  ATL: "top", DET: "top", LAD: "top", NYM: "top", NYY: "top", PHI: "top", TOR: "top",
+  HOU: "solid", KCR: "solid", MIL: "solid", SDP: "solid", SEA: "solid",
+  ATH: "average", BAL: "average", BOS: "average", CHC: "average", SFG: "average", TEX: "average", WSN: "average",
+  ARI: "weak", CIN: "weak", PIT: "weak", STL: "weak", TBR: "weak",
+  CHW: "poor", CLE: "poor", COL: "poor", LAA: "poor", MIA: "poor", MIN: "poor",
 };
 // away lookup (you go to them) — maps from opponent abbrev when is_away=true
 const _OFFENSE_AWAY = {
-  ATH: "top", BOS: "solid",
-  CIN: "weak", COL: "weak", SEA: "weak", TEX: "weak",
+  ATH: "solid", BOS: "solid", CIN: "solid",
+  KCR: "average",
+  COL: "weak", SEA: "weak", TEX: "weak",
   STL: "poor",
 };
 /**
