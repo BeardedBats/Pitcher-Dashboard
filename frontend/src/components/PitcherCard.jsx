@@ -254,6 +254,15 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
               <span>{dateDisplay} {oppPrefix} {displayAbbrev(opponent)}</span>
             )}
           </div>
+          {cardData.game_weather && (
+            <div style={{ fontSize: 13, color: "var(--text)", opacity: 0.8, marginTop: 4 }}>
+              Game Temperature:{" "}
+              {cardData.game_weather.type === "dome"
+                ? "Dome"
+                : <>{cardData.game_weather.temp}°{cardData.game_weather.precip && <>{" "}<strong>{cardData.game_weather.precip}</strong></>}</>
+              }
+            </div>
+          )}
           {schedule && (
             <div className="card-schedule" style={{ fontSize: 13, color: "var(--text-dim)", marginTop: 4 }}>
               <div style={{ color: "var(--text)", fontWeight: 500, marginBottom: 2 }}>Next Three Starts:</div>

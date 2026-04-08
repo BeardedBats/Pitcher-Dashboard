@@ -37,6 +37,134 @@ _FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend-build"
 # ── Detect environment: serverless (Vercel) vs persistent (local/Electron) ──
 _IS_SERVERLESS = os.environ.get("VERCEL") == "1" or os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is not None
 
+# ── Stadium coordinates (lat, lon) for weather lookups ──
+STADIUM_COORDS = {
+    "ARI": (33.4455, -112.0667), "ATL": (33.8907, -84.4677), "BAL": (39.2839, -76.6217),
+    "BOS": (42.3467, -71.0972), "CHC": (41.9484, -87.6553), "CWS": (41.8299, -87.6338),
+    "CIN": (39.0974, -84.5082), "CLE": (41.4962, -81.6852), "COL": (39.7561, -104.9942),
+    "DET": (42.3390, -83.0485), "HOU": (29.7573, -95.3555), "KC":  (39.0517, -94.4803),
+    "LAA": (33.8003, -117.8827), "LAD": (34.0739, -118.2400), "MIA": (25.7781, -80.2196),
+    "MIL": (43.0280, -87.9712), "MIN": (44.9818, -93.2775), "NYM": (40.7571, -73.8458),
+    "NYY": (40.8296, -73.9262), "OAK": (37.7516, -122.2005), "PHI": (39.9061, -75.1665),
+    "PIT": (40.4469, -80.0057), "SD":  (32.7076, -117.1570), "SF":  (37.7786, -122.3893),
+    "SEA": (47.5914, -122.3326), "STL": (38.6226, -90.1928), "TB":  (27.7682, -82.6534),
+    "TEX": (32.7512, -97.0832), "TOR": (43.6414, -79.3894), "WSH": (38.8730, -77.0074),
+}
+
+# Teams with domed/retractable-roof stadiums (always treated as indoor)
+DOMED_STADIUMS = {"ARI", "HOU", "MIA", "MIL", "SEA", "TB", "TEX", "TOR"}
+
+# ── Weather cache (per game_pk) ──
+_weather_cache = {}
+
+def _get_game_weather(game_pk, home_team, game_date_str):
+    """Return game-time weather: dome, temp + optional precip, or None on error."""
+    game_pk = int(game_pk)
+    if game_pk in _weather_cache:
+        return _weather_cache[game_pk]
+
+    # Domed stadiums
+    if home_team in DOMED_STADIUMS:
+        result = {"type": "dome"}
+        _weather_cache[game_pk] = result
+        return result
+
+    coords = STADIUM_COORDS.get(home_team)
+    if not coords:
+        return None
+
+    try:
+        # Get game start time from MLB Stats API
+        mlb_resp = http_requests.get(
+            f"https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live",
+            timeout=8,
+        )
+        mlb_data = mlb_resp.json()
+        game_time_str = mlb_data["gameData"]["datetime"]["dateTime"]  # ISO 8601 UTC
+        game_dt = datetime.fromisoformat(game_time_str.replace("Z", "+00:00"))
+
+        # Convert UTC to approximate local time using stadium timezone offset
+        # (Open-Meteo returns data in the location's local time by default)
+        lat, lon = coords
+        game_date = game_dt.strftime("%Y-%m-%d")
+        game_hour_utc = game_dt.hour
+
+        # Determine which Open-Meteo endpoint to use
+        from datetime import date as date_cls, timedelta
+        today = date_cls.today()
+        game_date_obj = date_cls.fromisoformat(game_date)
+        days_ago = (today - game_date_obj).days
+
+        if days_ago > 5:
+            # Historical archive
+            url = (
+                f"https://archive-api.open-meteo.com/v1/archive"
+                f"?latitude={lat}&longitude={lon}"
+                f"&start_date={game_date}&end_date={game_date}"
+                f"&hourly=temperature_2m,weather_code"
+                f"&temperature_unit=fahrenheit&timezone=auto"
+            )
+        else:
+            # Recent / forecast
+            url = (
+                f"https://api.open-meteo.com/v1/forecast"
+                f"?latitude={lat}&longitude={lon}"
+                f"&hourly=temperature_2m,weather_code"
+                f"&temperature_unit=fahrenheit&timezone=auto"
+                f"&past_days=7&forecast_days=1"
+            )
+
+        weather_resp = http_requests.get(url, timeout=8)
+        weather_data = weather_resp.json()
+        hourly = weather_data.get("hourly", {})
+        times = hourly.get("time", [])
+        temps = hourly.get("temperature_2m", [])
+        codes = hourly.get("weather_code", [])
+
+        if not times or not temps:
+            return None
+
+        # Find the hour closest to game start (Open-Meteo returns local times with timezone=auto)
+        # Convert game_dt to the timezone Open-Meteo used
+        utc_offset_sec = weather_data.get("utc_offset_seconds", 0)
+        local_hour = game_hour_utc + utc_offset_sec // 3600
+        if local_hour < 0:
+            local_hour += 24
+        elif local_hour >= 24:
+            local_hour -= 24
+
+        # Match against the game date's hours
+        target_prefix = game_date + "T"
+        best_idx = None
+        best_diff = 999
+        for i, t in enumerate(times):
+            if t.startswith(target_prefix):
+                h = int(t[11:13])
+                diff = abs(h - local_hour)
+                if diff < best_diff:
+                    best_diff = diff
+                    best_idx = i
+
+        if best_idx is None:
+            return None
+
+        temp = round(temps[best_idx])
+        weather_code = codes[best_idx] if best_idx < len(codes) else 0
+
+        # Determine precipitation type from WMO weather codes
+        precip = None
+        if weather_code in (71, 72, 73, 75, 76, 77, 85, 86):
+            precip = "Snow"
+        elif weather_code in (51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99):
+            precip = "Rain"
+
+        result = {"type": "temp", "temp": temp, "precip": precip}
+        _weather_cache[game_pk] = result
+        return result
+
+    except Exception:
+        return None
+
 
 # ── Startup: pre-fetch data in background (local/Electron only) ──
 @app.on_event("startup")
@@ -193,6 +321,10 @@ def pitcher_card(date: str = Query(...), pitcher_id: int = Query(...), game_pk: 
         season_start = f"{current_year}-03-25"
         end_date = _resolve_end_date("")
         result["season_totals"] = _compute_season_totals(pitcher_id, season_start, end_date)
+    # Inline game weather (temperature / dome)
+    if result and "game_weather" not in result:
+        home_team = result.get("result", {}).get("home_team", "")
+        result["game_weather"] = _get_game_weather(game_pk, home_team, date)
     return result
 
 @app.get("/api/pitcher-season-totals")
