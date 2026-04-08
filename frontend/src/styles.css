@@ -67,17 +67,18 @@ body {
 
 /* ======== GAME TABS ======== */
 .game-tabs {
-  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch;
   margin-bottom: 18px; padding-bottom: 14px;
   border-bottom: 1px solid var(--border);
   max-width: var(--content-width); margin-left: auto; margin-right: auto;
 }
 .game-tab {
-  min-width: 120px; height: 32px; line-height: 32px; box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; min-width: 140px; width: 140px; box-sizing: border-box;
+  padding: 6px 10px;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  color: var(--text); padding: 0 14px; font-family: inherit; font-size: 13px;
+  color: var(--text); font-family: inherit; font-size: 13px;
   font-weight: 500; cursor: pointer; transition: all 0.15s; text-align: center;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   user-select: none;
 }
 .game-tab:hover {
@@ -89,7 +90,7 @@ body {
 }
 .game-tab.no-data:hover { color: var(--text); border-color: var(--border); background: var(--surface); box-shadow: none; }
 .game-tab.not-started {
-  opacity: 0.55; cursor: not-allowed; border-style: dashed; color: var(--text-dim);
+  opacity: 0.75; cursor: not-allowed; border-style: dashed; color: var(--text-dim);
   background: var(--surface);
 }
 .game-tab.not-started:hover { color: var(--text-dim); border-color: var(--border); background: var(--surface); box-shadow: none; }
@@ -98,6 +99,21 @@ body {
   border-color: var(--accent); color: var(--accent); font-weight: 600;
   box-shadow: 0 0 12px var(--accent-glow);
 }
+.game-tab__pitchers {
+  font-size: 11px; color: var(--text-dim); font-weight: 400;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.game-tab__teams {
+  font-size: 13px; font-weight: 600; letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.game-tab__sep { font-weight: 400; color: var(--text-muted); }
+.game-tab__winner { color: var(--accent); }
+.game-tab.active .game-tab__winner { color: #fff; }
+.game-tab__state {
+  font-size: 10px; color: var(--text-dim); font-weight: 400;
+}
+.game-tab__state--final { color: #55e8ff; }
 
 /* ======== CONTROLS (secondary filters) ======== */
 .controls-row {

@@ -1104,7 +1104,7 @@ def clear_cache(date_str=None):
         redis_delete_pattern("agg:*")
         redis_delete_pattern("schedule:*")
 
-MLB_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&sportId=51&gameType=S&gameType=R&gameType=E&gameType=W&gameType=D&gameType=L&gameType=F&startDate={date}&endDate={date}&hydrate=team"
+MLB_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&sportId=51&gameType=S&gameType=R&gameType=E&gameType=W&gameType=D&gameType=L&gameType=F&startDate={date}&endDate={date}&hydrate=team,probablePitcher,linescore"
 
 # Map full team names to abbreviations used by Savant
 _TEAM_ABBREV = {
@@ -1154,12 +1154,52 @@ def _get_mlb_schedule(date_str):
                 home_name = g["teams"]["home"]["team"]["name"]
                 away = g["teams"]["away"]["team"].get("abbreviation") or _TEAM_ABBREV.get(away_name, away_name)
                 home = g["teams"]["home"]["team"].get("abbreviation") or _TEAM_ABBREV.get(home_name, home_name)
+                # Probable pitchers
+                away_sp = g["teams"]["away"].get("probablePitcher", {})
+                home_sp = g["teams"]["home"].get("probablePitcher", {})
+                # Game start time (ISO 8601 UTC)
+                game_date_utc = g.get("gameDate", "")
+                # Convert to ET for display
+                game_time_et = ""
+                if game_date_utc:
+                    try:
+                        from datetime import timezone as _tz, timedelta as _td
+                        dt_utc = datetime.fromisoformat(game_date_utc.replace("Z", "+00:00"))
+                        try:
+                            import zoneinfo
+                            et = zoneinfo.ZoneInfo("America/New_York")
+                            dt_et = dt_utc.astimezone(et)
+                        except Exception:
+                            dt_et = dt_utc - _td(hours=4)  # EDT approximation
+                        hour = dt_et.hour % 12 or 12
+                        minute = dt_et.minute
+                        ampm = "am" if dt_et.hour < 12 else "pm"
+                        game_time_et = f"{hour}:{minute:02d}{ampm}"
+                    except Exception:
+                        pass
+                # Linescore (scores + inning for live/final games)
+                linescore = g.get("linescore", {})
+                home_score = linescore.get("teams", {}).get("home", {}).get("runs")
+                away_score = linescore.get("teams", {}).get("away", {}).get("runs")
+                current_inning = linescore.get("currentInning", 0)
+                inning_half = linescore.get("inningHalf", "")
+                detailed_state = g["status"]["detailedState"]
+                abstract_state = g["status"].get("abstractGameState", "")
                 games.append({
                     "game_pk": g["gamePk"],
                     "label": f"{away} @ {home}",
                     "home_team": home,
                     "away_team": away,
-                    "status": g["status"]["detailedState"],
+                    "status": detailed_state,
+                    "abstract_state": abstract_state,
+                    "game_time_et": game_time_et,
+                    "game_date_utc": game_date_utc,
+                    "away_sp": away_sp.get("lastName", "") if away_sp else "",
+                    "home_sp": home_sp.get("lastName", "") if home_sp else "",
+                    "home_score": home_score if home_score is not None else None,
+                    "away_score": away_score if away_score is not None else None,
+                    "current_inning": current_inning,
+                    "inning_half": inning_half,
                 })
         _schedule_cache[date_str] = (time.time(), games)
         redis_set(f"schedule:{date_str}", games)
@@ -1207,7 +1247,8 @@ def get_games(date_str):
     if mlb_games:
         for g in mlb_games:
             g["has_data"] = g["game_pk"] in data_pks
-        return sorted(mlb_games, key=lambda g: g["label"])
+        # Sort by game start time (UTC ISO string sorts correctly)
+        return sorted(mlb_games, key=lambda g: g.get("game_date_utc", "") or "9999")
 
     # Fallback to Savant-only if MLB API fails
     if df.empty: return []
@@ -1215,8 +1256,11 @@ def get_games(date_str):
     for game_pk, gdf in df.groupby("game_pk"):
         home = gdf["home_team"].iloc[0]
         away = gdf["away_team"].iloc[0]
-        games.append({"game_pk": int(game_pk), "label": f"{away} @ {home}", "home_team": home, "away_team": away, "has_data": True})
-    return sorted(games, key=lambda g: g["label"])
+        games.append({"game_pk": int(game_pk), "label": f"{away} @ {home}", "home_team": home, "away_team": away, "has_data": True,
+                       "status": "", "abstract_state": "", "game_time_et": "", "game_date_utc": "",
+                       "away_sp": "", "home_sp": "", "home_score": None, "away_score": None,
+                       "current_inning": 0, "inning_half": ""})
+    return sorted(games, key=lambda g: g.get("game_date_utc", "") or "9999")
 
 _boxscore_cache = {}
 _game_state_cache = {}  # { game_pk: { home_score, away_score, inning, inning_half, status } }
