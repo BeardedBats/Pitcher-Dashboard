@@ -15,7 +15,7 @@ export const PITCH_COLORS = {
 
 export const PITCH_TYPE_FILTERS = [
   "Four-Seamer", "Sinker", "Cutter", "Slider", "Sweeper",
-  "Curveball", "Changeup", "Splitter", "Knuckleball",
+  "Curveball", "Changeup", "Splitter", "Knuckleball", "Unclassified",
 ];
 
 export const THRESHOLDS = {

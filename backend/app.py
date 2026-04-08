@@ -19,6 +19,7 @@ from data import (
     start_warmup, get_warmup_status, get_agg_cache, set_agg_cache,
     warmup_range_data, fetch_date, compute_player_page,
     get_top400_pitcher_ids, warmup_player_pages,
+    get_override_version,
 )
 from aggregation import (
     aggregate_pitch_data, aggregate_pitcher_results, get_pitcher_card,
@@ -307,7 +308,8 @@ def _compute_season_totals(pitcher_id, start_date, end_date):
 
 @app.get("/api/pitcher-card")
 def pitcher_card(date: str = Query(...), pitcher_id: int = Query(...), game_pk: int = Query(...)):
-    agg_key = f"card_{date}_{pitcher_id}_{game_pk}"
+    # Include override version in cache key so reclassifications always bust the cache
+    agg_key = f"card_{date}_{pitcher_id}_{game_pk}_v{get_override_version()}"
     cached = get_agg_cache(agg_key)
     if cached is not None:
         result = cached

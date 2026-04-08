@@ -22,6 +22,7 @@ _warmup_lock = threading.Lock()
 # ── Pitch reclassification overrides ──
 OVERRIDES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pitch_overrides.json")
 _overrides = {}  # { "gamePk_pitcherId_atBat_pitchNum": {"original":"FF","new":"FC",...} }
+_override_version = 0  # Incremented on every save/remove to bust agg caches
 
 def _load_overrides():
     global _overrides
@@ -51,10 +52,15 @@ def _save_overrides():
     except Exception:
         pass
 
+def get_override_version():
+    """Return current override version counter for cache-busting."""
+    return _override_version
+
 def save_pitch_override(game_pk, pitcher_id, at_bat_number, pitch_number, new_pitch_type):
     """Save a pitch reclassification override.
     new_pitch_type can be either a human name ('Four-Seamer') or a code ('FF').
     """
+    global _override_version
     key = f"{game_pk}_{pitcher_id}_{at_bat_number}_{pitch_number}"
     # Determine code and name regardless of which format was passed
     if new_pitch_type in PITCH_NAME_TO_CODE:
@@ -73,14 +79,17 @@ def save_pitch_override(game_pk, pitcher_id, at_bat_number, pitch_number, new_pi
         "new_name": new_name,
     }
     _save_overrides()
+    _override_version += 1
     return key
 
 def remove_pitch_override(game_pk, pitcher_id, at_bat_number, pitch_number):
     """Remove a pitch reclassification override."""
+    global _override_version
     key = f"{game_pk}_{pitcher_id}_{at_bat_number}_{pitch_number}"
     removed = _overrides.pop(key, None)
     if removed:
         _save_overrides()
+        _override_version += 1
     return removed is not None
 
 def get_all_overrides():

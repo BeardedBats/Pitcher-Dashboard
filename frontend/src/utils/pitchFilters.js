@@ -13,8 +13,8 @@ export function classifyPitchResult(pitch) {
   const desc = (pitch.description || "").toLowerCase();
   const ev = (pitch.events || "").toLowerCase();
 
-  // Whiff: swinging_strike, swinging_strike_blocked, foul_tip
-  if (desc === "swinging_strike" || desc === "swinging_strike_blocked" || desc === "foul_tip") {
+  // Whiff: swinging_strike, swinging_strike_blocked, foul_tip, missed_bunt
+  if (desc === "swinging_strike" || desc === "swinging_strike_blocked" || desc === "foul_tip" || desc === "missed_bunt") {
     return "Whiff";
   }
   // Called Strike
