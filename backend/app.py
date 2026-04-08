@@ -423,63 +423,63 @@ def cron_warmup_daily_cards(request: Request):
     if _IS_SERVERLESS and cron_secret and auth != f"Bearer {cron_secret}":
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     try:
-        start_date = "2026-03-25"
-        end_date = _resolve_end_date("")
-        df = fetch_date_range(start_date, end_date)
-        if df.empty:
-            return {"status": "no_data"}
         yesterday = get_default_date()
+        # Fetch only yesterday's data — NOT the full season range.
+        # The old approach called fetch_date_range (entire season) which has no
+        # Redis L2 cache, so every serverless cold start re-fetched from Savant
+        # (~30-60s) and often timed out before computing any cards.
+        day_df = fetch_date(yesterday)
+        if day_df.empty:
+            return {"status": "no_data", "date": yesterday}
         cards_computed = 0
         feeds_warmed = 0
         avgs_warmed = 0
-        day_df = df[df["game_date"] == yesterday] if "game_date" in df.columns else df.head(0)
-        if not day_df.empty:
-            # Pre-fetch game feeds (linescore/PBP) for all yesterday's games
-            game_pks = [int(gpk) for gpk in day_df["game_pk"].unique()]
-            def _warm_feed(gpk):
-                try:
-                    return bool(get_game_linescore(gpk))
-                except Exception as e:
-                    print(f"[DailyCards] Feed error {gpk}: {e}")
-                    return False
-            with ThreadPoolExecutor(max_workers=10) as pool:
-                for ok in pool.map(_warm_feed, game_pks):
-                    if ok:
-                        feeds_warmed += 1
 
-            # Pre-compute season averages for all yesterday's pitchers
-            prev_season = int(yesterday[:4]) - 1
-            pitcher_ids = [int(pid) for pid in day_df["pitcher"].unique()]
-            uncached_pids = [pid for pid in pitcher_ids if get_agg_cache(f"season_avg_{pid}_{prev_season}") is None]
-            def _warm_avg(pid):
-                try:
-                    avg_result = get_season_averages(pid, prev_season)
-                    if avg_result:
-                        set_agg_cache(f"season_avg_{pid}_{prev_season}", avg_result)
-                        return True
-                except Exception as e:
-                    print(f"[DailyCards] Season avg error {pid}: {e}")
+        # Pre-fetch game feeds (linescore/PBP) for all yesterday's games
+        game_pks = [int(gpk) for gpk in day_df["game_pk"].unique()]
+        def _warm_feed(gpk):
+            try:
+                return bool(get_game_linescore(gpk))
+            except Exception as e:
+                print(f"[DailyCards] Feed error {gpk}: {e}")
                 return False
-            with ThreadPoolExecutor(max_workers=10) as pool:
-                for ok in pool.map(_warm_avg, uncached_pids):
-                    if ok:
-                        avgs_warmed += 1
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            for ok in pool.map(_warm_feed, game_pks):
+                if ok:
+                    feeds_warmed += 1
 
-            # Pre-compute pitcher cards with inlined season totals
-            combos = day_df.groupby(["pitcher", "game_pk"]).size().reset_index()[["pitcher", "game_pk"]]
-            for _, row in combos.iterrows():
-                pid, gpk = int(row["pitcher"]), int(row["game_pk"])
-                agg_key = f"card_{yesterday}_{pid}_{gpk}"
-                if get_agg_cache(agg_key) is not None:
-                    continue
-                try:
-                    card = get_pitcher_card(yesterday, pid, gpk)
-                    if card:
-                        card["season_totals"] = _compute_season_totals(pid, start_date, end_date)
-                        set_agg_cache(agg_key, card)
-                        cards_computed += 1
-                except Exception as e:
-                    print(f"[DailyCards] Card error {pid}/{gpk}: {e}")
+        # Pre-compute season averages for all yesterday's pitchers
+        prev_season = int(yesterday[:4]) - 1
+        pitcher_ids = [int(pid) for pid in day_df["pitcher"].unique()]
+        uncached_pids = [pid for pid in pitcher_ids if get_agg_cache(f"season_avg_{pid}_{prev_season}") is None]
+        def _warm_avg(pid):
+            try:
+                avg_result = get_season_averages(pid, prev_season)
+                if avg_result:
+                    set_agg_cache(f"season_avg_{pid}_{prev_season}", avg_result)
+                    return True
+            except Exception as e:
+                print(f"[DailyCards] Season avg error {pid}: {e}")
+            return False
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            for ok in pool.map(_warm_avg, uncached_pids):
+                if ok:
+                    avgs_warmed += 1
+
+        # Pre-compute pitcher cards (season_totals added lazily by the endpoint)
+        combos = day_df.groupby(["pitcher", "game_pk"]).size().reset_index()[["pitcher", "game_pk"]]
+        for _, row in combos.iterrows():
+            pid, gpk = int(row["pitcher"]), int(row["game_pk"])
+            agg_key = f"card_{yesterday}_{pid}_{gpk}"
+            if get_agg_cache(agg_key) is not None:
+                continue
+            try:
+                card = get_pitcher_card(yesterday, pid, gpk)
+                if card:
+                    set_agg_cache(agg_key, card)
+                    cards_computed += 1
+            except Exception as e:
+                print(f"[DailyCards] Card error {pid}/{gpk}: {e}")
 
         return {
             "status": "ok", "date_updated": yesterday,
