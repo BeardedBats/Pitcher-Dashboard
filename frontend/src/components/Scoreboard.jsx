@@ -225,7 +225,13 @@ export default function Scoreboard({ data, pitcherId, onInningClick }) {
             const isFeaturedPa = isFeaturedPitcherPitching && pa.pitcher_id === pitcherId;
             const resultColor = isFeaturedPa ? getResultColor(pa.result) : null;
 
-            // Detect runs scored on this PA by comparing scores
+            // Extract mid-AB action events from this PA's pitches
+            const midAbActions = (pa.pitches || []).filter(p => p.is_action && (p.scored || ["Wild Pitch", "Caught Stealing", "Pickoff CS", "Passed Ball", "Balk"].some(e => (p.event_type || "").toLowerCase().includes(e.toLowerCase()) || (p.desc || "").toLowerCase().includes(e.toLowerCase()))));
+
+            // Count runs scored on mid-AB actions
+            const actionRuns = midAbActions.filter(a => a.scored).reduce((sum) => sum + 1, 0);
+
+            // Detect total runs scored on this PA by comparing scores
             let runsScored = 0;
             if (pa.home_score != null && pa.away_score != null) {
               const prevHome = prevPa?.home_score ?? (i === 0 ? null : null);
@@ -233,8 +239,6 @@ export default function Scoreboard({ data, pitcherId, onInningClick }) {
               if (prevHome != null && prevAway != null) {
                 runsScored = (pa.home_score + pa.away_score) - (prevHome + prevAway);
               } else if (i === 0) {
-                // First PA in half-inning: compare with start-of-inning score
-                // Look at previous half-inning's last PA for baseline
                 const prevHalfPlays = tooltip ? getPlays(
                   tooltip.top ? tooltip.inning - 1 : tooltip.inning,
                   tooltip.top ? false : true
@@ -248,9 +252,15 @@ export default function Scoreboard({ data, pitcherId, onInningClick }) {
               }
             }
             if (runsScored < 0) runsScored = 0;
-            // Determine which team scored (batting team)
-            const scoringTeam = tooltip.top ? away_team : home_team;
-            const nonScoringTeam = tooltip.top ? home_team : away_team;
+
+            // Split runs: those from mid-AB actions vs. those from the PA result
+            const paResultRuns = Math.max(0, runsScored - actionRuns);
+
+            // Compute score after mid-AB actions (before PA result)
+            // We know the final score is pa.home_score/pa.away_score
+            // The runs from the PA result happen at the end, so mid-AB score is final minus paResultRuns
+            const midAbAwayScore = pa.away_score != null ? pa.away_score - (tooltip.top ? paResultRuns : 0) : null;
+            const midAbHomeScore = pa.home_score != null ? pa.home_score - (tooltip.top ? 0 : paResultRuns) : null;
 
             return (
               <React.Fragment key={i}>
@@ -266,10 +276,31 @@ export default function Scoreboard({ data, pitcherId, onInningClick }) {
                   } : {}}>
                   {pa.description || `${pa.batter}: ${pa.result}`}
                 </div>
-                {runsScored > 0 && pa.home_score != null && (
+                {/* Show mid-AB action events (wild pitch, caught stealing, etc.) */}
+                {midAbActions.length > 0 && midAbActions.map((action, ai) => (
+                  <div key={`action-${ai}`} style={{ fontSize: 10, padding: "1px 0 1px 0", lineHeight: 1.3, fontStyle: "italic", color: action.scored ? "#FF5EDC" : "rgba(180,184,210,0.7)" }}>
+                    {action.desc}
+                  </div>
+                ))}
+                {/* Run scoring indicator for mid-AB actions */}
+                {actionRuns > 0 && midAbAwayScore != null && (
                   <div style={{ fontSize: 10, padding: "1px 0 3px 0", lineHeight: 1.3 }}>
                     <span style={{ color: "#FF5EDC", fontWeight: 600 }}>
-                      {runsScored} run{runsScored > 1 ? "s" : ""} score{runsScored === 1 ? "s" : ""}
+                      {actionRuns} run{actionRuns > 1 ? "s" : ""} score{actionRuns === 1 ? "s" : ""}
+                    </span>
+                    {" "}
+                    <span style={{ color: "var(--text-bright)" }}>
+                      <span style={{ color: tooltip.top ? "#fb9e2a" : "var(--text-bright)" }}>{displayAbbrev(away_team)}</span>
+                      {" "}{midAbAwayScore} - {midAbHomeScore}{" "}
+                      <span style={{ color: tooltip.top ? "var(--text-bright)" : "#fb9e2a" }}>{displayAbbrev(home_team)}</span>
+                    </span>
+                  </div>
+                )}
+                {/* Run scoring indicator for the PA result itself */}
+                {paResultRuns > 0 && pa.home_score != null && (
+                  <div style={{ fontSize: 10, padding: "1px 0 3px 0", lineHeight: 1.3 }}>
+                    <span style={{ color: "#FF5EDC", fontWeight: 600 }}>
+                      {paResultRuns} run{paResultRuns > 1 ? "s" : ""} score{paResultRuns === 1 ? "s" : ""}
                     </span>
                     {" "}
                     <span style={{ color: "var(--text-bright)" }}>

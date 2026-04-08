@@ -645,6 +645,14 @@ export default function App() {
                 setSelectedGame(gamePk);
                 setCardData(null);
                 pushState({ view: "game", selectedGame: gamePk }, "");
+                // Force data re-fetch even if selectedGame hasn't changed
+                setLoading(true); setError(null);
+                Promise.all([
+                  fetchPitchData(date, gamePk),
+                  fetchPitcherResults(date, gamePk),
+                ]).then(([pd, pr]) => {
+                  setPitchData(pd); setResultsData(pr); setLoading(false);
+                }).catch(e => { setError(e.message); setLoading(false); });
               }
             }} onReclassify={(pitch) => setReclassifyPitch(pitch)} />
           </div>

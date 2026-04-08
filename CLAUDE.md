@@ -87,3 +87,45 @@ In `getTooltipResult`, fielder's choice and force outs are in the trajectory-bas
 
 ## Dynamic Heights (VelocityTrend v1 swim lanes)
 Formula: `max(50, round(24.75 * pitchCount))` with 4-pitch = 99px baseline.
+
+
+# Baseball Dashboard
+
+## Project Overview
+A web-based pitcher and hitter stats dashboard for PitcherList staff, featuring live Statcast data and the Savant Dashboard aesthetic. This is Nick's personal analytics tool for reviewing pitcher (and eventually hitter) performance — NOT the PL Pro Dashboard that subscribers use.
+
+## Owner
+Nick Pollack, CEO of Pitcher List
+
+## Key Context
+- Built with FastAPI (Python backend) + React/Vite (frontend)
+- Live Statcast integration via Baseball Savant's `/gf` endpoint with WebSocket push for iVB, HAVAA, and arm angle metrics
+- Design system: dark navy (`#0b1120`-range) backgrounds, cyan (`#55e8ff`) and amber (`#fb9e2a`) accents, DM Sans font family
+- Design tokens documented in `DESIGN.md` and `preview.html`
+
+## Current State
+- Pitcher stats dashboard is functional with live Savant data
+- Hitter dashboard does NOT exist yet
+
+## Planned Work
+1. **Ingest PitcherList API** — PLV, PLV derivatives, non-competitive rate, mistake rate, and all proprietary PL stats. The API exists but Nick needs to coordinate access with his developers.
+2. **Add full hitter dashboard** — same depth as pitchers. Needs design work on what hitter game cards should display (different focus than pitcher cards).
+3. **Merge with Pitcher Video Viewer** — one unified codebase. Link every individual pitch in the data to its corresponding video clip. Ensure universal design and synced data between stats and video views.
+4. **Admin login for PL staff** — so staff can view pitcher video alongside the data.
+
+## Important Distinctions
+- This is a STAFF-FACING analytics tool, not the subscriber-facing PL Pro Dashboard
+- This dashboard will eventually feed INTO the PL Pro Dashboard as one of its tools/apps
+- SWATCH and HIPSTER are branded content labels, NOT data metrics
+- PLV, Process+, PL Ranks ARE data metrics
+
+## Related Projects
+- Pitcher Video Viewer (merging into this)
+- PL Pro Dashboard (this becomes one of its apps)
+- MiLB Database (MiLB section to be added here)
+- pl-pro-figma-plugin (design token management)
+
+## Tech Stack
+- FastAPI + React/Vite
+- Baseball Savant API
+- PitcherList API (upcoming integration)

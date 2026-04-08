@@ -489,16 +489,17 @@ def _fetch_missing_from_mlb_api(date_str, savant_pks):
                 print(f"MLB API fallback error for game {futures[f]}: {e}")
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
+def _get_today_str():
+    """Get today's date string in US Eastern (approx UTC-5)."""
+    from datetime import timedelta
+    now_utc = datetime.now(timezone.utc)
+    eastern_offset = timedelta(hours=-5)
+    return (now_utc + eastern_offset).strftime("%Y-%m-%d")
+
 def _is_today(date_str):
     """Check if the date string is today (US Eastern)."""
     try:
-        from datetime import timedelta
-        # Approximate US Eastern as UTC-5 (good enough for cache decisions)
-        now_utc = datetime.now(timezone.utc)
-        eastern_offset = timedelta(hours=-5)
-        now_eastern = now_utc + eastern_offset
-        today_str = now_eastern.strftime("%Y-%m-%d")
-        return date_str == today_str
+        return date_str == _get_today_str()
     except Exception:
         return False
 
@@ -720,8 +721,8 @@ def fetch_date_range(start_date, end_date):
     cache_key = f"{start_date}_{end_date}"
     if cache_key in _range_cache:
         ts, df = _range_cache[cache_key]
-        if (time.time() - ts) < RANGE_CACHE_TTL:
-            # Still merge daily cache for any games fetched after range was cached
+        if not _is_today(end_date) or (time.time() - ts) < RANGE_CACHE_TTL:
+            # Past-date ranges never expire; today's data uses TTL-based refresh
             return _merge_daily_cache(df, start_date, end_date)
 
     df = _fetch_savant_range_raw(start_date, end_date)
@@ -763,11 +764,16 @@ def prefetch_boxscores(df):
     print(f"Boxscore pre-fetch complete ({len(uncached)} games)")
 
 
+def _agg_key_is_live(key):
+    """Check if an agg cache key references today's date (needs TTL-based refresh)."""
+    return _get_today_str() in key
+
 def get_agg_cache(key):
-    """Get a cached aggregation result. Checks L1 (dict) then L2 (Redis)."""
+    """Get a cached aggregation result. Checks L1 (dict) then L2 (Redis).
+    Past-date keys never expire; keys referencing today use AGG_CACHE_TTL."""
     if key in _agg_cache:
         ts, result = _agg_cache[key]
-        if (time.time() - ts) < AGG_CACHE_TTL:
+        if not _agg_key_is_live(key) or (time.time() - ts) < AGG_CACHE_TTL:
             return result
     # L2: Redis
     val = redis_get(f"agg:{key}")
@@ -789,7 +795,7 @@ def fetch_all_pitchers_list(start_date, end_date):
     cache_key = f"{start_date}_{end_date}"
     if cache_key in _pitchers_list_cache:
         ts, result = _pitchers_list_cache[cache_key]
-        if (time.time() - ts) < RANGE_CACHE_TTL:
+        if not _is_today(end_date) or (time.time() - ts) < RANGE_CACHE_TTL:
             return result
     # L2: Redis
     redis_val = redis_get(f"pitchers:{cache_key}")

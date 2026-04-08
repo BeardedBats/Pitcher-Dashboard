@@ -222,7 +222,7 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
               const resultLabel = paResult.label;
               const resultColor = paResult.color;
 
-              // Detect runs scored by comparing total score to previous PA
+              // Detect total runs scored on this PA by comparing scores
               let runsScored = 0;
               if (pa.away_score != null && pa.home_score != null) {
                 const curTotal = pa.away_score + pa.home_score;
@@ -233,6 +233,34 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                 }
               }
 
+              // Extract mid-AB action events that scored or are notable
+              const midAbActions = (pa.pitches || []).filter(p => p.is_action && (p.scored || ["Wild Pitch", "Caught Stealing", "Pickoff CS", "Passed Ball", "Balk"].some(e => (p.event_type || "").toLowerCase().includes(e.toLowerCase()) || (p.desc || "").toLowerCase().includes(e.toLowerCase()))));
+              const actionRuns = midAbActions.filter(a => a.scored).reduce((sum) => sum + 1, 0);
+              const paResultRuns = Math.max(0, runsScored - actionRuns);
+
+              // Compute score after mid-AB actions
+              const midAbAwayScore = pa.away_score != null ? pa.away_score - (currentIsTop ? paResultRuns : 0) : null;
+              const midAbHomeScore = pa.home_score != null ? pa.home_score - (currentIsTop ? 0 : paResultRuns) : null;
+
+              const renderScoreLine = (runs, awayScore, homeScore) => {
+                if (runs <= 0 || awayScore == null) return null;
+                const awayDisp = displayAbbrev(data.away_team) || data.away_team;
+                const homeDisp = displayAbbrev(data.home_team) || data.home_team;
+                const battingTeam = currentIsTop ? data.away_team : data.home_team;
+                const awayScored = data.away_team === battingTeam;
+                const homeScored = data.home_team === battingTeam;
+                return (
+                  <span className="pbp-pa-rbi">
+                    <span style={{ color: "#FF5EDC" }}>- {runs} Run{runs !== 1 ? "s" : ""} score{runs === 1 ? "s" : ""}.{" "}</span>
+                    <span>
+                      <span style={{ color: awayScored ? "#FFC46A" : "#E0E2EC", fontWeight: awayScored ? 700 : 600 }}>{awayDisp} {awayScore}</span>
+                      <span style={{ color: "rgba(180,184,210,0.6)" }}> - </span>
+                      <span style={{ color: homeScored ? "#FFC46A" : "#E0E2EC", fontWeight: homeScored ? 700 : 600 }}>{homeDisp} {homeScore}</span>
+                    </span>
+                  </span>
+                );
+              };
+
               return (
                 <div key={i}>
                   {i > 0 && half.pas[i].pitcher !== half.pas[i - 1].pitcher && (
@@ -241,29 +269,11 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                     </div>
                   )}
                   <div className={`pbp-pa${isPitcherPA ? " pbp-pa-hl" : ""}${isActive ? " pbp-pa-active" : ""}`}>
-                    {/* Row 1: Batter name (+ runs scored) left, Result right */}
+                    {/* Row 1: Batter name (+ runs scored on PA result) left, Result right */}
                     <div className="pbp-pa-top" onClick={() => handlePAClick(i)}>
                       <div className="pbp-pa-left">
                         <span className="pbp-pa-batter">{pa.batter}</span>
-                        {runsScored > 0 && (
-                          <span className="pbp-pa-rbi">
-                            <span style={{ color: "#FF5EDC" }}>- {runsScored} Run{runsScored !== 1 ? "s" : ""} score{runsScored === 1 ? "s" : ""}.{" "}</span>
-                            {pa.away_score != null && pa.home_score != null && (() => {
-                              const awayDisp = displayAbbrev(data.away_team) || data.away_team;
-                              const homeDisp = displayAbbrev(data.home_team) || data.home_team;
-                              const battingTeam = currentIsTop ? data.away_team : data.home_team;
-                              const awayScored = data.away_team === battingTeam;
-                              const homeScored = data.home_team === battingTeam;
-                              return (
-                                <span>
-                                  <span style={{ color: awayScored ? "#FFC46A" : "#E0E2EC", fontWeight: awayScored ? 700 : 600 }}>{awayDisp} {pa.away_score}</span>
-                                  <span style={{ color: "rgba(180,184,210,0.6)" }}> - </span>
-                                  <span style={{ color: homeScored ? "#FFC46A" : "#E0E2EC", fontWeight: homeScored ? 700 : 600 }}>{homeDisp} {pa.home_score}</span>
-                                </span>
-                              );
-                            })()}
-                          </span>
-                        )}
+                        {paResultRuns > 0 && renderScoreLine(paResultRuns, pa.away_score, pa.home_score)}
                       </div>
                       <span className="pbp-pa-result" style={{ color: resultColor }}>
                         {paResult.isError && paResult.errorOutType
@@ -300,6 +310,18 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                           const isErrorLine = /error/i.test(sentence);
                           return <span key={idx} style={isErrorLine ? { color: "#feffa3" } : undefined}>{sentence}</span>;
                         }) : pa.description}
+                      </div>
+                    )}
+
+                    {/* Mid-AB action events (wild pitch, caught stealing, etc.) with run scoring */}
+                    {midAbActions.length > 0 && midAbActions.map((action, ai) => (
+                      <div key={`mid-action-${ai}`} className="pbp-pa-desc" style={{ fontStyle: "italic", color: action.scored ? "#FF5EDC" : "rgba(180,184,210,0.7)", fontSize: "0.85em" }}>
+                        {action.desc}
+                      </div>
+                    ))}
+                    {actionRuns > 0 && renderScoreLine(actionRuns, midAbAwayScore, midAbHomeScore) && (
+                      <div className="pbp-pa-desc" style={{ fontSize: "0.85em" }}>
+                        {renderScoreLine(actionRuns, midAbAwayScore, midAbHomeScore)}
                       </div>
                     )}
 
