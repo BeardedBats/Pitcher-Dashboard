@@ -1104,6 +1104,10 @@ def clear_cache(date_str=None):
         redis_delete_pattern("agg:*")
         redis_delete_pattern("schedule:*")
 
+def _last_name(full_name):
+    """Extract last name from full name (e.g. 'Gerrit Cole' → 'Cole')."""
+    return full_name.split()[-1] if full_name else ""
+
 MLB_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&sportId=51&gameType=S&gameType=R&gameType=E&gameType=W&gameType=D&gameType=L&gameType=F&startDate={date}&endDate={date}&hydrate=team,probablePitcher,linescore"
 
 # Map full team names to abbreviations used by Savant
@@ -1194,8 +1198,8 @@ def _get_mlb_schedule(date_str):
                     "abstract_state": abstract_state,
                     "game_time_et": game_time_et,
                     "game_date_utc": game_date_utc,
-                    "away_sp": away_sp.get("lastName", "") if away_sp else "",
-                    "home_sp": home_sp.get("lastName", "") if home_sp else "",
+                    "away_sp": _last_name(away_sp.get("fullName", "")) if away_sp else "",
+                    "home_sp": _last_name(home_sp.get("fullName", "")) if home_sp else "",
                     "home_score": home_score if home_score is not None else None,
                     "away_score": away_score if away_score is not None else None,
                     "current_inning": current_inning,
