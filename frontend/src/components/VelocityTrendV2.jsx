@@ -37,9 +37,9 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
   const [lockedType, setLockedType] = useState(null);
   const [mobileTooltipVis, setMobileTooltipVis] = useState(null);
 
-  const { ordered, inningBounds, typeStats, pitchTypes, globalMin, globalMax } = useMemo(() => {
+  const { ordered, inningBounds, typeStats, pitchTypes, globalMin, globalMax, inningStats } = useMemo(() => {
     if (!pitches || pitches.length === 0)
-      return { ordered: [], inningBounds: [], typeStats: {}, pitchTypes: [], globalMin: 0, globalMax: 0 };
+      return { ordered: [], inningBounds: [], typeStats: {}, pitchTypes: [], globalMin: 0, globalMax: 0, inningStats: {} };
 
     const sorted = [...pitches].sort((a, b) => {
       if (a.at_bat_number != null && b.at_bat_number != null) {
@@ -54,7 +54,8 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
     const ord = sorted.map((p, i) => {
       const inn = p.inning;
       if (inn != null && inn !== lastInning) {
-        bounds.push({ pitchIdx: i + 1, inning: inn });
+        // pitchIdx = first pitch of this inning; prevPitchIdx = last pitch of previous inning
+        bounds.push({ pitchIdx: i + 1, prevPitchIdx: i, inning: inn });
         lastInning = inn;
       }
       return { ...p, _seqNum: i + 1 };
@@ -62,6 +63,8 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
 
     const stats = {};
     let gMin = Infinity, gMax = -Infinity;
+    // Per-inning stats: track fastball (4-seam or sinker) velocities
+    const innStats = {};
     for (const p of ord) {
       const name = p.pitch_name;
       if (!name || p.release_speed == null) continue;
@@ -73,13 +76,24 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
       s.count++;
       gMin = Math.min(gMin, p.release_speed);
       gMax = Math.max(gMax, p.release_speed);
+
+      // Track per-inning fastball velo (Four-Seamer and Sinker)
+      const inn = p.inning;
+      if (inn != null && (name === "Four-Seamer" || name === "Sinker")) {
+        if (!innStats[inn]) innStats[inn] = { "Four-Seamer": { sum: 0, count: 0, min: Infinity, max: -Infinity }, "Sinker": { sum: 0, count: 0, min: Infinity, max: -Infinity } };
+        const is = innStats[inn][name];
+        is.sum += p.release_speed;
+        is.count++;
+        is.min = Math.min(is.min, p.release_speed);
+        is.max = Math.max(is.max, p.release_speed);
+      }
     }
     for (const k of Object.keys(stats)) stats[k].avg = stats[k].sum / stats[k].count;
 
     // Sort pitch types by avg velo descending
     const types = Object.keys(stats).sort((a, b) => stats[b].avg - stats[a].avg);
 
-    return { ordered: ord, inningBounds: bounds, typeStats: stats, pitchTypes: types, globalMin: gMin, globalMax: gMax };
+    return { ordered: ord, inningBounds: bounds, typeStats: stats, pitchTypes: types, globalMin: gMin, globalMax: gMax, inningStats: innStats };
   }, [pitches]);
 
   // Measure container width
@@ -117,7 +131,7 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
     const ctx = canvas.getContext("2d");
     ctx.scale(dpr, dpr);
 
-    const PAD = { top: 16, bottom: 40, left: 20, right: 70 };
+    const PAD = { top: 38, bottom: 40, left: 20, right: 70 };
     const plotW = W - PAD.left - PAD.right;
     const plotH = H - PAD.top - PAD.bottom;
     const laneInnerPad = 6;
@@ -137,10 +151,13 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
     const veloRange = veloMax - veloMin || 1;
     const toY = (velo) => innerTop + ((veloMax - velo) / veloRange) * innerH;
 
-    // Vertical barriers for dot x-clamping
+    // Vertical barriers for dot x-clamping — place dividers between last/first pitches
     const barriers = [PAD.left, PAD.left + plotW];
     for (const bd of inningBounds) {
-      if (bd.pitchIdx > 1) barriers.push(toX(bd.pitchIdx) - 2);
+      if (bd.prevPitchIdx > 0) {
+        const midX = (toX(bd.prevPitchIdx) + toX(bd.pitchIdx)) / 2;
+        barriers.push(midX);
+      }
     }
     barriers.sort((a, b) => a - b);
 
@@ -164,10 +181,13 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
     // Alternating inning panels
     const containerTop = innerTop;
     const containerBot = innerTop + innerH;
+    // Precompute divider X positions (midpoint between last/first pitch of adjacent innings)
+    const dividerXs = inningBounds.map(bd =>
+      bd.prevPitchIdx > 0 ? (toX(bd.prevPitchIdx) + toX(bd.pitchIdx)) / 2 : PAD.left
+    );
     for (let i = 0; i < inningBounds.length; i++) {
-      const bd = inningBounds[i];
-      const sx = bd.pitchIdx <= 1 ? PAD.left : toX(bd.pitchIdx) - 2;
-      const ex = i + 1 < inningBounds.length ? toX(inningBounds[i + 1].pitchIdx) - 2 : PAD.left + plotW;
+      const sx = dividerXs[i];
+      const ex = i + 1 < dividerXs.length ? dividerXs[i + 1] : PAD.left + plotW;
       if (i % 2 === 1) {
         ctx.fillStyle = "rgba(255,255,255,0.02)";
         ctx.fillRect(sx, containerTop, ex - sx, containerBot - containerTop);
@@ -215,9 +235,9 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
     }
 
     // Inning dividers
-    for (const bd of inningBounds) {
-      if (bd.pitchIdx <= 1) continue;
-      const x = toX(bd.pitchIdx) - 2;
+    for (let i = 0; i < inningBounds.length; i++) {
+      if (inningBounds[i].prevPitchIdx <= 0) continue;
+      const x = dividerXs[i];
       ctx.save();
       ctx.setLineDash([5, 4]);
       ctx.strokeStyle = "rgba(255,255,255,0.18)";
@@ -227,6 +247,61 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
       ctx.lineTo(x, containerBot);
       ctx.stroke();
       ctx.restore();
+    }
+
+    // Inning headers: "Xth: avg (min / max)" centered above each inning
+    // Compute game-wide fastball avg (whichever of Four-Seamer/Sinker has more pitches)
+    let gameFbSum = 0, gameFbCount = 0;
+    for (const inn of Object.keys(inningStats)) {
+      const is = inningStats[inn];
+      const fb = is["Four-Seamer"].count >= is["Sinker"].count ? is["Four-Seamer"] : is["Sinker"];
+      gameFbSum += fb.sum;
+      gameFbCount += fb.count;
+    }
+    const gameFbAvg = gameFbCount > 0 ? gameFbSum / gameFbCount : 0;
+
+    // 5-step gradient: cyan → light blue → tertiary → light red → four-seamer red
+    const VELO_GRADIENT = [
+      { threshold: -1.5, color: "#55e8ff" },   // cyan
+      { threshold: -0.75, color: "#8ec8e0" },   // light blue
+      { threshold: 0.75, color: "#8A8EB0" },    // tertiary text
+      { threshold: 1.5, color: "#d08a97" },      // light red
+      { threshold: Infinity, color: "#FF839B" }, // four-seamer red
+    ];
+    function veloGradientColor(delta) {
+      for (const step of VELO_GRADIENT) {
+        if (delta <= step.threshold) return step.color;
+      }
+      return VELO_GRADIENT[VELO_GRADIENT.length - 1].color;
+    }
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    for (let i = 0; i < inningBounds.length; i++) {
+      const bd = inningBounds[i];
+      const inn = bd.inning;
+      const sx = dividerXs[i];
+      const ex = i + 1 < dividerXs.length ? dividerXs[i + 1] : PAD.left + plotW;
+      const centerX = (sx + ex) / 2;
+
+      const is = inningStats[inn];
+      if (!is) continue;
+      // Use whichever fastball type was thrown more in this inning
+      const fb = is["Four-Seamer"].count >= is["Sinker"].count ? is["Four-Seamer"] : is["Sinker"];
+      if (fb.count === 0) continue;
+
+      const avg = fb.sum / fb.count;
+      const delta = avg - gameFbAvg;
+      const headerColor = veloGradientColor(delta);
+
+      const label = `${ordinal(inn)}: ${avg.toFixed(1)}`;
+      const range = `(${fb.min.toFixed(1)} / ${fb.max.toFixed(1)})`;
+
+      ctx.font = "bold 10px 'DM Sans', sans-serif";
+      ctx.fillStyle = headerColor;
+      ctx.fillText(label, centerX, containerTop - 10);
+      ctx.font = "10px 'DM Sans', sans-serif";
+      ctx.fillText(range, centerX, containerTop - 1);
     }
 
     // Right side label area
@@ -353,7 +428,7 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
     }
 
     dotsRef.current = dots;
-  }, [ordered, pitchTypes, typeStats, inningBounds, dims, globalMin, globalMax, activeHighlight, lockedType]);
+  }, [ordered, pitchTypes, typeStats, inningBounds, inningStats, dims, globalMin, globalMax, activeHighlight, lockedType]);
 
   // Hover handling
   const handleMouseMove = useCallback(
