@@ -289,12 +289,22 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
       const label = `${ordinal(inn)}: ${avg.toFixed(1)}`;
       const range = `(${fb.min.toFixed(1)} / ${fb.max.toFixed(1)})`;
 
+      // Vertically center two lines (with 4px gap) between top of canvas and chart
+      const lineH = 12.5;
+      const gap = 4;
+      const totalH = lineH * 2 + gap;
+      const midY = containerTop / 2;
+      const line1Y = midY - totalH / 2 + lineH / 2;
+      const line2Y = line1Y + lineH + gap;
+
       ctx.globalAlpha = 1;
+      ctx.textBaseline = "middle";
       ctx.font = "bold 12.5px 'DM Sans', sans-serif";
       ctx.fillStyle = headerColor;
-      ctx.fillText(label, centerX, containerTop - 14);
+      ctx.fillText(label, centerX, line1Y);
       ctx.font = "12.5px 'DM Sans', sans-serif";
-      ctx.fillText(range, centerX, containerTop - 2);
+      ctx.fillStyle = "#E0E2EC";
+      ctx.fillText(range, centerX, line2Y);
     }
 
     // Right side label area
