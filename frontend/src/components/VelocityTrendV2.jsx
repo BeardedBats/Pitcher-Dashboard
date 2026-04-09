@@ -131,7 +131,7 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
     const ctx = canvas.getContext("2d");
     ctx.scale(dpr, dpr);
 
-    const PAD = { top: 38, bottom: 40, left: 20, right: 70 };
+    const PAD = { top: 46, bottom: 40, left: 20, right: 70 };
     const plotW = W - PAD.left - PAD.right;
     const plotH = H - PAD.top - PAD.bottom;
     const laneInnerPad = 6;
@@ -297,11 +297,12 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
       const label = `${ordinal(inn)}: ${avg.toFixed(1)}`;
       const range = `(${fb.min.toFixed(1)} / ${fb.max.toFixed(1)})`;
 
-      ctx.font = "bold 10px 'DM Sans', sans-serif";
+      ctx.globalAlpha = 1;
+      ctx.font = "bold 12.5px 'DM Sans', sans-serif";
       ctx.fillStyle = headerColor;
-      ctx.fillText(label, centerX, containerTop - 10);
-      ctx.font = "10px 'DM Sans', sans-serif";
-      ctx.fillText(range, centerX, containerTop - 1);
+      ctx.fillText(label, centerX, containerTop - 14);
+      ctx.font = "12.5px 'DM Sans', sans-serif";
+      ctx.fillText(range, centerX, containerTop - 2);
     }
 
     // Right side label area
