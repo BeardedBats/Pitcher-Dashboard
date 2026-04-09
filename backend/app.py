@@ -312,21 +312,19 @@ def pitcher_card(date: str = Query(...), pitcher_id: int = Query(...), game_pk: 
     agg_key = f"card_{date}_{pitcher_id}_{game_pk}_v{get_override_version()}"
     cached = get_agg_cache(agg_key)
     if cached is not None:
-        result = cached
-    else:
-        result = get_pitcher_card(date, pitcher_id, game_pk)
-        if result:
-            set_agg_cache(agg_key, result)
-    # Inline season totals so the frontend doesn't need a separate request
-    if result and "season_totals" not in result:
-        current_year = date[:4]
-        season_start = f"{current_year}-03-25"
-        end_date = _resolve_end_date("")
-        result["season_totals"] = _compute_season_totals(pitcher_id, season_start, end_date)
-    # Inline game weather (temperature / dome)
-    if result and "game_weather" not in result:
-        home_team = result.get("result", {}).get("home_team", "")
-        result["game_weather"] = _get_game_weather(game_pk, home_team, date)
+        return cached
+    result = get_pitcher_card(date, pitcher_id, game_pk)
+    if result:
+        # Compute season totals and weather BEFORE caching so cache hits are complete
+        if "season_totals" not in result:
+            current_year = date[:4]
+            season_start = f"{current_year}-03-25"
+            end_date = _resolve_end_date("")
+            result["season_totals"] = _compute_season_totals(pitcher_id, season_start, end_date)
+        if "game_weather" not in result:
+            home_team = result.get("result", {}).get("home_team", "")
+            result["game_weather"] = _get_game_weather(game_pk, home_team, date)
+        set_agg_cache(agg_key, result)
     return result
 
 @app.get("/api/pitcher-season-totals")
@@ -600,16 +598,39 @@ def cron_warmup_daily_cards(request: Request):
                 if ok:
                     avgs_warmed += 1
 
-        # Pre-compute pitcher cards (season_totals added lazily by the endpoint)
+        # Pre-compute season totals for yesterday's pitchers
+        current_year = yesterday[:4]
+        season_start = f"{current_year}-03-25"
+        totals_end = _resolve_end_date("")
+        unique_pids = day_df["pitcher"].dropna().unique()
+        totals_warmed = 0
+        for pid in unique_pids:
+            pid = int(pid)
+            st_key = f"season_totals_{pid}_{season_start}_{totals_end}"
+            if get_agg_cache(st_key) is not None:
+                continue
+            try:
+                _compute_season_totals(pid, season_start, totals_end)
+                totals_warmed += 1
+            except Exception as e:
+                print(f"[DailyCards] Season totals error {pid}: {e}")
+
+        # Pre-compute pitcher cards with season_totals + weather baked in
         combos = day_df.groupby(["pitcher", "game_pk"]).size().reset_index()[["pitcher", "game_pk"]]
         for _, row in combos.iterrows():
             pid, gpk = int(row["pitcher"]), int(row["game_pk"])
-            agg_key = f"card_{yesterday}_{pid}_{gpk}"
+            agg_key = f"card_{yesterday}_{pid}_{gpk}_v{get_override_version()}"
             if get_agg_cache(agg_key) is not None:
                 continue
             try:
                 card = get_pitcher_card(yesterday, pid, gpk)
                 if card:
+                    # Bake in season totals and weather so the endpoint has nothing left to compute
+                    if "season_totals" not in card:
+                        card["season_totals"] = _compute_season_totals(pid, season_start, totals_end)
+                    if "game_weather" not in card:
+                        home_team = card.get("result", {}).get("home_team", "")
+                        card["game_weather"] = _get_game_weather(gpk, home_team, yesterday)
                     set_agg_cache(agg_key, card)
                     cards_computed += 1
             except Exception as e:
@@ -620,6 +641,7 @@ def cron_warmup_daily_cards(request: Request):
             "cards_computed": cards_computed,
             "feeds_warmed": feeds_warmed,
             "avgs_warmed": avgs_warmed,
+            "totals_warmed": totals_warmed,
         }
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
