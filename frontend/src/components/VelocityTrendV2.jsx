@@ -153,8 +153,10 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
 
     // Build per-pitch inning index so dots can be clamped to their own inning
     const pitchInningIdx = new Array(ordered.length).fill(0);
-    for (let i = inningBounds.length - 1; i >= 0; i--) {
-      for (let j = inningBounds[i].pitchIdx - 1; j < ordered.length; j++) {
+    for (let i = 0; i < inningBounds.length; i++) {
+      const start = inningBounds[i].pitchIdx - 1;
+      const end = i + 1 < inningBounds.length ? inningBounds[i + 1].pitchIdx - 1 : ordered.length;
+      for (let j = start; j < end; j++) {
         pitchInningIdx[j] = i;
       }
     }
