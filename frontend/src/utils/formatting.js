@@ -35,38 +35,6 @@ export function getResultColor(result) {
   return RESULT_COLORS[key] || "rgba(255,255,255,0.45)";
 }
 
-export function getZoneLabel(zone) {
-  if (zone >= 1 && zone <= 9) return `Zone ${zone}`;
-  if (zone >= 11 && zone <= 14) return "Shadow";
-  return "Outside";
-}
-
-export function getSprayDirection(hc_x, hc_y) {
-  if (hc_x == null || hc_y == null) return "";
-  // Baseball Savant coordinates: home plate ~125, center field ~125
-  const cx = 125;
-  const angle = Math.atan2(cx - hc_y, hc_x - cx) * (180 / Math.PI);
-  const dist = Math.sqrt((hc_x - cx) ** 2 + (cx - hc_y) ** 2);
-  // Infield vs outfield threshold (~150 in Savant coords)
-  const isInfield = dist < 110;
-  if (isInfield) {
-    // Infield positions by angle
-    if (angle < -25) return "to 1B";
-    if (angle < -5) return "to 2B";
-    if (angle < 10) return "to SS";
-    if (angle < 30) return "to 3B";
-    // Extreme pull: catcher/pitcher territory
-    if (angle >= 30) return "to 3B";
-    return "to 1B";
-  }
-  // Outfield positions
-  if (angle < -20) return "to RF";
-  if (angle < -5) return "to RF";
-  if (angle < 10) return "to CF";
-  if (angle < 25) return "to LF";
-  return "to LF";
-}
-
 export function getVeloEmphasis(pitchName, velo) {
   if (!velo || !pitchName) return null;
   const t = VELO_THRESHOLDS[pitchName];

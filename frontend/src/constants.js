@@ -23,11 +23,6 @@ export const THRESHOLDS = {
   ext: { _all: [6.9, 5.8] },
 };
 
-export const GRADIENTS = {
-  elite: "linear-gradient(180deg, #FF3838, #FF6C6C)",
-  poor: "linear-gradient(180deg, rgba(77, 185, 251, 0.5), rgba(185, 228, 255, 0.5))",
-};
-
 export const PITCH_DATA_COLUMNS = [
   { key: "pitcher", label: "Pitcher", align: "left" },
   { key: "team", label: "Team", align: "left" },
@@ -249,20 +244,6 @@ export const IHB_THRESHOLDS = {
     R: { red: 16.5, blue: 14 },
     L: { red: -16, blue: -14 },
   },
-};
-
-export const PITCH_RESULT_SHAPES = {
-  called_strike: "circle-fill",
-  ball: "circle-border",
-  swinging_strike: "square",
-  swinging_strike_blocked: "square",
-  foul: "triangle",
-  foul_tip: "triangle",
-  foul_bunt: "triangle",
-  missed_bunt: "square",
-  hit_into_play: "star",
-  hit_by_pitch: "diamond",
-  pitchout: "circle-border",
 };
 
 // PLV Projection Offense tiers — determines opponent team color in schedule display.

@@ -69,34 +69,6 @@ export function isStrikeoutPitch(pitch) {
 }
 
 /**
- * Check if a pitch is the last pitch of a walk PA.
- */
-export function isWalkPitch(pitch) {
-  const ev = (pitch.events || "").toLowerCase();
-  return ev === "walk" || ev === "intent_walk";
-}
-
-/**
- * Classify batted ball type.
- * Burner: EV >= 93, LA < 10° (hard contact, low angle)
- * Flare: EV >= 80, LA 10-25° (soft liners)
- * Flare + Topped/Under/Poor = "Weak BIP"
- * Burner + Solid + Barrel = "Hard BIP"
- */
-export function classifyBattedBallSimple(ev, la) {
-  if (ev >= 98) {
-    const laMin = Math.max(8, 26 - (ev - 98) * 1.5);
-    const laMax = Math.min(50, 30 + (ev - 98) * 1.3);
-    if (la >= laMin && la <= laMax) return "Barrel";
-  }
-  if (ev >= 90 && la >= 10 && la <= 50) return "Solid";
-  if (ev >= 93 && la < 10) return "Burner";
-  if (ev >= 80 && la >= 10 && la <= 25) return "Flare";
-  if (ev >= 90) return "Solid";
-  return "Other";
-}
-
-/**
  * Classify batted ball into Weak BIP or Hard BIP category.
  * Full classification using launch speed + launch angle.
  * Hard = Barrel, Solid, Burner (EV >= 93, LA < 10).
@@ -130,23 +102,6 @@ export function classifyBattedBallFull(launchSpeed, launchAngle) {
   if (ev < 80) return "Poor";
   if (ev >= 90) return "Solid";
   return "Flare";
-}
-
-/**
- * Check if a pitch result is a "Weak BIP" for filter purposes.
- * Weak BIP = balls in play with Flare, Topped, Under, or Poor batted ball type.
- */
-export function isWeakBIP(pitch) {
-  const desc = (pitch.description || "").toLowerCase();
-  const ev = (pitch.events || "").toLowerCase();
-  if (desc !== "hit_into_play" && !ev) return false;
-  // Must be a ball in play
-  if (!ev || ev === "hit_by_pitch") return false;
-  const ls = pitch.launch_speed;
-  const la = pitch.launch_angle;
-  if (ls == null || la == null) return false;
-  const quality = classifyBIPQuality(ls, la);
-  return quality === "Weak";
 }
 
 /**
@@ -186,18 +141,6 @@ export const RESULT_QUICK_ACTIONS = [
     fn: (_cur, _all) => new Set(STRIKES_ONLY),
   },
 ];
-
-/**
- * Normalize pitch description for display.
- * foul_tip → "Swinging Strike", swinging_strike_blocked → "Swinging Strike"
- */
-export function normalizePitchDesc(desc) {
-  if (!desc) return desc;
-  const d = desc.toLowerCase();
-  if (d === "foul_tip" || d === "swinging_strike_blocked") return "Swinging Strike";
-  if (d === "swinging_strike") return "Swinging Strike";
-  return desc;
-}
 
 /**
  * Get tooltip result label + color for any pitch.

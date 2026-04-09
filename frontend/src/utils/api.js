@@ -43,12 +43,6 @@ export async function fetchSeasonAverages(pitcherId, season) {
   return res.json();
 }
 
-export async function fetchPitcherSeasonTotals(pitcherId, startDate = "2026-03-25", endDate = "") {
-  const res = await fetch(`${BASE}/api/pitcher-season-totals?pitcher_id=${pitcherId}&start_date=${startDate}&end_date=${endDate}`);
-  if (!res.ok) throw new Error("Failed to fetch season totals");
-  return res.json();
-}
-
 export async function fetchGameLinescore(gamePk) {
   const res = await fetch(`${BASE}/api/game-linescore?game_pk=${gamePk}`);
   if (!res.ok) throw new Error("Failed to fetch linescore");
@@ -62,13 +56,6 @@ export async function reclassifyPitch({ game_pk, pitcher_id, at_bat_number, pitc
     body: JSON.stringify({ game_pk, pitcher_id, at_bat_number, pitch_number, new_pitch_type, date }),
   });
   if (!res.ok) throw new Error("Failed to reclassify pitch");
-  return res.json();
-}
-
-export async function undoReclassify({ game_pk, pitcher_id, at_bat_number, pitch_number, date }) {
-  const params = new URLSearchParams({ game_pk, pitcher_id, at_bat_number, pitch_number, date: date || "" });
-  const res = await fetch(`${BASE}/api/pitch-reclassify?${params}`, { method: "DELETE" });
-  if (!res.ok) throw new Error("Failed to undo reclassification");
   return res.json();
 }
 
