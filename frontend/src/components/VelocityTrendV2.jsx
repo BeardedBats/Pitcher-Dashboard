@@ -77,15 +77,15 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
       gMin = Math.min(gMin, p.release_speed);
       gMax = Math.max(gMax, p.release_speed);
 
-      // Track per-inning fastball velo (Four-Seamer and Sinker)
+      // Track per-inning fastball velo (Four-Seamer, Sinker, Cutter)
       const inn = p.inning;
-      if (inn != null && (name === "Four-Seamer" || name === "Sinker")) {
-        if (!innStats[inn]) innStats[inn] = { "Four-Seamer": { sum: 0, count: 0, min: Infinity, max: -Infinity }, "Sinker": { sum: 0, count: 0, min: Infinity, max: -Infinity } };
-        const is = innStats[inn][name];
-        is.sum += p.release_speed;
-        is.count++;
-        is.min = Math.min(is.min, p.release_speed);
-        is.max = Math.max(is.max, p.release_speed);
+      if (inn != null && (name === "Four-Seamer" || name === "Sinker" || name === "Cutter")) {
+        if (!innStats[inn]) innStats[inn] = { fb: { sum: 0, count: 0, min: Infinity, max: -Infinity }, cutter: { sum: 0, count: 0, min: Infinity, max: -Infinity } };
+        const bucket = (name === "Four-Seamer" || name === "Sinker") ? innStats[inn].fb : innStats[inn].cutter;
+        bucket.sum += p.release_speed;
+        bucket.count++;
+        bucket.min = Math.min(bucket.min, p.release_speed);
+        bucket.max = Math.max(bucket.max, p.release_speed);
       }
     }
     for (const k of Object.keys(stats)) stats[k].avg = stats[k].sum / stats[k].count;
@@ -246,9 +246,10 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
     let gameFbSum = 0, gameFbCount = 0;
     for (const inn of Object.keys(inningStats)) {
       const is = inningStats[inn];
-      const fb = is["Four-Seamer"].count >= is["Sinker"].count ? is["Four-Seamer"] : is["Sinker"];
-      gameFbSum += fb.sum;
-      gameFbCount += fb.count;
+      // Combined four-seamer + sinker; fall back to cutter if none thrown
+      const bucket = is.fb.count > 0 ? is.fb : is.cutter;
+      gameFbSum += bucket.sum;
+      gameFbCount += bucket.count;
     }
     const gameFbAvg = gameFbCount > 0 ? gameFbSum / gameFbCount : 0;
 
@@ -278,8 +279,8 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
 
       const is = inningStats[inn];
       if (!is) continue;
-      // Use whichever fastball type was thrown more in this inning
-      const fb = is["Four-Seamer"].count >= is["Sinker"].count ? is["Four-Seamer"] : is["Sinker"];
+      // Combined four-seamer + sinker; fall back to cutter if none thrown
+      const fb = is.fb.count > 0 ? is.fb : is.cutter;
       if (fb.count === 0) continue;
 
       const avg = fb.sum / fb.count;
