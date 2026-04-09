@@ -151,27 +151,12 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
     const veloRange = veloMax - veloMin || 1;
     const toY = (velo) => innerTop + ((veloMax - velo) / veloRange) * innerH;
 
-    // Vertical barriers for dot x-clamping — place dividers between last/first pitches
-    const barriers = [PAD.left, PAD.left + plotW];
-    for (const bd of inningBounds) {
-      if (bd.prevPitchIdx > 0) {
-        const midX = (toX(bd.prevPitchIdx) + toX(bd.pitchIdx)) / 2;
-        barriers.push(midX);
+    // Build per-pitch inning index so dots can be clamped to their own inning
+    const pitchInningIdx = new Array(ordered.length).fill(0);
+    for (let i = inningBounds.length - 1; i >= 0; i--) {
+      for (let j = inningBounds[i].pitchIdx - 1; j < ordered.length; j++) {
+        pitchInningIdx[j] = i;
       }
-    }
-    barriers.sort((a, b) => a - b);
-
-    function adjustDotX(rawX) {
-      let cx = rawX + DOT_R;
-      for (const bx of barriers) {
-        if (cx - DOT_R < bx + DOT_PAD && cx + DOT_R > bx - DOT_PAD) {
-          cx = bx + DOT_PAD + DOT_R;
-        }
-      }
-      if (cx + DOT_R + DOT_PAD > PAD.left + plotW) {
-        cx = PAD.left + plotW - DOT_PAD - DOT_R;
-      }
-      return cx;
     }
 
     // Full lane background
@@ -194,13 +179,18 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
       }
     }
 
-    // Draw dots
+    // Draw dots — clamp each dot to its own inning's panel bounds
     const dots = [];
     for (const p of ordered) {
       if (!p.pitch_name || p.release_speed == null) continue;
       const color = PITCH_COLORS[p.pitch_name] || "#888";
       const rawX = toX(p._seqNum);
-      const cx = adjustDotX(rawX);
+      // Determine this pitch's inning panel left/right edges
+      const iIdx = pitchInningIdx[p._seqNum - 1] || 0;
+      const panelLeft = dividerXs[iIdx];
+      const panelRight = iIdx + 1 < dividerXs.length ? dividerXs[iIdx + 1] : PAD.left + plotW;
+      // Clamp dot within its inning panel
+      const cx = Math.max(panelLeft + DOT_PAD + DOT_R, Math.min(panelRight - DOT_PAD - DOT_R, rawX));
       const rawY = toY(p.release_speed);
       const cy = Math.max(innerTop + DOT_R + DOT_PAD, Math.min(innerTop + innerH - DOT_R - DOT_PAD, rawY));
 
