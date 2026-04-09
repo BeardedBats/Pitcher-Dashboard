@@ -256,7 +256,7 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
     const VELO_GRADIENT = [
       { threshold: -1.5, color: "#55e8ff" },   // cyan
       { threshold: -0.75, color: "#8ec8e0" },   // light blue
-      { threshold: 0.75, color: "#8A8EB0" },    // tertiary text
+      { threshold: 0.75, color: "#E0E2EC" },    // table text
       { threshold: 1.5, color: "#d08a97" },      // light red
       { threshold: Infinity, color: "#FF839B" }, // four-seamer red
     ];
