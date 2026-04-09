@@ -169,14 +169,24 @@ export default function App() {
     const hash = window.location.hash.replace(/^#/, "");
     if (!hash) return;
     hashHandled.current = true;
-    // Clear the hash so it doesn't interfere with history
-    window.history.replaceState(null, "", window.location.pathname);
     const parts = hash.split("/");
     if (parts[0] === "player" && parts[1]) {
       // #player/{pitcherId}
+      const pid = Number(parts[1]);
       setPage("player");
-      setPlayerPageId(Number(parts[1]));
+      setPlayerPageId(pid);
       setLoading(false);
+      // Set history state so back button works, but push a list entry first
+      window.history.replaceState({ view: "list", page: "games", selectedGame: null }, "", window.location.pathname);
+      window.history.pushState({ view: "list", page: "player", pitcherId: pid }, "", `#player/${pid}`);
+    } else if (parts[0] === "team" && parts[1]) {
+      // #team/{teamAbbrev}
+      const team = parts[1];
+      setPage("team");
+      setSelectedTeamPage(team);
+      setLoading(false);
+      window.history.replaceState({ view: "list", page: "games", selectedGame: null }, "", window.location.pathname);
+      window.history.pushState({ view: "list", page: "team", team }, "", `#team/${team}`);
     } else if (parts[0] === "card" && parts[1] && parts[2] && parts[3]) {
       // #card/{date}/{pitcherId}/{gamePk}
       const gameDate = parts[1];
@@ -189,11 +199,12 @@ export default function App() {
       setDate(gameDate);
       setLoading(true);
       // Fetch card immediately — show it as soon as it's ready.
+      // Push a list entry first so closeCard (history.back()) returns to main view
+      window.history.replaceState({ view: "list", page: "games", selectedGame: null, date: gameDate }, "", window.location.pathname);
       fetchPitcherCard(gameDate, pitcherId, gamePk)
         .then(cd => {
           setCardData(cd); setLoading(false);
-          // Push card state so closeCard (history.back()) has a "list" entry to return to
-          pushState({ view: "card", selectedGame: gamePk, pitcherId, gamePk, date: gameDate }, "");
+          window.history.pushState({ view: "card", selectedGame: gamePk, pitcherId, gamePk, date: gameDate }, "", `#card/${gameDate}/${pitcherId}/${gamePk}`);
         })
         .catch(e => { setError(e.message); setLoading(false); });
       // Background: load games for the game tabs (non-blocking)
@@ -217,23 +228,34 @@ export default function App() {
     setPage("games");
     setPlayerPageId(null);
     setSelectedTeamPage(null);
-    pushState({ view: "list", page: "games", selectedGame: null }, "");
+    window.history.pushState({ view: "list", page: "games", selectedGame: null }, "", window.location.pathname);
   }, []);
 
   // Browser back/forward navigation support
   useEffect(() => {
-    // Set initial state
-    window.history.replaceState({ view: "list", selectedGame: null }, "");
+    // Set initial state only if not deep-linking via hash
+    if (!window.location.hash) {
+      window.history.replaceState({ view: "list", selectedGame: null }, "");
+    }
   }, []);
 
-  // Helper: pushState that auto-saves current scroll position first
+  // Helper: pushState that auto-saves current scroll position and syncs URL hash
   const pushState = useCallback((state, title = "") => {
     const current = window.history.state;
     if (current && current.scrollY == null) {
-      // Only save scrollY if not already captured (e.g. by openCard before loading)
       window.history.replaceState({ ...current, scrollY: window.scrollY }, "");
     }
-    window.history.pushState(state, title);
+    // Build hash from state so refreshes restore the same view
+    let hash = "";
+    if (state.view === "card" && state.date && state.pitcherId && state.gamePk) {
+      hash = `#card/${state.date}/${state.pitcherId}/${state.gamePk}`;
+    } else if (state.page === "player" && state.pitcherId) {
+      hash = `#player/${state.pitcherId}`;
+    } else if (state.page === "team" && state.team) {
+      hash = `#team/${state.team}`;
+    }
+    const url = hash || window.location.pathname;
+    window.history.pushState(state, title, url);
   }, []);
 
   useEffect(() => {
