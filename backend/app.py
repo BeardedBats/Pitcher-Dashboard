@@ -5,7 +5,7 @@ import re
 import unicodedata
 from pathlib import Path
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 import requests as http_requests
 from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from data import (
     get_games, clear_cache, get_default_date, get_game_linescore,
     save_pitch_override, remove_pitch_override, get_all_overrides,
-    fetch_date_range, fetch_all_pitchers_list, prefetch_boxscores,
+    fetch_date_range, fetch_all_pitchers_list,
     start_warmup, get_warmup_status, get_agg_cache, set_agg_cache,
     warmup_range_data, fetch_date, compute_player_page,
     get_top400_pitcher_ids, warmup_player_pages,
@@ -26,7 +26,7 @@ from aggregation import (
     get_season_averages, aggregate_pitcher_results_range,
     aggregate_pitch_data_range, get_pitcher_game_log,
 )
-from redis_cache import redis_get, redis_set, redis_available
+from redis_cache import redis_get, redis_set
 
 app = FastAPI(title="Baseball Savant Dashboard API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -58,7 +58,7 @@ DOMED_STADIUMS = {"ARI", "HOU", "MIA", "MIL", "SEA", "TB", "TEX", "TOR"}
 # ── Weather cache (per game_pk) ──
 _weather_cache = {}
 
-def _get_game_weather(game_pk, home_team, game_date_str):
+def _get_game_weather(game_pk, home_team, _game_date_str):
     """Return game-time weather: dome, temp + optional precip, or None on error."""
     game_pk = int(game_pk)
     if game_pk in _weather_cache:
@@ -91,7 +91,7 @@ def _get_game_weather(game_pk, home_team, game_date_str):
         game_hour_utc = game_dt.hour
 
         # Determine which Open-Meteo endpoint to use
-        from datetime import date as date_cls, timedelta
+        from datetime import date as date_cls
         today = date_cls.today()
         game_date_obj = date_cls.fromisoformat(game_date)
         days_ago = (today - game_date_obj).days
@@ -694,7 +694,7 @@ def _fetch_schedule_grid():
         if m:
             dates.append((ci, m.group(1)))
     pitcher_starts = {}  # pitcher_name_lower -> [{ date, opponent, is_away, team }]
-    for ri, row in enumerate(rows[1:], start=1):
+    for _ri, row in enumerate(rows[1:], start=1):
         team_abbr = (row[0] or "").strip()
         if not team_abbr:
             continue

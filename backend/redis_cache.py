@@ -92,6 +92,3 @@ def redis_delete_pattern(pattern):
         print(f"[Redis] DELETE pattern error for {pattern}: {e}")
 
 
-def redis_available():
-    """Check if Redis is available."""
-    return _get_redis() is not None

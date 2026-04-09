@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 import requests
-from redis_cache import redis_get, redis_set, redis_delete, redis_delete_pattern, redis_available
+from redis_cache import redis_get, redis_set, redis_delete, redis_delete_pattern
 
 _cache = {}          # { date_str: (timestamp, dataframe) }
 _season_cache = {}
@@ -157,13 +157,6 @@ SAVANT_CSV_URL = (
     "&min_results=0&min_pas=0&sort_col=pitches&player_event_sort=api_p_release_speed"
     "&sort_order=desc&type=details&all=true"
 )
-
-def _fix_name(name):
-    if not isinstance(name, str): return name
-    if ", " in name:
-        parts = name.split(", ", 1)
-        return f"{parts[1]} {parts[0]}"
-    return name
 
 def _fix_names_vectorized(series):
     """Vectorized name fixing: 'Last, First' -> 'First Last'."""
@@ -356,8 +349,6 @@ def _fetch_game_from_mlb_api(game_pk, date_str):
         teams = game_data.get("teams", {})
         home_abbrev = teams.get("home", {}).get("abbreviation", "")
         away_abbrev = teams.get("away", {}).get("abbreviation", "")
-        players = game_data.get("players", {})
-
         rows = []
         all_plays = data.get("liveData", {}).get("plays", {}).get("allPlays", [])
         for pa in all_plays:
@@ -1167,7 +1158,7 @@ def _get_mlb_schedule(date_str):
                 game_time_et = ""
                 if game_date_utc:
                     try:
-                        from datetime import timezone as _tz, timedelta as _td
+                        from datetime import timedelta as _td
                         dt_utc = datetime.fromisoformat(game_date_utc.replace("Z", "+00:00"))
                         try:
                             import zoneinfo
@@ -1365,16 +1356,6 @@ def get_game_state(game_pk):
         # Trigger boxscore fetch which populates game state cache
         _get_boxscore_stats(game_pk)
     return _game_state_cache.get(game_pk, {})
-
-def get_earned_runs(game_pk):
-    """Backward-compatible wrapper: returns { pitcher_id: earned_runs }"""
-    stats = _get_boxscore_stats(game_pk)
-    return {pid: s["er"] for pid, s in stats.items()}
-
-def get_boxscore_ip(game_pk):
-    """Returns { pitcher_id: inningsPitched_str }"""
-    stats = _get_boxscore_stats(game_pk)
-    return {pid: s.get("ip") for pid, s in stats.items()}
 
 def get_boxscore_full(game_pk):
     """Returns full boxscore stats: { pitcher_id: { er, ip, hits, bbs, ks, hrs } }"""

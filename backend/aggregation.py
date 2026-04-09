@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from data import fetch_date, fetch_pitcher_season, get_earned_runs, get_boxscore_ip, get_boxscore_full, get_game_state
+from data import fetch_date, fetch_pitcher_season, get_boxscore_full, get_game_state
 
 # ── Vectorized classification sets ──
 _SWING_DESCS = frozenset(["hit_into_play", "foul", "swinging_strike", "foul_tip", "swinging_strike_blocked", "foul_bunt", "missed_bunt", "bunt_foul_tip"])
@@ -20,7 +20,6 @@ _TRIPLE_PLAY_EVENTS = frozenset(["triple_play"])
 
 def _prep_df(df):
     """Add computed boolean columns to a DataFrame for aggregation (vectorized)."""
-    import math
     df = df.copy()
     # Vectorized zone check: convert to numeric, check 1-9
     zone_num = pd.to_numeric(df["zone"], errors="coerce")
@@ -402,7 +401,6 @@ def get_pitcher_card(date_str, pitcher_id, game_pk):
     appearance_order_r = int(pdf_r["at_bat_number"].min()) if "at_bat_number" in pdf_r.columns and pdf_r["at_bat_number"].notna().any() else 999
     home_team_r = pdf_r["home_team"].iloc[0] if "home_team" in pdf_r.columns else ""
     away_team_r = pdf_r["away_team"].iloc[0] if "away_team" in pdf_r.columns else ""
-    swings_r = int(pdf_r["description"].isin(_SWING_DESCS).sum())
     strikes_r = int(pdf_r["type"].isin(_STRIKE_TYPES).sum()) if "type" in pdf_r.columns else 0
     pitcher_result = {
         "pitcher_id": int(pitcher_id), "game_pk": int(game_pk),
