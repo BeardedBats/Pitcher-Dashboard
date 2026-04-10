@@ -232,6 +232,8 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
         // "Strikeout" is an overlay — strikeout PA's last pitch is classified as
         // Called Strike or Whiff by description, so check the event directly
         if (effectiveResultFilter.has("Strikeout") && isStrikeoutPitch(p)) return true;
+        // "Walk" includes Ball pitches — walks are PAs made up of balls
+        if (effectiveResultFilter.has("Walk") && cat === "Ball") return true;
         return effectiveResultFilter.has(cat) || (cat === "Other");
       });
     }

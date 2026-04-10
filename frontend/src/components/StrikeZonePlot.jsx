@@ -127,15 +127,32 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
     }
     const isHighlighting = highlightPitch || highlightType;
     // Sort: draw dimmed pitches first, highlighted on top to avoid stacking opacity
+    const DOT_R = 6.6;
+    const EDGE_PAD = 2; // padding from plot boundary for clamped dots
+    const plotLeft = PAD.left - EDGE_PAD;
+    const plotRight = PAD.left + PLOT_W + EDGE_PAD;
+    const plotTop = PAD.top - EDGE_PAD;
+    const plotBot = PAD.top + PLOT_H + EDGE_PAD;
     const withCoords = [];
     filtered.forEach((p) => {
-      const [x, y] = toCanvas(-p.plate_x, p.plate_z, W, H);
-      if (x < PAD.left - 8 || x > PAD.left + PLOT_W + 8 || y < PAD.top - 8 || y > PAD.top + PLOT_H + 8) return;
+      const [rawX, rawY] = toCanvas(-p.plate_x, p.plate_z, W, H);
+      const isOOB = rawX < plotLeft || rawX > plotRight || rawY < plotTop || rawY > plotBot;
+      const cx = Math.max(plotLeft, Math.min(plotRight, rawX));
+      const cy = Math.max(plotTop, Math.min(plotBot, rawY));
       const isMatch = highlightPitch ? pitchMatch(p, highlightPitch) : (highlightType ? p.pitch_name === highlightType : true);
-      withCoords.push({ x, y, pitch: p, isMatch });
+      // Determine semi-circle arc direction for OOB pitches
+      let arcStart = 0, arcEnd = Math.PI * 2;
+      if (isOOB) {
+        // Point arc inward from the clipped edge
+        if (rawX < plotLeft)       { arcStart = -Math.PI / 2; arcEnd = Math.PI / 2; }
+        else if (rawX > plotRight) { arcStart = Math.PI / 2; arcEnd = 3 * Math.PI / 2; }
+        else if (rawY < plotTop)   { arcStart = 0; arcEnd = Math.PI; }
+        else if (rawY > plotBot)   { arcStart = Math.PI; arcEnd = 2 * Math.PI; }
+      }
+      withCoords.push({ x: cx, y: cy, pitch: p, isMatch, isOOB, arcStart, arcEnd });
     });
     if (isHighlighting) withCoords.sort((a, b) => (a.isMatch ? 1 : 0) - (b.isMatch ? 1 : 0));
-    withCoords.forEach(({ x, y, pitch: p, isMatch }) => {
+    withCoords.forEach(({ x, y, pitch: p, isMatch, isOOB, arcStart, arcEnd }) => {
       positions.push({ x, y, pitch: p });
       let color;
       if (colorMode === "pitch-result") {
@@ -147,7 +164,8 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
       ctx.globalAlpha = isDimmed ? 0.12 : 0.85;
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(x, y, 6.6, 0, Math.PI * 2);
+      ctx.arc(x, y, DOT_R, arcStart, arcEnd);
+      if (!isOOB) ctx.closePath();
       ctx.fill();
       ctx.globalAlpha = isDimmed ? 0.08 : 0.3;
       ctx.strokeStyle = "#111";
@@ -378,14 +396,27 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
                       ));
                     })()}
                     {(() => {
-                      const dotX = 12 + ((-p.plate_x + 0.83) / 1.66) * 41;
+                      const rawDotX = 12 + ((-p.plate_x + 0.83) / 1.66) * 41;
                       const szT = p.sz_top || 3.5;
                       const szB = p.sz_bot || 1.5;
-                      const dotY = 17 + ((szT - p.plate_z) / (szT - szB)) * 50;
+                      const rawDotY = 17 + ((szT - p.plate_z) / (szT - szB)) * 50;
                       const pitchColor = PITCH_COLORS[p.pitch_name] || "#D9D9D9";
-                      return (
-                        <circle cx={dotX} cy={dotY} r="4" fill={pitchColor} stroke="rgba(0,0,0,0.4)" strokeWidth="0.8" />
-                      );
+                      // Clamp to plot area with padding
+                      const minX = 4, maxX = 61, minY = 4, maxY = 80;
+                      const isOOB = rawDotX < minX || rawDotX > maxX || rawDotY < minY || rawDotY > maxY;
+                      const dotX = Math.max(minX, Math.min(maxX, rawDotX));
+                      const dotY = Math.max(minY, Math.min(maxY, rawDotY));
+                      if (!isOOB) {
+                        return <circle cx={dotX} cy={dotY} r="4" fill={pitchColor} stroke="rgba(0,0,0,0.4)" strokeWidth="0.8" />;
+                      }
+                      // Semi-circle: determine arc direction pointing inward
+                      const r = 4;
+                      let d;
+                      if (rawDotX < minX)       d = `M${dotX},${dotY - r} A${r},${r} 0 0,1 ${dotX},${dotY + r}`;
+                      else if (rawDotX > maxX)  d = `M${dotX},${dotY + r} A${r},${r} 0 0,1 ${dotX},${dotY - r}`;
+                      else if (rawDotY < minY)  d = `M${dotX - r},${dotY} A${r},${r} 0 0,1 ${dotX + r},${dotY}`;
+                      else                      d = `M${dotX + r},${dotY} A${r},${r} 0 0,1 ${dotX - r},${dotY}`;
+                      return <path d={d} fill={pitchColor} stroke="rgba(0,0,0,0.4)" strokeWidth="0.8" />;
                     })()}
                   </svg>
                 </div>
