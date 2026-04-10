@@ -648,41 +648,102 @@ def cron_warmup_daily_cards(request: Request):
 
 
 # ── Live game card warmup (every 10 min during game hours) ──
+
+def _get_live_pitchers(today: str):
+    """Query MLB Stats API for currently live games and return the set of
+    pitcher IDs currently on the mound, plus a map of game_pk → game status.
+    Returns (active_pitcher_ids: set, game_statuses: dict[int, str])."""
+    import requests as _req
+    url = (f"https://statsapi.mlb.com/api/v1/schedule?sportId=1"
+           f"&date={today}&hydrate=linescore,game(content(summary))")
+    active = set()
+    statuses = {}
+    try:
+        resp = _req.get(url, timeout=10)
+        data = resp.json()
+        for d in data.get("dates", []):
+            for g in d.get("games", []):
+                gpk = g["gamePk"]
+                state = g.get("status", {}).get("abstractGameState", "")
+                statuses[gpk] = state
+                if state != "Live":
+                    continue
+                # Get current pitcher from linescore defense
+                ls = g.get("linescore", {})
+                defense = ls.get("defense", {})
+                pitcher = defense.get("pitcher", {})
+                pid = pitcher.get("id")
+                if pid:
+                    active.add(int(pid))
+    except Exception as e:
+        print(f"[LiveCards] MLB schedule error: {e}")
+    return active, statuses
+
+
 @app.get("/api/cron/warmup-live-cards")
 def cron_warmup_live_cards(request: Request):
-    """Every 10 min during game hours: re-compute pitcher cards for today's
-    live games only.  Much lighter than the full daily warmup — fetches
-    today's pitch data (short TTL so it picks up new pitches) and only
-    builds cards for pitcher/game combos whose data has changed."""
+    """Every 10 min during game hours: re-compute pitcher cards ONLY for
+    pitchers currently on the mound in live games.
+
+    Pitcher lifecycle per game:
+    1. Currently pitching → recompute card every 10 min
+    2. Just left the game → one final cache (captures complete line), then
+       mark as "done" so future runs skip them
+    3. Done → skip entirely (cache preserved until natural expiration)
+    """
     auth = request.headers.get("authorization")
     cron_secret = os.environ.get("CRON_SECRET")
     if _IS_SERVERLESS and cron_secret and auth != f"Bearer {cron_secret}":
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     try:
         today = _now_et().strftime("%Y-%m-%d")
-        # fetch_date uses a short TTL for today so it picks up new pitches
+
+        # 1. Get currently active pitchers from MLB Stats API
+        active_pids, game_statuses = _get_live_pitchers(today)
+
+        # 2. Load previous run's active set from Redis
+        redis_key = f"live_cards_active:{today}"
+        prev_active_raw = redis_get(redis_key)
+        prev_active = set(prev_active_raw) if prev_active_raw else set()
+
+        # 3. Load "done" set — pitchers who already got their final cache
+        done_key = f"live_cards_done:{today}"
+        done_raw = redis_get(done_key)
+        done_pids = set(done_raw) if done_raw else set()
+
+        # 4. Determine who needs caching:
+        #    - Currently active: always recompute
+        #    - Just left (was active, now not, not done): one final cache, then mark done
+        just_left = (prev_active - active_pids) - done_pids
+        pids_to_cache = active_pids | just_left
+
+        if not pids_to_cache:
+            # Save active set and return
+            redis_set(redis_key, list(active_pids), ttl=86400)
+            return {"status": "no_pitchers", "date": today,
+                    "active": len(active_pids), "done": len(done_pids)}
+
+        # 5. Fetch today's pitch data
         day_df = fetch_date(today)
         if day_df.empty:
+            redis_set(redis_key, list(active_pids), ttl=86400)
             return {"status": "no_data", "date": today}
 
-        cards_computed = 0
-        cards_skipped = 0
-
-        # Pre-fetch boxscores for today's games
         prefetch_boxscores(day_df)
 
-        # Season totals context
         current_year = today[:4]
         season_start = f"{current_year}-03-25"
         totals_end = _resolve_end_date("")
 
-        # Build cards for each pitcher/game combo
+        cards_live = 0
+        cards_final = 0
+
+        # 6. Build cards only for pitchers in pids_to_cache
         combos = day_df.groupby(["pitcher", "game_pk"]).size().reset_index()[["pitcher", "game_pk"]]
         for _, row in combos.iterrows():
             pid, gpk = int(row["pitcher"]), int(row["game_pk"])
-            # Always recompute for live games — pitch data changes mid-game.
-            # Use a live-specific cache key so we don't collide with the
-            # normal card cache (which includes override version).
+            if pid not in pids_to_cache:
+                continue
             agg_key = f"card_{today}_{pid}_{gpk}_v{get_override_version()}"
             try:
                 card = get_pitcher_card(today, pid, gpk)
@@ -693,13 +754,27 @@ def cron_warmup_live_cards(request: Request):
                         home_team = card.get("result", {}).get("home_team", "")
                         card["game_weather"] = _get_game_weather(gpk, home_team, today)
                     set_agg_cache(agg_key, card)
-                    cards_computed += 1
+                    if pid in active_pids:
+                        cards_live += 1
+                    else:
+                        cards_final += 1
             except Exception as e:
                 print(f"[LiveCards] Card error {pid}/{gpk}: {e}")
 
+        # 7. Update state in Redis
+        #    - Save current active set for next run's comparison
+        #    - Add just_left pitchers to done set
+        redis_set(redis_key, list(active_pids), ttl=86400)
+        new_done = done_pids | just_left
+        redis_set(done_key, list(new_done), ttl=86400)
+
         return {
             "status": "ok", "date": today,
-            "cards_computed": cards_computed,
+            "cards_live": cards_live,
+            "cards_final": cards_final,
+            "active_pitchers": len(active_pids),
+            "just_left": len(just_left),
+            "done_pitchers": len(new_done),
         }
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)

@@ -9,6 +9,6 @@
     { "path": "/api/cron/warmup-daily", "schedule": "30 9 * * *" },
     { "path": "/api/cron/warmup-daily-players", "schedule": "40 9 * * *" },
     { "path": "/api/cron/warmup-daily-cards", "schedule": "50 9 * * *" },
-    { "path": "/api/cron/warmup-live-cards", "schedule": "*/10 17-23,0-4 * * *" }
+    { "path": "/api/cron/warmup-live-cards", "schedule": "*/10 16-23,0-5 * * *" }
   ]
 }
