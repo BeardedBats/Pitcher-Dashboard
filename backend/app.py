@@ -647,6 +647,64 @@ def cron_warmup_daily_cards(request: Request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+# ── Live game card warmup (every 10 min during game hours) ──
+@app.get("/api/cron/warmup-live-cards")
+def cron_warmup_live_cards(request: Request):
+    """Every 10 min during game hours: re-compute pitcher cards for today's
+    live games only.  Much lighter than the full daily warmup — fetches
+    today's pitch data (short TTL so it picks up new pitches) and only
+    builds cards for pitcher/game combos whose data has changed."""
+    auth = request.headers.get("authorization")
+    cron_secret = os.environ.get("CRON_SECRET")
+    if _IS_SERVERLESS and cron_secret and auth != f"Bearer {cron_secret}":
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    try:
+        today = _now_et().strftime("%Y-%m-%d")
+        # fetch_date uses a short TTL for today so it picks up new pitches
+        day_df = fetch_date(today)
+        if day_df.empty:
+            return {"status": "no_data", "date": today}
+
+        cards_computed = 0
+        cards_skipped = 0
+
+        # Pre-fetch boxscores for today's games
+        prefetch_boxscores(day_df)
+
+        # Season totals context
+        current_year = today[:4]
+        season_start = f"{current_year}-03-25"
+        totals_end = _resolve_end_date("")
+
+        # Build cards for each pitcher/game combo
+        combos = day_df.groupby(["pitcher", "game_pk"]).size().reset_index()[["pitcher", "game_pk"]]
+        for _, row in combos.iterrows():
+            pid, gpk = int(row["pitcher"]), int(row["game_pk"])
+            # Always recompute for live games — pitch data changes mid-game.
+            # Use a live-specific cache key so we don't collide with the
+            # normal card cache (which includes override version).
+            agg_key = f"card_{today}_{pid}_{gpk}_v{get_override_version()}"
+            try:
+                card = get_pitcher_card(today, pid, gpk)
+                if card:
+                    if "season_totals" not in card:
+                        card["season_totals"] = _compute_season_totals(pid, season_start, totals_end)
+                    if "game_weather" not in card:
+                        home_team = card.get("result", {}).get("home_team", "")
+                        card["game_weather"] = _get_game_weather(gpk, home_team, today)
+                    set_agg_cache(agg_key, card)
+                    cards_computed += 1
+            except Exception as e:
+                print(f"[LiveCards] Card error {pid}/{gpk}: {e}")
+
+        return {
+            "status": "ok", "date": today,
+            "cards_computed": cards_computed,
+        }
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 # ── Manual refresh endpoint (called by the refresh button) ──
 @app.post("/api/refresh")
 def manual_refresh():
