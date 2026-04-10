@@ -359,6 +359,10 @@ def _fetch_game_from_mlb_api(game_pk, date_str):
         players = game_data.get("players", {})
 
         rows = []
+        # Track base state across PAs by processing runner movements
+        bases = {1: None, 2: None, 3: None}  # base number → runner ID or None
+        prev_half = None  # (inning, isTop) to detect half-inning changes
+
         all_plays = data.get("liveData", {}).get("plays", {}).get("allPlays", [])
         for pa in all_plays:
             batter_id = pa.get("matchup", {}).get("batter", {}).get("id")
@@ -370,6 +374,17 @@ def _fetch_game_from_mlb_api(game_pk, date_str):
             is_top = about.get("isTopInning", True)
             inning = about.get("inning", 0)
             inning_topbot = "Top" if is_top else "Bot"
+
+            # Clear bases on half-inning change
+            cur_half = (inning, is_top)
+            if cur_half != prev_half:
+                bases = {1: None, 2: None, 3: None}
+                prev_half = cur_half
+
+            # Snapshot base state at start of this PA (before any movements)
+            pa_on_1b = bases[1]
+            pa_on_2b = bases[2]
+            pa_on_3b = bases[3]
 
             # Result info — normalize to Savant format
             ab_result = _normalize_mlb_event(pa.get("result", {}).get("event", ""))
@@ -455,9 +470,9 @@ def _fetch_game_from_mlb_api(game_pk, date_str):
                     "batter_name": pa.get("matchup", {}).get("batter", {}).get("fullName", ""),
                     "balls": cur_balls,
                     "strikes": cur_strikes,
-                    "on_1b": None,  # Not easily derived from MLB API
-                    "on_2b": None,
-                    "on_3b": None,
+                    "on_1b": pa_on_1b,
+                    "on_2b": pa_on_2b,
+                    "on_3b": pa_on_3b,
                 }
                 rows.append(row)
 
@@ -467,6 +482,20 @@ def _fetch_game_from_mlb_api(game_pk, date_str):
                     cur_balls = min(cur_balls + 1, 4)
                 elif code in ("C", "S", "T", "M", "L", "A", "*S"):
                     cur_strikes = min(cur_strikes + 1, 2)
+
+            # After this PA: update base state from runner movements
+            _BASE_MAP = {"1B": 1, "2B": 2, "3B": 3}
+            for runner in pa.get("runners", []):
+                mv = runner.get("movement", {})
+                origin = mv.get("originBase")
+                end = mv.get("end")
+                runner_id = runner.get("details", {}).get("runner", {}).get("id")
+                # Clear the origin base
+                if origin in _BASE_MAP:
+                    bases[_BASE_MAP[origin]] = None
+                # Set the end base (None/empty means scored or out)
+                if end in _BASE_MAP:
+                    bases[_BASE_MAP[end]] = runner_id
                 elif code == "F" and cur_strikes < 2:
                     cur_strikes += 1
 
