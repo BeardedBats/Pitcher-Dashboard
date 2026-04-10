@@ -83,8 +83,9 @@ def _aggregate_pitch_df(df, full_df=None):
     else:
         stand_totals = {}
 
-    grouped = df.groupby(["pitcher", "player_name", "pitcher_team", "opponent", "p_throws", "pitch_name", "pitch_type", "game_pk"])
-    for (pitcher_id, name, team, opp, hand, pitch_name, pitch_type, gp), gdf in grouped:
+    grouped = df.groupby(["pitcher", "player_name", "pitcher_team", "opponent", "p_throws", "pitch_name", "game_pk"])
+    for (pitcher_id, name, team, opp, hand, pitch_name, gp), gdf in grouped:
+        pitch_type = gdf["pitch_type"].mode().iloc[0] if "pitch_type" in gdf.columns and not gdf["pitch_type"].mode().empty else ""
         total = len(gdf)
         pitcher_total = pitcher_game_totals.get((pitcher_id, gp), 0)
         stand_counts = gdf["stand"].value_counts() if "stand" in gdf.columns else pd.Series(dtype=int)
