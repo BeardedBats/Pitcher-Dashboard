@@ -84,35 +84,34 @@ def _get_game_weather(game_pk, home_team, game_date_str):
         game_time_str = mlb_data["gameData"]["datetime"]["dateTime"]  # ISO 8601 UTC
         game_dt = datetime.fromisoformat(game_time_str.replace("Z", "+00:00"))
 
-        # Convert UTC to approximate local time using stadium timezone offset
-        # (Open-Meteo returns data in the location's local time by default)
         lat, lon = coords
-        game_date = game_dt.strftime("%Y-%m-%d")
         game_hour_utc = game_dt.hour
 
-        # Determine which Open-Meteo endpoint to use
+        # First fetch weather to get the timezone offset, then compute local date/hour
         from datetime import date as date_cls, timedelta
+
+        # Use the game_date_str parameter (the calendar date the user sees) for the API query,
+        # since UTC dates can roll over to the next day for late-night games
+        query_date = game_date_str
         today = date_cls.today()
-        game_date_obj = date_cls.fromisoformat(game_date)
-        days_ago = (today - game_date_obj).days
+        query_date_obj = date_cls.fromisoformat(query_date)
+        days_ago = (today - query_date_obj).days
 
         if days_ago > 5:
-            # Historical archive
             url = (
                 f"https://archive-api.open-meteo.com/v1/archive"
                 f"?latitude={lat}&longitude={lon}"
-                f"&start_date={game_date}&end_date={game_date}"
+                f"&start_date={query_date}&end_date={query_date}"
                 f"&hourly=temperature_2m,weather_code"
                 f"&temperature_unit=fahrenheit&timezone=auto"
             )
         else:
-            # Recent / forecast
             url = (
                 f"https://api.open-meteo.com/v1/forecast"
                 f"?latitude={lat}&longitude={lon}"
                 f"&hourly=temperature_2m,weather_code"
                 f"&temperature_unit=fahrenheit&timezone=auto"
-                f"&past_days=7&forecast_days=1"
+                f"&past_days=7&forecast_days=2"
             )
 
         weather_resp = http_requests.get(url, timeout=8)
@@ -125,17 +124,14 @@ def _get_game_weather(game_pk, home_team, game_date_str):
         if not times or not temps:
             return None
 
-        # Find the hour closest to game start (Open-Meteo returns local times with timezone=auto)
-        # Convert game_dt to the timezone Open-Meteo used
+        # Convert game start to stadium local time using Open-Meteo's timezone offset
         utc_offset_sec = weather_data.get("utc_offset_seconds", 0)
-        local_hour = game_hour_utc + utc_offset_sec // 3600
-        if local_hour < 0:
-            local_hour += 24
-        elif local_hour >= 24:
-            local_hour -= 24
+        local_dt = game_dt + timedelta(seconds=utc_offset_sec)
+        local_hour = local_dt.hour
+        local_date = local_dt.strftime("%Y-%m-%d")
 
-        # Match against the game date's hours
-        target_prefix = game_date + "T"
+        # Match against the local date's hours
+        target_prefix = local_date + "T"
         best_idx = None
         best_diff = 999
         for i, t in enumerate(times):
