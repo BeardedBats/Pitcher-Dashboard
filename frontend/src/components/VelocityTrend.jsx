@@ -372,6 +372,7 @@ function basesString(on1b, on2b, on3b) {
   if (on2b) bases.push("2nd");
   if (on3b) bases.push("3rd");
   if (bases.length === 0) return "Bases Empty";
+  if (bases.length === 1) return "Man on " + bases[0];
   return bases.join(" & ");
 }
 

@@ -410,7 +410,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
               batterFilter={batterFilter} isMobile={isMobile}
               selectedPitchType={selectedPitchType}
               onPitchTypeClick={(type) => setSelectedPitchType(prev => prev === type ? null : type)} />
-            {loadingAvgs && <div className="loading-avgs">Loading season averages...</div>}
+            {loadingAvgs && <div className="loading-avgs"><div className="loading-bars loading-bars-sm"><div className="loading-bar" /><div className="loading-bar" /><div className="loading-bar" /></div></div>}
           </div>
         )}
         {metricsView === "results" && (
@@ -422,7 +422,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
         )}
         {metricsView === "velocity-trend" && (
           <div className="metrics-card">
-            <VelocityTrendV2 pitches={filteredPitches} onReclassify={onReclassify} isMobile={isMobile} />
+            <VelocityTrendV2 pitches={filteredPitches} onReclassify={onReclassify} isMobile={isMobile} linescoreData={linescoreData} pitcherId={pitcher_id} />
           </div>
         )}
         {metricsView === "play-by-play" && pitcherPBP && (() => {

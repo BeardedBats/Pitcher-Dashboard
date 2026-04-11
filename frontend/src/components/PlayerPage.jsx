@@ -210,7 +210,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
     return (
       <div className="pp-outer-centered">
         <button className="back-btn" onClick={onBack}>← Back</button>
-        <div className="loading-msg">{loadMsg}</div>
+        <div className="loading-msg"><div className="loading-bars"><div className="loading-bar" /><div className="loading-bar" /><div className="loading-bar" /></div>{loadMsg}</div>
       </div>
     );
   }
@@ -402,7 +402,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                     batterFilter={batterFilter}
                     isMobile={isMobile}
                   />
-                  {loadingAvgs && <div className="loading-avgs">Loading season averages...</div>}
+                  {loadingAvgs && <div className="loading-avgs"><div className="loading-bars loading-bars-sm"><div className="loading-bar" /><div className="loading-bar" /><div className="loading-bar" /></div></div>}
                 </div>
               )}
               {metricsView === "results" && (

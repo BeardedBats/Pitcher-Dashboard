@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
-import { PITCH_COLORS, BATTED_BALL_COLORS } from "../constants";
+import { PITCH_COLORS, BATTED_BALL_COLORS, displayAbbrev } from "../constants";
 import { isRunScored, getTooltipResult } from "../utils/pitchFilters";
 import { classifyBattedBall } from "../utils/formatting";
 
@@ -24,14 +24,33 @@ function basesString(on1b, on2b, on3b) {
   if (on2b) bases.push("2nd");
   if (on3b) bases.push("3rd");
   if (bases.length === 0) return "Bases Empty";
+  if (bases.length === 1) return "Man on " + bases[0];
   return bases.join(" & ");
 }
 
-export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
+// Map PA result events to play-by-play card colors (same as Scoreboard)
+function getResultColorPBP(result) {
+  if (!result) return null;
+  const r = result.toLowerCase().replace(/\s+/g, "_");
+  if (r === "strikeout" || r === "strikeout_double_play") return "#65FF9C";
+  if (r === "walk" || r === "intent_walk") return "#FFAB6E";
+  if (r === "hit_by_pitch") return "#FFAB6E";
+  if (r === "home_run") return "#FF5EDC";
+  if (r === "single" || r === "double" || r === "triple") return "#feffa3";
+  if (r.includes("out") || r.includes("play") || r.includes("force") || r === "fielders_choice" || r === "sac_fly" || r === "sac_bunt" || r === "field_error") return "#65BAFF";
+  if (r === "catcher_interf") return "#FFAB6E";
+  return null;
+}
+
+export default function VelocityTrendV2({ pitches, onReclassify, isMobile, linescoreData, pitcherId }) {
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
   const dotsRef = useRef([]);
+  const inningHeadersRef = useRef([]); // hit regions for inning headers
   const [hover, setHover] = useState(null);
+  const [inningHover, setInningHover] = useState(null); // { inning, x, y }
+  const inningTooltipRef = useRef(null);
+  const [inningClampedPos, setInningClampedPos] = useState(null);
   const [dims, setDims] = useState({ w: 0 });
   const [highlightType, setHighlightType] = useState(null);
   const [lockedType, setLockedType] = useState(null);
@@ -270,6 +289,7 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
 
     ctx.textAlign = "center";
     ctx.textBaseline = "bottom";
+    const headerHitRegions = [];
     for (let i = 0; i < inningBounds.length; i++) {
       const bd = inningBounds[i];
       const inn = bd.inning;
@@ -306,7 +326,11 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
       ctx.font = "12.5px 'DM Sans', sans-serif";
       ctx.fillStyle = "#E0E2EC";
       ctx.fillText(range, centerX, line2Y);
+
+      // Store hit region for inning header hover
+      headerHitRegions.push({ inning: inn, left: sx, right: ex, top: 0, bottom: containerTop });
     }
+    inningHeadersRef.current = headerHitRegions;
 
     // Right side label area
     const rx = PAD.left + plotW + 8;
@@ -443,6 +467,25 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
       const rect = canvas.getBoundingClientRect();
       const mx = (e.clientX - rect.left) * (dims.w / rect.width);
       const my = (e.clientY - rect.top) * (H / rect.height);
+
+      // Check inning header hover first
+      const headers = inningHeadersRef.current;
+      let hitHeader = null;
+      for (const h of headers) {
+        if (mx >= h.left && mx <= h.right && my >= h.top && my <= h.bottom) {
+          hitHeader = h;
+          break;
+        }
+      }
+      if (hitHeader && linescoreData?.plays) {
+        setInningHover({ inning: hitHeader.inning, x: e.clientX, y: e.clientY });
+        setHover(null);
+        canvas.style.cursor = "default";
+        return;
+      } else {
+        setInningHover(null);
+      }
+
       const dots = dotsRef.current;
       let near = null;
       let md = 18;
@@ -460,11 +503,14 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
       }
       canvas.style.cursor = near ? "pointer" : "default";
     },
-    [dims, isMobile, H]
+    [dims, isMobile, H, linescoreData]
   );
 
   const handleMouseLeave = useCallback(() => {
-    if (!isMobile) setHover(null);
+    if (!isMobile) {
+      setHover(null);
+      setInningHover(null);
+    }
   }, [isMobile]);
 
   const handleClick = useCallback((e) => {
@@ -518,6 +564,67 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
     }
   }, [isMobile, mobileTooltipVis]);
 
+  // --- Inning tooltip helpers (scoreboard-style play-by-play) ---
+  const getPlays = useCallback((inning, isTop) => {
+    if (!linescoreData?.plays) return [];
+    const half = linescoreData.plays.find(p => p.inning === inning && p.top === isTop);
+    return half ? half.pas : [];
+  }, [linescoreData]);
+
+  // Gather plays for the inning tooltip — show only the half where the featured pitcher was pitching
+  // If no featured pitcher, show both halves
+  const inningTooltipHalves = useMemo(() => {
+    if (!inningHover || !linescoreData?.plays) return [];
+    const inn = inningHover.inning;
+    const halves = [];
+    const topPas = getPlays(inn, true);
+    if (topPas.length > 0) halves.push({ isTop: true, pas: topPas, inning: inn });
+    const botPas = getPlays(inn, false);
+    if (botPas.length > 0) halves.push({ isTop: false, pas: botPas, inning: inn });
+    // If we have a featured pitcher, filter to only halves where they pitched
+    if (pitcherId && halves.length > 0) {
+      const pitcherHalves = halves.filter(h => h.pas.some(pa => pa.pitcher_id === pitcherId));
+      if (pitcherHalves.length > 0) return pitcherHalves;
+    }
+    return halves;
+  }, [inningHover, linescoreData, getPlays, pitcherId]);
+
+  // Determine which halves the featured pitcher pitched in
+  const pitcherHalfInnings = useMemo(() => {
+    const result = {};
+    for (const half of inningTooltipHalves) {
+      const isPitching = pitcherId && half.pas.some(pa => pa.pitcher_id === pitcherId);
+      result[half.isTop ? "top" : "bot"] = isPitching;
+    }
+    return result;
+  }, [inningTooltipHalves, pitcherId]);
+
+  // Cumulative pitch counts for featured pitcher
+  const cumulativePitchCount = useMemo(() => {
+    if (!pitcherId || !linescoreData?.plays || !inningHover) return 0;
+    return linescoreData.plays.reduce((sum, half) => {
+      if (half.inning > inningHover.inning) return sum;
+      return sum + (half.pas || []).reduce((s, pa) => {
+        return s + (pa.pitcher_id === pitcherId && pa.pitches ? pa.pitches.length : 0);
+      }, 0);
+    }, 0);
+  }, [pitcherId, linescoreData, inningHover]);
+
+  // Viewport-clamp the inning tooltip
+  useEffect(() => {
+    if (!inningHover || !inningTooltipRef.current) return;
+    const tooltipRect = inningTooltipRef.current.getBoundingClientRect();
+    const padding = 10;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    let left = inningHover.x;
+    let top = inningHover.y + 12; // below cursor
+    if (left - tooltipRect.width / 2 < padding) left = tooltipRect.width / 2 + padding;
+    else if (left + tooltipRect.width / 2 > viewportWidth - padding) left = viewportWidth - tooltipRect.width / 2 - padding;
+    if (top + tooltipRect.height > viewportHeight - padding) top = inningHover.y - tooltipRect.height - 12;
+    setInningClampedPos({ left, top });
+  }, [inningHover]);
+
   return (
     <div ref={wrapRef} className="velocity-trend-wrap" style={{ position: "relative", width: "100%" }} onClick={handleTapElsewhere}>
       {/* Pitch type legend — horizontal, text only (no dots), centered */}
@@ -558,6 +665,117 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile }) {
       />
       {hp && !isMobile && <VelocityTooltipV2 pitch={hp} x={hover.x} y={hover.y} />}
       {mobileShowTooltip && <VelocityTooltipV2Mobile pitch={mobileTooltipVis.pitch} x={mobileTooltipVis.x} y={mobileTooltipVis.y} onClose={() => setMobileTooltipVis(null)} />}
+
+      {/* Inning header tooltip — scoreboard-style play-by-play */}
+      {inningHover && inningTooltipHalves.length > 0 && linescoreData && (
+        <div ref={inningTooltipRef} className="sb-tooltip"
+          style={{
+            left: inningClampedPos?.left || inningHover.x,
+            top: inningClampedPos?.top || (inningHover.y + 12),
+            transform: "translateX(-50%)",
+          }}>
+          {inningTooltipHalves.map((half, hi) => {
+            const isFeaturedPitcherPitching = pitcherHalfInnings[half.isTop ? "top" : "bot"];
+            const tooltipInningPitches = half.pas.reduce((sum, pa) => {
+              return sum + (pa.pitcher_id === pitcherId && pa.pitches ? pa.pitches.length : 0);
+            }, 0);
+
+            return (
+              <React.Fragment key={hi}>
+                {hi > 0 && <div style={{ borderTop: "1px solid var(--border, rgba(255,255,255,0.1))", margin: "8px 0" }} />}
+                <div className="sb-tooltip-hdr" style={{
+                  fontSize: "14px", fontWeight: 700, marginBottom: "8px",
+                  display: "flex", flexDirection: "row", gap: "4px",
+                  alignItems: "baseline", textTransform: "none", letterSpacing: "normal",
+                }}>
+                  <span style={{ color: isFeaturedPitcherPitching ? "var(--accent, #38BDF8)" : "var(--text-bright)" }}>
+                    {half.isTop ? `Top ${ordinal(half.inning)}` : `Bot ${ordinal(half.inning)}`}
+                  </span>
+                  <span style={{ color: "var(--text-dim)" }}>—</span>
+                  <span style={{ color: isFeaturedPitcherPitching ? "var(--accent, #38BDF8)" : "var(--text-bright)" }}>
+                    {half.pas[0]?.pitcher || "Unknown"}
+                  </span>
+                  <span style={{ color: "var(--text-dim)" }}>vs.</span>
+                  <span style={{ color: "var(--text-dim)" }}>
+                    {displayAbbrev(half.isTop ? linescoreData.home_team : linescoreData.away_team)}
+                  </span>
+                </div>
+                {isFeaturedPitcherPitching && (
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 6, display: "flex", gap: 12 }}>
+                    <span>Total Pitches: <span style={{ color: "var(--text-bright)", fontWeight: 600 }}>{cumulativePitchCount}</span></span>
+                    <span>Pitches: <span style={{ color: "var(--text-bright)", fontWeight: 600 }}>{tooltipInningPitches}</span></span>
+                  </div>
+                )}
+                {half.pas.map((pa, i) => {
+                  const prevPa = i > 0 ? half.pas[i - 1] : null;
+                  const isPitcherChange = prevPa && prevPa.pitcher_id !== pa.pitcher_id;
+                  const isFeaturedPa = isFeaturedPitcherPitching && pa.pitcher_id === pitcherId;
+                  const resultColor = isFeaturedPa ? getResultColorPBP(pa.result) : null;
+                  const midAbActions = (pa.pitches || []).filter(p => p.is_action && (p.scored || ["Wild Pitch", "Caught Stealing", "Pickoff CS", "Passed Ball", "Balk"].some(e => (p.event_type || "").toLowerCase().includes(e.toLowerCase()) || (p.desc || "").toLowerCase().includes(e.toLowerCase()))));
+                  const actionRuns = midAbActions.filter(a => a.scored).reduce((sum) => sum + 1, 0);
+                  let runsScored = 0;
+                  if (pa.home_score != null && pa.away_score != null) {
+                    const prevHome = prevPa?.home_score ?? null;
+                    const prevAway = prevPa?.away_score ?? null;
+                    if (prevHome != null && prevAway != null) {
+                      runsScored = (pa.home_score + pa.away_score) - (prevHome + prevAway);
+                    } else if (i === 0) {
+                      const prevHalfPlays = getPlays(half.isTop ? half.inning - 1 : half.inning, half.isTop ? false : true);
+                      const lastPrevPa = prevHalfPlays.length > 0 ? prevHalfPlays[prevHalfPlays.length - 1] : null;
+                      if (lastPrevPa && lastPrevPa.home_score != null && lastPrevPa.away_score != null) {
+                        runsScored = (pa.home_score + pa.away_score) - (lastPrevPa.home_score + lastPrevPa.away_score);
+                      } else if (pa.rbi > 0) { runsScored = pa.rbi; }
+                    }
+                  }
+                  if (runsScored < 0) runsScored = 0;
+                  const paResultRuns = Math.max(0, runsScored - actionRuns);
+                  const midAbAwayScore = pa.away_score != null ? pa.away_score - (half.isTop ? paResultRuns : 0) : null;
+                  const midAbHomeScore = pa.home_score != null ? pa.home_score - (half.isTop ? 0 : paResultRuns) : null;
+
+                  return (
+                    <React.Fragment key={i}>
+                      {isPitcherChange && (
+                        <div className="sb-tooltip-relief">
+                          {prevPa.pitcher} relieved by {pa.pitcher}
+                        </div>
+                      )}
+                      <div className={`sb-tooltip-pa${isFeaturedPa ? " sb-hl" : ""}`}
+                        style={isFeaturedPa ? { color: resultColor || "var(--text-bright)", fontWeight: 600 } : {}}>
+                        {pa.description || `${pa.batter}: ${pa.result}`}
+                      </div>
+                      {midAbActions.length > 0 && midAbActions.map((action, ai) => (
+                        <div key={`action-${ai}`} style={{ fontSize: 10, padding: "1px 0 1px 0", lineHeight: 1.3, fontStyle: "italic", color: action.scored ? "#FF5EDC" : "rgba(180,184,210,0.7)" }}>
+                          {action.desc}
+                        </div>
+                      ))}
+                      {actionRuns > 0 && midAbAwayScore != null && (
+                        <div style={{ fontSize: 10, padding: "1px 0 3px 0", lineHeight: 1.3 }}>
+                          <span style={{ color: "#FF5EDC", fontWeight: 600 }}>{actionRuns} run{actionRuns > 1 ? "s" : ""} score{actionRuns === 1 ? "s" : ""}</span>{" "}
+                          <span style={{ color: "var(--text-bright)" }}>
+                            <span style={{ color: half.isTop ? "#fb9e2a" : "var(--text-bright)" }}>{displayAbbrev(linescoreData.away_team)}</span>
+                            {" "}{midAbAwayScore} - {midAbHomeScore}{" "}
+                            <span style={{ color: half.isTop ? "var(--text-bright)" : "#fb9e2a" }}>{displayAbbrev(linescoreData.home_team)}</span>
+                          </span>
+                        </div>
+                      )}
+                      {paResultRuns > 0 && pa.home_score != null && (
+                        <div style={{ fontSize: 10, padding: "1px 0 3px 0", lineHeight: 1.3 }}>
+                          <span style={{ color: "#FF5EDC", fontWeight: 600 }}>{paResultRuns} run{paResultRuns > 1 ? "s" : ""} score{paResultRuns === 1 ? "s" : ""}</span>{" "}
+                          <span style={{ color: "var(--text-bright)" }}>
+                            <span style={{ color: half.isTop ? "#fb9e2a" : "var(--text-bright)" }}>{displayAbbrev(linescoreData.away_team)}</span>
+                            {" "}{pa.away_score} - {pa.home_score}{" "}
+                            <span style={{ color: half.isTop ? "var(--text-bright)" : "#fb9e2a" }}>{displayAbbrev(linescoreData.home_team)}</span>
+                          </span>
+                        </div>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </React.Fragment>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

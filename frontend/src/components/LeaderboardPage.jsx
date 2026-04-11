@@ -125,7 +125,7 @@ export default function LeaderboardPage({ onPlayerClick, onBack }) {
         </button>
       </div>
       {loading ? (
-        <div className="loading-msg">{loadMsg}</div>
+        <div className="loading-msg"><div className="loading-bars"><div className="loading-bar" /><div className="loading-bar" /><div className="loading-bar" /></div>{loadMsg}</div>
       ) : (
         <div className="table-card">
           <div className="table-wrapper">

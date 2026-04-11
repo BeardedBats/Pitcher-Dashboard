@@ -813,17 +813,21 @@ def get_agg_cache(key):
         ts, result = _agg_cache[key]
         if not _agg_key_is_live(key) or (time.time() - ts) < AGG_CACHE_TTL:
             return result
-    # L2: Redis
-    val = redis_get(f"agg:{key}")
-    if val is not None:
-        _agg_cache[key] = (time.time(), val)
-        return val
+    # L2: Redis — only trust for past-date keys; live keys may be stale
+    # (Redis entries have no TTL, so serverless cold starts would serve stale live data)
+    if not _agg_key_is_live(key):
+        val = redis_get(f"agg:{key}")
+        if val is not None:
+            _agg_cache[key] = (time.time(), val)
+            return val
     return None
 
 def set_agg_cache(key, result):
-    """Store an aggregation result in L1 (dict) and L2 (Redis)."""
+    """Store an aggregation result in L1 (dict) and L2 (Redis).
+    Live keys get a TTL in Redis matching the in-memory TTL."""
     _agg_cache[key] = (time.time(), result)
-    redis_set(f"agg:{key}", result)
+    ttl = AGG_CACHE_TTL if _agg_key_is_live(key) else None
+    redis_set(f"agg:{key}", result, ttl=ttl)
 
 
 _pitchers_list_cache = {}  # { "start_end": (timestamp, list) }
@@ -835,11 +839,12 @@ def fetch_all_pitchers_list(start_date, end_date):
         ts, result = _pitchers_list_cache[cache_key]
         if not _is_today(end_date) or (time.time() - ts) < RANGE_CACHE_TTL:
             return result
-    # L2: Redis
-    redis_val = redis_get(f"pitchers:{cache_key}")
-    if redis_val is not None:
-        _pitchers_list_cache[cache_key] = (time.time(), redis_val)
-        return redis_val
+    # L2: Redis — only trust for past-date ranges; live ranges may be stale
+    if not _is_today(end_date):
+        redis_val = redis_get(f"pitchers:{cache_key}")
+        if redis_val is not None:
+            _pitchers_list_cache[cache_key] = (time.time(), redis_val)
+            return redis_val
     df = fetch_date_range(start_date, end_date)
     if df.empty:
         return []
@@ -857,7 +862,8 @@ def fetch_all_pitchers_list(start_date, end_date):
     } for r in records]
     result.sort(key=lambda r: r["name"])
     _pitchers_list_cache[cache_key] = (time.time(), result)
-    redis_set(f"pitchers:{cache_key}", result)
+    ttl = RANGE_CACHE_TTL if _is_today(end_date) else None
+    redis_set(f"pitchers:{cache_key}", result, ttl=ttl)
     return result
 
 
@@ -1123,6 +1129,16 @@ def clear_cache(date_str=None):
             if date_str in k:
                 _agg_cache.pop(k, None)
                 redis_delete(f"agg:{k}")
+        # Clear range cache and pitchers list cache — any range covering this date
+        # is now stale (e.g., reclassifying a pitch on April 5 invalidates
+        # the March 25–April 11 range and its derived caches)
+        for range_dict in (_range_cache, _pitchers_list_cache):
+            for k in list(range_dict.keys()):
+                parts = k.split("_")
+                if len(parts) == 2:
+                    start, end = parts
+                    if start <= date_str <= end:
+                        range_dict.pop(k, None)
     else:
         _cache.clear()
         _season_cache.clear()

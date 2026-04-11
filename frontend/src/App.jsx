@@ -531,14 +531,14 @@ export default function App() {
 
       {/* === TEAM PAGE === */}
       {page === "team" && selectedTeamPage && !cardData && (
-        <Suspense fallback={<div className="loading-indicator">Loading...</div>}>
+        <Suspense fallback={<div className="loading"><div className="loading-bars"><div className="loading-bar" /><div className="loading-bar" /><div className="loading-bar" /></div></div>}>
           <TeamPage teamAbbrev={selectedTeamPage} onPlayerClick={(id, name, e) => navigateToPlayer(id, name, e)} onBack={navigateBackToGames} />
         </Suspense>
       )}
 
       {/* === PLAYER PAGE === */}
       {page === "player" && playerPageId && !cardData && (
-        <Suspense fallback={<div className="loading-indicator">Loading...</div>}>
+        <Suspense fallback={<div className="loading"><div className="loading-bars"><div className="loading-bar" /><div className="loading-bar" /><div className="loading-bar" /></div></div>}>
           <PlayerPage pitcherId={playerPageId} onBack={navigateBackToGames} onGameClick={navigateToGameCard} />
         </Suspense>
       )}
@@ -621,7 +621,7 @@ export default function App() {
         </>
       )}
 
-      {loading && <div className="loading">Loading...</div>}
+      {loading && <div className="loading"><div className="loading-bars"><div className="loading-bar" /><div className="loading-bar" /><div className="loading-bar" /></div></div>}
       {error && <div className="error">{error}</div>}
 
       {!loading && !error && !cardData && page === "games" && (

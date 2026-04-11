@@ -29,6 +29,7 @@ function basesString(on1b, on2b, on3b) {
   if (on2b) bases.push("2nd");
   if (on3b) bases.push("3rd");
   if (bases.length === 0) return "Bases Empty";
+  if (bases.length === 1) return "Man on " + bases[0];
   return bases.join(" & ");
 }
 
@@ -240,7 +241,7 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
       <div ref={wrapRef} style={{ position: "relative", display: "inline-block" }}>
         <canvas
           ref={canvasRef}
-          style={{ borderRadius: 6, cursor: onReclassify ? "pointer" : "default" }}
+          style={{ borderRadius: 6, cursor: onReclassify ? "pointer" : "default", touchAction: "none" }}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
           onClick={handleClick}
