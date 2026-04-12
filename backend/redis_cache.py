@@ -92,6 +92,18 @@ def redis_delete_pattern(pattern):
         print(f"[Redis] DELETE pattern error for {pattern}: {e}")
 
 
+def redis_incr(key):
+    """Atomically increment an integer key in Redis. Returns the new value."""
+    r = _get_redis()
+    if r is None:
+        return None
+    try:
+        return r.incr(key)
+    except Exception as e:
+        print(f"[Redis] INCR error for {key}: {e}")
+        return None
+
+
 def redis_available():
     """Check if Redis is available."""
     return _get_redis() is not None

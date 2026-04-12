@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 import requests
-from redis_cache import redis_get, redis_set, redis_delete, redis_delete_pattern, redis_available
+from redis_cache import redis_get, redis_set, redis_delete, redis_delete_pattern, redis_available, redis_incr
 
 _cache = {}          # { date_str: (timestamp, dataframe) }
 _season_cache = {}
@@ -25,14 +25,13 @@ _overrides = {}  # { "gamePk_pitcherId_atBat_pitchNum": {"original":"FF","new":"
 _override_version = 0  # Incremented on every save/remove to bust agg caches
 
 def _load_overrides():
-    global _overrides
+    global _overrides, _override_version
     # Try Redis first
     val = redis_get("overrides")
     if val is not None:
         _overrides = val
-        return _overrides
-    # Fall back to local file
-    if os.path.exists(OVERRIDES_PATH):
+    elif os.path.exists(OVERRIDES_PATH):
+        # Fall back to local file
         try:
             with open(OVERRIDES_PATH, "r") as f:
                 _overrides = json.load(f)
@@ -40,6 +39,15 @@ def _load_overrides():
             redis_set("overrides", _overrides)
         except Exception:
             _overrides = {}
+    # Restore override version from Redis so cache keys match across restarts.
+    # If the key doesn't exist yet (first deploy with this fix), seed it from
+    # the number of overrides so all processes start from the same baseline.
+    ver = redis_get("override_version")
+    if ver is not None:
+        _override_version = int(ver)
+    elif _overrides:
+        _override_version = len(_overrides)
+        redis_set("override_version", _override_version)
     return _overrides
 
 def _save_overrides():
@@ -79,7 +87,12 @@ def save_pitch_override(game_pk, pitcher_id, at_bat_number, pitch_number, new_pi
         "new_name": new_name,
     }
     _save_overrides()
-    _override_version += 1
+    # Persist version to Redis so warmup crons and restarts use the same cache keys
+    new_ver = redis_incr("override_version")
+    if new_ver is not None:
+        _override_version = new_ver
+    else:
+        _override_version += 1
     return key
 
 def remove_pitch_override(game_pk, pitcher_id, at_bat_number, pitch_number):
@@ -89,7 +102,12 @@ def remove_pitch_override(game_pk, pitcher_id, at_bat_number, pitch_number):
     removed = _overrides.pop(key, None)
     if removed:
         _save_overrides()
-        _override_version += 1
+        # Persist version to Redis so warmup crons and restarts use the same cache keys
+        new_ver = redis_incr("override_version")
+        if new_ver is not None:
+            _override_version = new_ver
+        else:
+            _override_version += 1
     return removed is not None
 
 def get_all_overrides():
