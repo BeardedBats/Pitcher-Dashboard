@@ -251,7 +251,7 @@ export function getTooltipResult(pitch, opts) {
     }
     if (ev === "catcher_interf") return { label: "Catcher Int.", color: "#FFAB6E" };
     // Outs with trajectory-based labels (includes fielder's choice, force outs, double plays)
-    if (ev.includes("out") || ev.includes("play") || ev.includes("force") || ev === "fielders_choice") {
+    if (ev.includes("out") || ev.includes("play") || ev.includes("force") || ev.endsWith("_dp") || ev === "fielders_choice") {
       const la = pitch.launch_angle != null ? pitch.launch_angle : (opts?.launchAngle ?? null);
       let label = "Out";
       if (la != null) {
@@ -260,7 +260,7 @@ export function getTooltipResult(pitch, opts) {
         else if (la <= 50) label = "Flyout";
         else label = "Popout";
       }
-      const isDp = ev.includes("double_play") || ev === "grounded_into_double_play";
+      const isDp = ev.includes("double_play") || ev.endsWith("_dp");
       if (isDp) label += " Into Double Play";
       return { label, color: "#65BAFF" };
     }

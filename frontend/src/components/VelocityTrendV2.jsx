@@ -37,7 +37,7 @@ function getResultColorPBP(result) {
   if (r === "hit_by_pitch") return "#FFAB6E";
   if (r === "home_run") return "#FF5EDC";
   if (r === "single" || r === "double" || r === "triple") return "#feffa3";
-  if (r.includes("out") || r.includes("play") || r.includes("force") || r === "fielders_choice" || r === "sac_fly" || r === "sac_bunt" || r === "field_error") return "#65BAFF";
+  if (r.includes("out") || r.includes("play") || r.includes("force") || r.endsWith("_dp") || r === "fielders_choice" || r === "sac_fly" || r === "sac_bunt" || r === "field_error") return "#65BAFF";
   if (r === "catcher_interf") return "#FFAB6E";
   return null;
 }
@@ -378,25 +378,31 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile, lines
       ctx.font = "bold 10px 'DM Sans', sans-serif";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      const LANE_LABEL_H = 12;
+      const LANE_LABEL_H = 14; // ~10px font + 2px padding each side
+      const laneMidY = innerTop + innerH / 2;
       const laneLabels = [
         { y: laneTopY, text: ls.max.toFixed(1), alpha: 0.8 },
         { y: laneAvgY, text: ls.avg.toFixed(1), alpha: 1 },
         { y: laneBotY, text: ls.min.toFixed(1), alpha: 0.8 },
       ].sort((a, b) => a.y - b.y);
-      // Push apart any overlapping labels
-      for (let i = 1; i < laneLabels.length; i++) {
-        if (laneLabels[i].y - laneLabels[i - 1].y < LANE_LABEL_H) {
-          const mid = (laneLabels[i - 1].y + laneLabels[i].y) / 2;
-          laneLabels[i - 1].y = mid - LANE_LABEL_H / 2;
-          laneLabels[i].y = mid + LANE_LABEL_H / 2;
+      // Multi-pass: resolve overlaps by pushing the label further from chart center
+      for (let pass = 0; pass < laneLabels.length; pass++) {
+        let anyOverlap = false;
+        for (let i = 1; i < laneLabels.length; i++) {
+          const gap = laneLabels[i].y - laneLabels[i - 1].y;
+          if (gap < LANE_LABEL_H) {
+            anyOverlap = true;
+            const pairMid = (laneLabels[i - 1].y + laneLabels[i].y) / 2;
+            if (pairMid <= laneMidY) {
+              // Top half: keep top label, push bottom one down
+              laneLabels[i].y = laneLabels[i - 1].y + LANE_LABEL_H;
+            } else {
+              // Bottom half: keep bottom label, push top one up
+              laneLabels[i - 1].y = laneLabels[i].y - LANE_LABEL_H;
+            }
+          }
         }
-      }
-      // Second pass for 3-way overlap
-      for (let i = 1; i < laneLabels.length; i++) {
-        if (laneLabels[i].y - laneLabels[i - 1].y < LANE_LABEL_H) {
-          laneLabels[i].y = laneLabels[i - 1].y + LANE_LABEL_H;
-        }
+        if (!anyOverlap) break;
       }
       for (const lbl of laneLabels) {
         ctx.fillStyle = laneColor;
@@ -421,17 +427,31 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile, lines
         return { type, y, label: s.avg.toFixed(1), color };
       });
 
-      // Anti-overlap: stack labels that are within 12px of each other
-      const LABEL_H = 12;
+      // Anti-overlap: ensure at least 2px padding between labels (LABEL_H = text height + padding)
+      const LABEL_H = 14; // ~10px font + 2px padding each side
+      const chartMidY = innerTop + innerH / 2;
       const resolvedLabels = [...avgLabels].sort((a, b) => a.y - b.y);
-      for (let i = 1; i < resolvedLabels.length; i++) {
-        const prev = resolvedLabels[i - 1];
-        const cur = resolvedLabels[i];
-        if (cur.y - prev.y < LABEL_H) {
-          const mid = (prev.y + cur.y) / 2;
-          prev.y = mid - LABEL_H / 2;
-          cur.y = mid + LABEL_H / 2;
+      // Multi-pass: resolve overlaps by pushing the label further from chart center
+      for (let pass = 0; pass < resolvedLabels.length; pass++) {
+        let anyOverlap = false;
+        for (let i = 1; i < resolvedLabels.length; i++) {
+          const prev = resolvedLabels[i - 1];
+          const cur = resolvedLabels[i];
+          const gap = cur.y - prev.y;
+          if (gap < LABEL_H) {
+            anyOverlap = true;
+            const overlap = LABEL_H - gap;
+            const pairMid = (prev.y + cur.y) / 2;
+            if (pairMid <= chartMidY) {
+              // Top half: keep top label, push bottom one down
+              cur.y = prev.y + LABEL_H;
+            } else {
+              // Bottom half: keep bottom label, push top one up
+              prev.y = cur.y - LABEL_H;
+            }
+          }
         }
+        if (!anyOverlap) break;
       }
 
       for (const lbl of resolvedLabels) {
@@ -741,33 +761,49 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile, lines
                       )}
                       <div className={`sb-tooltip-pa${isFeaturedPa ? " sb-hl" : ""}`}
                         style={isFeaturedPa ? { color: resultColor || "var(--text-bright)", fontWeight: 600 } : {}}>
-                        {pa.description || `${pa.batter}: ${pa.result}`}
+                        {(() => {
+                          const desc = pa.description || `${pa.batter}: ${pa.result}`;
+                          if (!isFeaturedPa || !resultColor) return desc;
+                          const r = (pa.result || "").toLowerCase().replace(/\s+/g, "_");
+                          const isHit = r === "single" || r === "double" || r === "triple";
+                          if (isHit) {
+                            const sentences = desc.split(/(?<=\.\s+)/);
+                            const hasOut = sentences.some(s => /\bout at\b|\bout advancing\b|\bthrown out\b/i.test(s));
+                            if (hasOut) {
+                              return sentences.map((s, idx) => {
+                                const isOutSentence = /\bout at\b|\bout advancing\b|\bthrown out\b/i.test(s);
+                                return <span key={idx} style={isOutSentence ? { color: "#65BAFF" } : undefined}>{s}</span>;
+                              });
+                            }
+                          }
+                          return desc;
+                        })()}
+                        {midAbActions.length > 0 && midAbActions.map((action, ai) => (
+                          <div key={`action-${ai}`} style={{ fontSize: 10, padding: "1px 0 1px 0", lineHeight: 1.3, fontStyle: "italic", color: action.scored ? "#FF5EDC" : "rgba(180,184,210,0.7)" }}>
+                            {action.desc}
+                          </div>
+                        ))}
+                        {actionRuns > 0 && midAbAwayScore != null && (
+                          <div style={{ fontSize: 10, padding: "1px 0 3px 0", lineHeight: 1.3 }}>
+                            <span style={{ color: "#FF5EDC", fontWeight: 600 }}>{actionRuns} run{actionRuns > 1 ? "s" : ""} score{actionRuns === 1 ? "s" : ""}</span>{" "}
+                            <span style={{ color: "var(--text-bright)" }}>
+                              <span style={{ color: half.isTop ? "#fb9e2a" : "var(--text-bright)" }}>{displayAbbrev(linescoreData.away_team)}</span>
+                              {" "}{midAbAwayScore} - {midAbHomeScore}{" "}
+                              <span style={{ color: half.isTop ? "var(--text-bright)" : "#fb9e2a" }}>{displayAbbrev(linescoreData.home_team)}</span>
+                            </span>
+                          </div>
+                        )}
+                        {paResultRuns > 0 && pa.home_score != null && (
+                          <div style={{ fontSize: 10, padding: "1px 0 3px 0", lineHeight: 1.3 }}>
+                            <span style={{ color: "#FF5EDC", fontWeight: 600 }}>{paResultRuns} run{paResultRuns > 1 ? "s" : ""} score{paResultRuns === 1 ? "s" : ""}</span>{" "}
+                            <span style={{ color: "var(--text-bright)" }}>
+                              <span style={{ color: half.isTop ? "#fb9e2a" : "var(--text-bright)" }}>{displayAbbrev(linescoreData.away_team)}</span>
+                              {" "}{pa.away_score} - {pa.home_score}{" "}
+                              <span style={{ color: half.isTop ? "var(--text-bright)" : "#fb9e2a" }}>{displayAbbrev(linescoreData.home_team)}</span>
+                            </span>
+                          </div>
+                        )}
                       </div>
-                      {midAbActions.length > 0 && midAbActions.map((action, ai) => (
-                        <div key={`action-${ai}`} style={{ fontSize: 10, padding: "1px 0 1px 0", lineHeight: 1.3, fontStyle: "italic", color: action.scored ? "#FF5EDC" : "rgba(180,184,210,0.7)" }}>
-                          {action.desc}
-                        </div>
-                      ))}
-                      {actionRuns > 0 && midAbAwayScore != null && (
-                        <div style={{ fontSize: 10, padding: "1px 0 3px 0", lineHeight: 1.3 }}>
-                          <span style={{ color: "#FF5EDC", fontWeight: 600 }}>{actionRuns} run{actionRuns > 1 ? "s" : ""} score{actionRuns === 1 ? "s" : ""}</span>{" "}
-                          <span style={{ color: "var(--text-bright)" }}>
-                            <span style={{ color: half.isTop ? "#fb9e2a" : "var(--text-bright)" }}>{displayAbbrev(linescoreData.away_team)}</span>
-                            {" "}{midAbAwayScore} - {midAbHomeScore}{" "}
-                            <span style={{ color: half.isTop ? "var(--text-bright)" : "#fb9e2a" }}>{displayAbbrev(linescoreData.home_team)}</span>
-                          </span>
-                        </div>
-                      )}
-                      {paResultRuns > 0 && pa.home_score != null && (
-                        <div style={{ fontSize: 10, padding: "1px 0 3px 0", lineHeight: 1.3 }}>
-                          <span style={{ color: "#FF5EDC", fontWeight: 600 }}>{paResultRuns} run{paResultRuns > 1 ? "s" : ""} score{paResultRuns === 1 ? "s" : ""}</span>{" "}
-                          <span style={{ color: "var(--text-bright)" }}>
-                            <span style={{ color: half.isTop ? "#fb9e2a" : "var(--text-bright)" }}>{displayAbbrev(linescoreData.away_team)}</span>
-                            {" "}{pa.away_score} - {pa.home_score}{" "}
-                            <span style={{ color: half.isTop ? "var(--text-bright)" : "#fb9e2a" }}>{displayAbbrev(linescoreData.home_team)}</span>
-                          </span>
-                        </div>
-                      )}
                     </React.Fragment>
                   );
                 })}
