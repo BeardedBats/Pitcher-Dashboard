@@ -66,11 +66,33 @@ body {
 .date-picker input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.8); }
 
 /* ======== GAME TABS ======== */
-.game-tabs {
-  display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch;
+.game-tabs-container {
+  max-width: var(--content-width); margin-left: auto; margin-right: auto;
   margin-bottom: 18px; padding-bottom: 14px;
   border-bottom: 1px solid var(--border);
-  max-width: var(--content-width); margin-left: auto; margin-right: auto;
+}
+.game-tabs-switcher {
+  display: flex; gap: 6px; margin-bottom: 10px;
+}
+.game-tab-switch {
+  display: flex; align-items: center; justify-content: center;
+  padding: 4px 14px; height: 28px; box-sizing: border-box;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text); font-family: inherit; font-size: 13px;
+  font-weight: 500; cursor: pointer; transition: all 0.15s;
+  user-select: none;
+}
+.game-tab-switch:hover {
+  color: var(--text-bright); border-color: var(--accent);
+  background: var(--hover-tint); box-shadow: 0 0 6px var(--accent-glow);
+}
+.game-tab-switch.active {
+  background: linear-gradient(135deg, rgba(85, 232, 255, 0.18), rgba(85, 232, 255, 0.06));
+  border-color: var(--accent); color: var(--accent); font-weight: 600;
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+.game-tabs {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch;
 }
 .game-tab {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -1267,7 +1289,10 @@ canvas { display: block; border: none; border-radius: var(--radius-sm); }
   .search-dropdown { min-width: unset; left: 0; right: 0; }
 
   /* -- Game tabs (6) -- */
-  .game-tabs { gap: 4px; margin-bottom: 12px; padding-bottom: 10px; }
+  .game-tabs-container { margin-bottom: 12px; padding-bottom: 10px; }
+  .game-tabs-switcher { gap: 4px; margin-bottom: 8px; }
+  .game-tab-switch { font-size: 11px; padding: 3px 10px; height: 24px; }
+  .game-tabs { gap: 4px; }
   .game-tab { min-width: 84px; width: auto; font-size: 11px; padding: 5px 8px; height: auto; min-height: 42px; line-height: 1.3; flex-direction: column; justify-content: center; }
   .game-tab__pitchers { display: none; }
 

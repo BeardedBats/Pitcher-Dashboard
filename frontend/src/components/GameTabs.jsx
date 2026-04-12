@@ -26,15 +26,42 @@ function ordinalInning(n) {
 }
 
 export default function GameTabs({ games, selectedGame, onSelectGame }) {
+  const [viewMode, setViewMode] = React.useState("all");
+
+  const handleAllGames = () => {
+    setViewMode("all");
+    onSelectGame(null);
+  };
+
+  const handleViewGames = () => {
+    if (viewMode === "games") {
+      setViewMode("all");
+      onSelectGame(null);
+    } else {
+      setViewMode("games");
+    }
+  };
+
   return (
-    <div className="game-tabs">
-      <div
-        className={`game-tab${selectedGame === null ? " active" : ""}`}
-        onClick={() => onSelectGame(null)}
-        role="button" tabIndex={0}
-      >
-        All Games
+    <div className="game-tabs-container">
+      <div className="game-tabs-switcher">
+        <div
+          className={`game-tab-switch${viewMode === "all" ? " active" : ""}`}
+          onClick={handleAllGames}
+          role="button" tabIndex={0}
+        >
+          All Games
+        </div>
+        <div
+          className={`game-tab-switch${viewMode === "games" ? " active" : ""}`}
+          onClick={handleViewGames}
+          role="button" tabIndex={0}
+        >
+          View Games
+        </div>
       </div>
+      {viewMode === "games" && (
+        <div className="game-tabs">
       {games.map(g => {
         const notStarted = isNotStarted(g.status);
         const warmup = isWarmup(g.status);
@@ -94,6 +121,8 @@ export default function GameTabs({ games, selectedGame, onSelectGame }) {
           </div>
         );
       })}
+        </div>
+      )}
     </div>
   );
 }
