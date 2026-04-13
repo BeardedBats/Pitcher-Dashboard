@@ -31,7 +31,7 @@ const IHB_ARM_SIDE_TYPES = ["Four-Seamer", "Sinker", "Changeup"];
 
 const MOBILE_HIDE_COLS = ["hand", "team", "opponent"];
 
-export default function PitchDataTable({ data, onPitcherClick, columns, splitByTeam, spOnly, pitcherHand, sortable = true, showChange, seasonAvgs, batterFilter, top400Names, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, selectedPitchType, onPitchTypeClick }) {
+export default function PitchDataTable({ data, date, onPitcherClick, columns, splitByTeam, spOnly, pitcherHand, sortable = true, showChange, seasonAvgs, batterFilter, top400Names, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, selectedPitchType, onPitchTypeClick }) {
   const [sortKeyLocal, setSortKeyLocal] = useState(null);
   const [sortDirLocal, setSortDirLocal] = useState("asc");
   const sortKey = onSortKeyChange ? sortKeyProp : sortKeyLocal;
@@ -269,6 +269,9 @@ export default function PitchDataTable({ data, onPitcherClick, columns, splitByT
       if (!v) return <span className="pitcher-name" style={{ color: "rgb(180, 185, 219)" }}>--</span>;
       const isTop = top400Names && isTop400(v);
       const nameClass = top400Names ? (isTop ? "pitcher-name pitcher-top400" : "pitcher-name") : "pitcher-name";
+      if (onPitcherClick && row.pitcher_id && row.game_pk && date) {
+        return <a className={nameClass} href={`#card/${date}/${row.pitcher_id}/${row.game_pk}`} rel="nofollow" onClick={(e) => e.preventDefault()} onMouseDown={(e) => { if (e.button === 1) e.stopPropagation(); }} style={{ textDecoration: "none" }}>{v}</a>;
+      }
       return <span className={nameClass}>{v}</span>;
     }
     if (col.key === "team") return displayAbbrev(v) || <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;

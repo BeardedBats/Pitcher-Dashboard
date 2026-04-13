@@ -628,7 +628,7 @@ export default function App() {
         <div className={splitByTeam ? "table-card-none" : "table-card"}>
           <div className="table-container">
             {view === "pitch-data" && (
-              <PitchDataTable data={filteredPitchData} onPitcherClick={openCard} splitByTeam={splitByTeam} spOnly={spOnly} top400Names={TOP_400_NAMES} isMobile={isMobile} sortKey={pitchSortKey} onSortKeyChange={setPitchSortKey} sortDir={pitchSortDir} onSortDirChange={setPitchSortDir} />
+              <PitchDataTable data={filteredPitchData} date={date} onPitcherClick={openCard} splitByTeam={splitByTeam} spOnly={spOnly} top400Names={TOP_400_NAMES} isMobile={isMobile} sortKey={pitchSortKey} onSortKeyChange={setPitchSortKey} sortDir={pitchSortDir} onSortDirChange={setPitchSortDir} />
             )}
             {view === "pitcher-results" && (
               <PitcherResultsTable data={filteredResultsData} date={date} onPitcherClick={openCard} spOnly={spOnly} splitByTeam={splitByTeam} top400Names={TOP_400_NAMES} isMobile={isMobile} sortKey={resultsSortKey} onSortKeyChange={setResultsSortKey} sortDir={resultsSortDir} onSortDirChange={setResultsSortDir} hiddenCols={resultsHiddenCols} />

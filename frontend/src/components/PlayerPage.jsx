@@ -209,7 +209,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
   if (loading) {
     return (
       <div className="pp-outer-centered">
-        <button className="back-btn" onClick={onBack}>← Back</button>
+        <a className="back-btn" href={window.location.pathname} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); onBack(); } }} style={{ textDecoration: "none" }}>← Back</a>
         <div className="loading-msg"><div className="loading-bars"><div className="loading-bar" /><div className="loading-bar" /><div className="loading-bar" /></div>{loadMsg}</div>
       </div>
     );
@@ -218,7 +218,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
   if (!data?.info?.name) {
     return (
       <div className="pp-outer-centered">
-        <button className="back-btn" onClick={onBack}>← Back</button>
+        <a className="back-btn" href={window.location.pathname} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); onBack(); } }} style={{ textDecoration: "none" }}>← Back</a>
         <div className="loading-msg">Player not found</div>
       </div>
     );
@@ -230,7 +230,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
 
   return (
     <div className="pp-outer-centered">
-      <button className="back-btn" onClick={onBack}>← Back</button>
+      <a className="back-btn" href={window.location.pathname} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); onBack(); } }} style={{ textDecoration: "none" }}>← Back</a>
       <div className="card">
         {/* ===== Header ===== */}
         <div className="card-top">
@@ -278,7 +278,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                         onClick={(e) => onGameClick(row.date, pitcherId, row.game_pk, e)}
                         onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); onGameClick(row.date, pitcherId, row.game_pk, e); } }}
                       >
-                        <td>{dateShort}</td>
+                        <td><a href={`#card/${row.date}/${pitcherId}/${row.game_pk}`} rel="nofollow" onClick={(e) => e.preventDefault()} onMouseDown={(e) => { if (e.button === 1) e.stopPropagation(); }} style={{ color: "inherit", textDecoration: "none" }}>{dateShort}</a></td>
                         <td>{displayAbbrev(row.opponent)}</td>
                         <td style={{ color: decColor, fontWeight: dec !== "ND" ? 700 : 500 }}>{dec}</td>
                         <td>{row.ip}</td>
@@ -355,13 +355,24 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                     <button className={`metrics-subnav-btn${metricsView === "pitch-data" ? " active" : ""}`} onClick={() => setMetricsView("pitch-data")}>Pitch Type Metrics</button>
                     <button className={`metrics-subnav-btn${metricsView === "results" ? " active" : ""}`} onClick={() => setMetricsView("results")}>Results</button>
                     <button className={`metrics-subnav-btn${metricsView === "velocity-trend" ? " active" : ""}`} onClick={() => setMetricsView("velocity-trend")}>Velocity Trend</button>
-                    <button
-                      className={`metrics-subnav-btn${pbpDisabled ? " metrics-subnav-disabled" : ""}`}
-                      onClick={handlePbpClick}
-                      disabled={pbpDisabled}
-                    >
-                      Play-by-Play
-                    </button>
+                    {!pbpDisabled && pbpGamePk && pbpGameDate ? (
+                      <a
+                        className="metrics-subnav-btn"
+                        href={`#card/${pbpGameDate}/${pitcherId}/${pbpGamePk}`}
+                        rel="nofollow"
+                        onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); handlePbpClick(); } }}
+                        style={{ textDecoration: "none" }}
+                      >
+                        Play-by-Play
+                      </a>
+                    ) : (
+                      <button
+                        className="metrics-subnav-btn metrics-subnav-disabled"
+                        disabled
+                      >
+                        Play-by-Play
+                      </button>
+                    )}
                   </div>
                 )}
                 <div className="metrics-controls">

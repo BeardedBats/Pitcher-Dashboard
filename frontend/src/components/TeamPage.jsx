@@ -93,7 +93,12 @@ export default function TeamPage({ teamAbbrev, onPlayerClick, onBack }) {
   const fmtCell = (row, col) => {
     const val = row[col.key];
     if (val == null) return "—";
-    if (col.key === "pitcher") return val;
+    if (col.key === "pitcher") {
+      if (onPlayerClick && row.pitcher_id) {
+        return <a href={"#player/" + row.pitcher_id} rel="nofollow" onClick={(e) => e.preventDefault()} onMouseDown={(e) => { if (e.button === 1) e.stopPropagation(); }} style={{ color: "inherit", textDecoration: "none" }}>{val}</a>;
+      }
+      return val;
+    }
     if (col.key === "pitch_name") return val;
     if (col.key === "ihb") return typeof val === "number" ? (-val).toFixed(1) : val;
     if (typeof val === "number" && col.key.includes("pct")) return val.toFixed(1);
@@ -104,7 +109,7 @@ export default function TeamPage({ teamAbbrev, onPlayerClick, onBack }) {
   return (
     <div className="team-page">
       <div className="page-header">
-        <button className="back-btn" onClick={onBack}>← Back</button>
+        <a className="back-btn" href={window.location.pathname} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); onBack(); } }} style={{ textDecoration: "none" }}>← Back</a>
         <h2 className="page-title">{teamName}</h2>
       </div>
       <div className="controls-row" style={{ marginBottom: 12 }}>
