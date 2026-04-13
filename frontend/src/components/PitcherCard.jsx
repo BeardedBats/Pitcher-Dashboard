@@ -246,7 +246,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
       <div className="card-top">
         <div className="card-info">
           {onPlayerClick && pitcher_id ? (
-            <a className="card-name" href={"#player/" + pitcher_id} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); onPlayerClick(pitcher_id, e); } }} style={{ cursor: "pointer", color: "inherit", textDecoration: "none" }}>{name}</a>
+            <a className="card-name" href={"#player/" + pitcher_id} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); onPlayerClick(pitcher_id, e); } }} style={{ cursor: "pointer", textDecoration: "none" }}>{name}</a>
           ) : (
             <div className="card-name">{name}</div>
           )}
