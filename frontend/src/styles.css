@@ -218,6 +218,8 @@ tbody tr.clickable-row { cursor: pointer; }
 tbody tr.clickable-row:hover { background: var(--hover-tint); }
 
 .pitcher-name { color: var(--text-bright); font-weight: 500; }
+a.pitcher-name { color: var(--text-bright); }
+a.pitcher-name.pitcher-top400 { color: #f0c040; }
 .pitcher-top400 { color: #f0c040; font-weight: 600; }
 .highlight-cell {
   border-radius: 4px; display: inline;

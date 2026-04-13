@@ -105,7 +105,7 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
       const isTop = top400Names && isTop400(v);
       const nameClass = top400Names ? (isTop ? "pitcher-name pitcher-top400" : "pitcher-name") : "pitcher-name";
       if (onPitcherClick && row.pitcher_id && row.game_pk && date) {
-        return <a className={nameClass} href={`#card/${date}/${row.pitcher_id}/${row.game_pk}`} rel="nofollow" onClick={(e) => e.preventDefault()} style={{ color: "inherit", textDecoration: "none" }}>{v}</a>;
+        return <a className={nameClass} href={`#card/${date}/${row.pitcher_id}/${row.game_pk}`} rel="nofollow" onClick={(e) => e.preventDefault()} style={{ textDecoration: "none" }}>{v}</a>;
       }
       return <span className={nameClass}>{v}</span>;
     }
