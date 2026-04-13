@@ -6,7 +6,7 @@ import { isTop400 } from "../top400";
 const TEAM_SPLIT_HIDE = ["team", "opponent"];
 const MOBILE_HIDE = ["hand"];
 
-export default function PitcherResultsTable({ data, onPitcherClick, spOnly, splitByTeam, top400Names, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, hiddenCols = [] }) {
+export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly, splitByTeam, top400Names, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, hiddenCols = [] }) {
   const [sortKeyLocal, setSortKeyLocal] = useState(null);
   const [sortDirLocal, setSortDirLocal] = useState("asc");
   const sortKey = onSortKeyChange ? sortKeyProp : sortKeyLocal;
@@ -104,6 +104,9 @@ export default function PitcherResultsTable({ data, onPitcherClick, spOnly, spli
       if (!v) return <span className="pitcher-name" style={{ color: "rgb(180, 185, 219)" }}>--</span>;
       const isTop = top400Names && isTop400(v);
       const nameClass = top400Names ? (isTop ? "pitcher-name pitcher-top400" : "pitcher-name") : "pitcher-name";
+      if (onPitcherClick && row.pitcher_id && row.game_pk && date) {
+        return <a className={nameClass} href={`#card/${date}/${row.pitcher_id}/${row.game_pk}`} rel="nofollow" onClick={(e) => e.preventDefault()} style={{ color: "inherit", textDecoration: "none" }}>{v}</a>;
+      }
       return <span className={nameClass}>{v}</span>;
     }
     if (col.key === "team") return displayAbbrev(v) || <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
