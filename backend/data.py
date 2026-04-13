@@ -620,10 +620,14 @@ def fetch_date(date_str):
     # Apply pitch reclassification overrides
     df = _apply_overrides(df)
     _cache[date_str] = (time.time(), df)
-    # Also clear boxscore cache for today so IP/ER refresh
+    # Also clear boxscore + feed caches for today so IP/ER/scoreboard refresh
     if _is_today(date_str):
         for gpk in set(df["game_pk"].unique()) if not df.empty else []:
             _boxscore_cache.pop(int(gpk), None)
+            _feed_cache.pop(int(gpk), None)
+            redis_delete(f"boxscore:{int(gpk)}")
+            redis_delete(f"gamestate:{int(gpk)}")
+            redis_delete(f"feed:{int(gpk)}")
     return df
 
 SAVANT_PITCHER_SEASON_URL = (
@@ -1329,24 +1333,37 @@ def get_games(date_str):
                        "current_inning": 0, "inning_half": ""})
     return sorted(games, key=lambda g: g.get("game_date_utc", "") or "9999")
 
-_boxscore_cache = {}
+_boxscore_cache = {}  # { game_pk: (timestamp, stats_map) }
 _game_state_cache = {}  # { game_pk: { home_score, away_score, inning, inning_half, status } }
+BOXSCORE_LIVE_TTL = 60  # seconds — refetch live game boxscores after this
 
 def _get_boxscore_stats(game_pk):
     """Fetch pitching stats per pitcher from MLB Stats API boxscore.
-    Returns dict: { pitcher_id: { 'er': int, 'runs': int, 'ip': str, 'hits': int, 'bbs': int, 'ks': int, 'hrs': int, 'batters_faced': int } }"""
+    Returns dict: { pitcher_id: { 'er': int, 'runs': int, 'ip': str, 'hits': int, 'bbs': int, 'ks': int, 'hrs': int, 'batters_faced': int } }
+    Live games use a 60s TTL; final games cache forever."""
     if game_pk in _boxscore_cache:
-        return _boxscore_cache[game_pk]
-    # L2: Redis
+        ts, cached_stats = _boxscore_cache[game_pk]
+        # Check if game is final (game_state "F" = final)
+        gs = _game_state_cache.get(game_pk, {})
+        is_final = gs.get("game_state", "") == "F"
+        if is_final or (time.time() - ts) < BOXSCORE_LIVE_TTL:
+            return cached_stats
+        # Live game with stale cache — refetch below
+    # L2: Redis (check game state to decide if we should use it)
     redis_val = redis_get(f"boxscore:{game_pk}")
     if redis_val is not None:
-        # Redis stores string keys; convert back to int keys
         converted = {int(k): v for k, v in redis_val.items()}
-        _boxscore_cache[game_pk] = converted
         # Also restore game state from Redis
         gs_val = redis_get(f"gamestate:{game_pk}")
         if gs_val is not None:
             _game_state_cache[game_pk] = gs_val
+        # If game is final in Redis, cache forever
+        is_final = (gs_val or {}).get("game_state", "") == "F"
+        _boxscore_cache[game_pk] = (time.time(), converted)
+        if is_final:
+            return converted
+        # Live game — only use Redis if no in-memory was available (first load)
+        # On subsequent calls the TTL check above will handle refetching
         return converted
     try:
         url = f"https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live"
@@ -1413,13 +1430,16 @@ def _get_boxscore_stats(game_pk):
         }
         _game_state_cache[game_pk] = gs_data
         redis_set(f"gamestate:{game_pk}", gs_data)
-        _boxscore_cache[game_pk] = stats_map
+        _boxscore_cache[game_pk] = (time.time(), stats_map)
         # Store in Redis with string keys (JSON requirement)
-        redis_set(f"boxscore:{game_pk}", {str(k): v for k, v in stats_map.items()})
+        # Only persist to Redis if game is final
+        if gs_data.get("game_state") == "F":
+            redis_set(f"boxscore:{game_pk}", {str(k): v for k, v in stats_map.items()})
+            redis_set(f"gamestate:{game_pk}", gs_data)
         return stats_map
     except Exception as e:
         print(f"Error fetching boxscore for game {game_pk}: {e}")
-        _boxscore_cache[game_pk] = {}
+        _boxscore_cache[game_pk] = (time.time(), {})
         return {}
 
 def get_game_state(game_pk):
@@ -1446,24 +1466,40 @@ def get_boxscore_full(game_pk):
 
 # ── Linescore + Play-by-Play ──────────────────────────────────────────
 
-_feed_cache = {}  # { game_pk: full_json }
+_feed_cache = {}  # { game_pk: (timestamp, full_json) }
+FEED_LIVE_TTL = 60  # seconds — refetch live game feeds after this
+
+def _is_game_final(feed_json):
+    """Check if a game feed indicates the game is over."""
+    if not feed_json:
+        return False
+    status = feed_json.get("gameData", {}).get("status", {})
+    abstract = status.get("abstractGameState", "")
+    detailed = status.get("detailedState", "")
+    return abstract == "Final" or "Final" in detailed
 
 def _get_game_feed(game_pk):
-    """Fetch and cache the full MLB Stats API game feed."""
+    """Fetch and cache the full MLB Stats API game feed.
+    Live games use a 60s TTL; final games cache forever."""
     if game_pk in _feed_cache:
-        return _feed_cache[game_pk]
-    # L2: Redis (game feeds are large; only cache completed games)
+        ts, data = _feed_cache[game_pk]
+        if _is_game_final(data) or (time.time() - ts) < FEED_LIVE_TTL:
+            return data
+        # Live game with stale cache — refetch below
+    # L2: Redis (only stores completed game feeds)
     redis_val = redis_get(f"feed:{game_pk}")
     if redis_val is not None:
-        _feed_cache[game_pk] = redis_val
+        _feed_cache[game_pk] = (time.time(), redis_val)
         return redis_val
     try:
         url = MLB_GAME_FEED_URL.format(game_pk=game_pk)
         resp = requests.get(url, timeout=15)
         resp.raise_for_status()
         data = resp.json()
-        _feed_cache[game_pk] = data
-        redis_set(f"feed:{game_pk}", data)
+        _feed_cache[game_pk] = (time.time(), data)
+        # Only persist to Redis if game is final
+        if _is_game_final(data):
+            redis_set(f"feed:{game_pk}", data)
         return data
     except Exception as e:
         print(f"Error fetching game feed for {game_pk}: {e}")

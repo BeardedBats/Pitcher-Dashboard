@@ -136,16 +136,20 @@ export default function App() {
       const data = await fetchRefresh();
       setLastRefresh(data.timestamp);
       setToast({ message: "Data refreshed", type: "success" });
-      // Re-fetch current page data
+      // Re-fetch current page data including linescore
       if (date) {
-        const [newGames, newPitch, newResults] = await Promise.all([
+        const fetches = [
           fetchGames(date),
           fetchPitchData(date, selectedGame),
           fetchPitcherResults(date, selectedGame),
-        ]);
+        ];
+        const gpk = cardData?.result?.game_pk || selectedGame;
+        if (gpk) fetches.push(fetchGameLinescore(gpk));
+        const [newGames, newPitch, newResults, newLinescore] = await Promise.all(fetches);
         setGames(newGames);
         setPitchData(newPitch);
         setResultsData(newResults);
+        if (newLinescore) setLinescoreData(newLinescore);
       }
     } catch (e) {
       setToast({ message: "Refresh failed", type: "error" });
@@ -344,13 +348,26 @@ export default function App() {
     }).catch(e => { setError(e.message); setLoading(false); });
   }, [selectedGame, date, games.length]); // eslint-disable-line
 
-  // Fetch linescore when a specific game is selected or card opens
+  // Fetch linescore when a specific game is selected or card opens.
+  // Poll every 60s during live games so scoreboard stays current.
   const linescoreGamePk = cardData?.result?.game_pk || selectedGame;
   useEffect(() => {
     if (!linescoreGamePk) { setLinescoreData(null); return; }
-    fetchGameLinescore(linescoreGamePk)
-      .then(ls => setLinescoreData(ls))
-      .catch(() => setLinescoreData(null));
+    let cancelled = false;
+    const doFetch = () => {
+      fetchGameLinescore(linescoreGamePk)
+        .then(ls => { if (!cancelled) setLinescoreData(ls); })
+        .catch(() => { if (!cancelled) setLinescoreData(null); });
+    };
+    doFetch(); // initial fetch
+    const interval = setInterval(() => {
+      // Only poll if game is still live (is_final === false)
+      setLinescoreData(prev => {
+        if (prev && prev.is_final === false) doFetch();
+        return prev;
+      });
+    }, 60000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [linescoreGamePk]);
 
   const filteredPitchData = useMemo(() => {

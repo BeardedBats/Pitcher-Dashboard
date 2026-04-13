@@ -779,10 +779,19 @@ def cron_warmup_live_cards(request: Request):
 # ── Manual refresh endpoint (called by the refresh button) ──
 @app.post("/api/refresh")
 def manual_refresh():
-    """Clear caches and re-fetch all data. Returns new timestamp."""
+    """Lightweight refresh: clear only today's caches and re-fetch.
+    Does NOT run the full season warmup — only refreshes live data."""
     try:
-        clear_cache()
-        warmup_range_data()
+        today = get_default_date()
+        clear_cache(today)
+        # Re-fetch today's pitch data (triggers Savant CSV download)
+        df = fetch_date(today)
+        # Re-compute today's daily aggregations
+        if not df.empty:
+            pitch_agg = aggregate_pitch_data(df)
+            results_agg = aggregate_pitcher_results(df)
+            set_agg_cache(f"daily_pitch_{today}", pitch_agg)
+            set_agg_cache(f"daily_results_{today}", results_agg)
         now = _now_et().isoformat()
         redis_set("last_refresh", now)
         return {"status": "ok", "timestamp": now}
