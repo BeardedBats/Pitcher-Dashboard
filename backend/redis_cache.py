@@ -16,8 +16,12 @@ def _get_redis():
     if _redis_checked:
         return _redis
     _redis_checked = True
-    url = os.environ.get("UPSTASH_REDIS_REST_URL")
-    token = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
+    url = (os.environ.get("Pitcher_Dash_KV_REST_API_URL")
+           or os.environ.get("UPSTASH_REDIS_REST_URL")
+           or os.environ.get("KV_REST_API_URL"))
+    token = (os.environ.get("Pitcher_Dash_KV_REST_API_TOKEN")
+             or os.environ.get("UPSTASH_REDIS_REST_TOKEN")
+             or os.environ.get("KV_REST_API_TOKEN"))
     if url and token:
         try:
             from upstash_redis import Redis
