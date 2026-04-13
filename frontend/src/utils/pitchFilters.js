@@ -259,6 +259,12 @@ export function getTooltipResult(pitch, opts) {
         else if (la <= 25) label = "Lineout";
         else if (la <= 50) label = "Flyout";
         else label = "Popout";
+      } else {
+        // Fallback: derive from the event name when launch angle is missing
+        if (ev.includes("ground")) label = "Groundout";
+        else if (ev.includes("line")) label = "Lineout";
+        else if (ev.includes("fly") || ev.includes("sac_fly")) label = "Flyout";
+        else if (ev.includes("pop")) label = "Popout";
       }
       const isDp = ev.includes("double_play") || ev.endsWith("_dp");
       if (isDp) label += " Into Double Play";
