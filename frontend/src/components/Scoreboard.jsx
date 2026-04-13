@@ -210,7 +210,7 @@ export default function Scoreboard({ data, pitcherId, onInningClick }) {
             </span>
             <span style={{ color: "var(--text-dim)" }}>vs.</span>
             <span style={{ color: "var(--text-dim)" }}>
-              {displayAbbrev(tooltip.top ? home_team : away_team)}
+              {displayAbbrev(tooltip.top ? away_team : home_team)}
             </span>
           </div>
           {isFeaturedPitcherPitching && (

@@ -43,7 +43,7 @@ function openInNewWindow(hash) {
   const a = document.createElement("a");
   a.href = url;
   a.target = "_blank";
-  a.rel = "noopener";
+  a.rel = "noopener nofollow";
   a.style.display = "none";
   document.body.appendChild(a);
   // Dispatch a Ctrl+Click so the browser treats it as "open in background tab"
@@ -516,7 +516,7 @@ export default function App() {
       {/* === HEADER (always shown when no card view) === */}
       {!cardData && (
         <div className="header">
-          <h1 className="app-title" onClick={resetToDefault}>Live Pitch Dashboard</h1>
+          <h1 className="app-title"><a href={window.location.pathname} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey && e.button !== 1) { e.preventDefault(); resetToDefault(); } }} style={{ color: "inherit", textDecoration: "none" }}>Live Pitch Dashboard</a></h1>
           <DatePicker date={date} onChange={setDate} />
           {headerNav}
         </div>
@@ -640,7 +640,7 @@ export default function App() {
       {!loading && !error && cardData && (
         <>
           <div className="header">
-            <h1 className="app-title" onClick={resetToDefault}>Live Pitch Dashboard</h1>
+            <h1 className="app-title"><a href={window.location.pathname} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey && e.button !== 1) { e.preventDefault(); resetToDefault(); } }} style={{ color: "inherit", textDecoration: "none" }}>Live Pitch Dashboard</a></h1>
             <DatePicker date={date} onChange={setDate} />
             {headerNav}
           </div>
@@ -661,8 +661,15 @@ export default function App() {
                 <Scoreboard data={linescoreData} pitcherId={cardData?.result?.pitcher_id} onInningClick={(inn, isTop) => setPbpModal({ inning: inn, isTop })} />
               )}
             </div>
-            <PitcherCard cardData={cardData} date={date} linescoreData={linescoreData} isMobile={isMobile} onPlayerClick={(id, e) => navigateToPlayer(id, null, e)} onGameClick={() => {
+            <PitcherCard cardData={cardData} date={date} linescoreData={linescoreData} isMobile={isMobile} onPlayerClick={(id, e) => navigateToPlayer(id, null, e)} onGameClick={(e) => {
               const gamePk = cardData?.result?.game_pk || selectedGame;
+              const pitcherId = cardData?.result?.pitcher_id;
+              if (isNewWindowClick(e) && gamePk && date && pitcherId) {
+                if (e && e.preventDefault) e.preventDefault();
+                if (e && e.stopPropagation) e.stopPropagation();
+                openInNewWindow(`card/${date}/${pitcherId}/${gamePk}`);
+                return;
+              }
               if (gamePk) {
                 setSelectedGame(gamePk);
                 setCardData(null);

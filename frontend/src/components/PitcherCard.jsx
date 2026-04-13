@@ -245,13 +245,17 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
       {/* ===== TOP ROW: Player Info + Box Score ===== */}
       <div className="card-top">
         <div className="card-info">
-          <div className="card-name" onClick={(e) => onPlayerClick && pitcher_id && onPlayerClick(pitcher_id, e)} onMouseDown={(e) => { if (e.button === 1 && onPlayerClick && pitcher_id) { e.preventDefault(); onPlayerClick(pitcher_id, e); } }} style={onPlayerClick ? { cursor: "pointer" } : {}}>{name}</div>
+          {onPlayerClick && pitcher_id ? (
+            <a className="card-name" href={"#player/" + pitcher_id} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); onPlayerClick(pitcher_id, e); } }} style={{ cursor: "pointer", color: "inherit", textDecoration: "none" }}>{name}</a>
+          ) : (
+            <div className="card-name">{name}</div>
+          )}
           <div className="card-meta">
             {displayAbbrev(team)} · {hand}HP ·{" "}
             {onGameClick ? (
-              <span className="card-game-link" onClick={onGameClick} role="button" tabIndex={0}>
+              <a className="card-game-link" href={`#card/${date}/${pitcher_id}/${result?.game_pk || ""}`} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); onGameClick(e); } }} role="button" tabIndex={0}>
                 {dateDisplay} {oppPrefix} {displayAbbrev(opponent)}
-              </span>
+              </a>
             ) : (
               <span>{dateDisplay} {oppPrefix} {displayAbbrev(opponent)}</span>
             )}

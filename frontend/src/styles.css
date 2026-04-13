@@ -313,6 +313,7 @@ tbody tr.clickable-row:hover { background: var(--hover-tint); }
 }
 .card-info { min-width: 240px; }
 .card-name {
+  display: block;
   font-size: 28px; font-weight: 800; margin-bottom: 1px;
   color: var(--accent); line-height: 1.1;
 }
