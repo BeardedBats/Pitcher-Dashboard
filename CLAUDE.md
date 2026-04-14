@@ -44,7 +44,7 @@
 
 ### Tooltip Result Colors
 - Strikeout: `#65FF9C`
-- Walk/HBP: `#FFAB6E`
+- Walk/HBP: `#ffc277`
 - Home Run: `#FF5EDC`
 - Outs: `#65BAFF`
 - Single/Double/Triple: `#feffa3`
@@ -100,7 +100,7 @@ Nick Pollack, CEO of Pitcher List
 ## Key Context
 - Built with FastAPI (Python backend) + React/Vite (frontend)
 - Live Statcast integration via Baseball Savant's `/gf` endpoint with WebSocket push for iVB, HAVAA, and arm angle metrics
-- Design system: dark navy (`#0b1120`-range) backgrounds, cyan (`#55e8ff`) and amber (`#fb9e2a`) accents, DM Sans font family
+- Design system: dark navy (`#0b1120`-range) backgrounds, cyan (`#55e8ff`) and amber (`#ffc277`) accents, DM Sans font family
 - Design tokens documented in `DESIGN.md` and `preview.html`
 
 ## Current State

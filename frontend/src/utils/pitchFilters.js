@@ -228,8 +228,8 @@ export function getTooltipResult(pitch, opts) {
       const subLabel = isCalledStrikeThree ? "Called Strike" : "Swinging Strike";
       return { label: "Strikeout", color: "#65FF9C", isK: true, isCalledStrikeThree, subLabel };
     }
-    if (ev === "walk" || ev === "intent_walk") return { label: "Walk", color: "#FFAB6E" };
-    if (ev === "hit_by_pitch") return { label: "HBP", color: "#FFAB6E" };
+    if (ev === "walk" || ev === "intent_walk") return { label: "Walk", color: "#ffc277" };
+    if (ev === "hit_by_pitch") return { label: "HBP", color: "#ffc277" };
     if (ev === "home_run") return { label: "Home Run", color: "#FF5EDC" };
     if (ev === "single") return { label: "Single", color: "#feffa3" };
     if (ev === "double") return { label: "Double", color: "#feffa3" };
@@ -249,7 +249,7 @@ export function getTooltipResult(pitch, opts) {
       const label = outType ? `${outType} (Error)` : "Error";
       return { label, color: "#65BAFF", isError: true, errorOutType: outType };
     }
-    if (ev === "catcher_interf") return { label: "Catcher Int.", color: "#FFAB6E" };
+    if (ev === "catcher_interf") return { label: "Catcher Int.", color: "#ffc277" };
     // Outs with trajectory-based labels (includes fielder's choice, force outs, double plays)
     if (ev.includes("out") || ev.includes("play") || ev.includes("force") || ev.endsWith("_dp") || ev === "fielders_choice") {
       const la = pitch.launch_angle != null ? pitch.launch_angle : (opts?.launchAngle ?? null);
@@ -278,10 +278,10 @@ export function getTooltipResult(pitch, opts) {
   if (desc === "called_strike") return { label: "Called Strike", color: "#65FF9C" };
   if (desc === "swinging_strike" || desc === "swinging_strike_blocked" || desc === "foul_tip" || desc === "missed_bunt")
     return { label: "Whiff", color: "#65FF9C" };
-  if (desc.includes("ball") && !desc.includes("in_play")) return { label: "Ball", color: "#FFAB6E" };
-  if (desc === "pitchout") return { label: "Ball", color: "#FFAB6E" };
+  if (desc.includes("ball") && !desc.includes("in_play")) return { label: "Ball", color: "#ffc277" };
+  if (desc === "pitchout") return { label: "Ball", color: "#ffc277" };
   if (desc.includes("foul")) return { label: "Foul", color: "#AAB9FF" };
-  if (desc === "hit_by_pitch") return { label: "HBP", color: "#FFAB6E" };
+  if (desc === "hit_by_pitch") return { label: "HBP", color: "#ffc277" };
 
   return { label: desc.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()), color: "#ccc" };
 }

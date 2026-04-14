@@ -39,7 +39,7 @@ function formatResult(result, trajectory) {
 }
 
 const BATTED_BALL_COLORS = {
-  "Barrel": "#ffa3a3", "Solid": "#F59E0B", "Burner": "#F59E0B",
+  "Barrel": "#ffa3a3", "Solid": "#ffc277", "Burner": "#ffc277",
   "Flare": "#8feaff",
   "Under": "#65ff9c", "Topped": "#65ff9c", "Poor": "#65ff9c",
 };
@@ -301,7 +301,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
               </thead>
               <tbody>
                 <tr>
-                  <td className="card-pitcher-name" style={{ color: "#f0c040" }}>{name}</td>
+                  <td className="card-pitcher-name" style={{ color: "#ffc277" }}>{name}</td>
                   {(() => {
                     const dec = result.decision || (projectedDecision ? projectedDecision : "ND");
                     const isProjected = !result.decision && projectedDecision;
@@ -451,6 +451,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                       const paKey = `${si}-${pi}`;
                       const isActive = pbpActivePa === paKey;
                       const isExp = pbpExpanded[paKey];
+                      const isFinalPa = si === pitcherPBP.segments.length - 1 && pi === seg.pas.length - 1;
                       const isK = isStrikeout(pa.result);
                       const realPitches = pa.pitches?.filter(p => !p.is_action) || [];
                       const lastPitch = realPitches.length > 0 ? realPitches[realPitches.length - 1] : null;
@@ -607,7 +608,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                           </div>
                           {/* Right: SZ plot (only next to active PA) */}
                           {isActive && realPitches.length > 0 && (
-                            <div className="card-pbp-sz" style={{ position: "absolute", top: 0, left: 689, zIndex: 10 }}>
+                            <div className="card-pbp-sz" style={{ position: "absolute", top: isFinalPa ? "auto" : 0, bottom: isFinalPa ? 0 : "auto", left: 689, zIndex: 10 }}>
                               <StrikeZonePBP
                                 pitches={realPitches}
                                 pitchColors={PITCH_COLORS}

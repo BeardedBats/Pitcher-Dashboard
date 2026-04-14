@@ -64,7 +64,7 @@
 <script>
 const PITCH_COLORS = {
   "Four-Seamer": "#FF839B",
-  "Sinker": "#F2B24B",
+  "Sinker": "#ffc277",
   "Slider": "#CE66FF",
   "Curveball": "#2A98FF",
   "Changeup": "#6DE95D",
@@ -105,7 +105,7 @@ const pitchMix = [
     const dr = sr();
     let desc, events="", ls=null, la=null, rl="", rc="", runScored=false, des="";
     if (dr<0.15){desc="ball";rl="Ball";rc="rgba(180,184,210,0.5)";count.b++;}
-    else if(dr<0.30){desc="called_strike";rl="Called Strike";rc="#F59E0B";count.s++;}
+    else if(dr<0.30){desc="called_strike";rl="Called Strike";rc="#ffc277";count.s++;}
     else if(dr<0.46){desc="swinging_strike";rl="Whiff";rc="#ff6b6b";count.s++;}
     else if(dr<0.60){desc="foul";rl="Foul";rc="rgba(180,184,210,0.5)";if(count.s<2)count.s++;}
     else{desc="hit_into_play";ls=78+sr()*28;la=-12+sr()*50;const ev=sr();

@@ -4,8 +4,8 @@ import { getTooltipResult } from "../utils/pitchFilters";
 
 const BATTED_BALL_COLORS = {
   "Barrel": "#ffa3a3",
-  "Solid": "#F59E0B",
-  "Burner": "#F59E0B",
+  "Solid": "#ffc277",
+  "Burner": "#ffc277",
   "Flare/Burner": "#8feaff",
   "Flare": "#8feaff",
   "Under": "#65ff9c",

@@ -14,7 +14,7 @@
   --accent: #55e8ff;
   --accent-hover: #c8cfff;
   --accent-glow: rgba(85, 232, 255, 0.12);
-  --label: #fb9e2a;
+  --label: #ffc277;
   --label-bright: #FFC46A;
   --name: #55e8ff;
   --meta: #C8CAD4;
@@ -39,7 +39,7 @@ body {
   font-size: 22px; font-weight: 800;
   cursor: pointer; user-select: none; transition: opacity 0.2s;
   letter-spacing: -0.02em;
-  background: linear-gradient(90deg, #FFC46A 0%, #fb9e2a 100%);
+  background: linear-gradient(90deg, #FFC46A 0%, #ffc277 100%);
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   background-clip: text;
 }
@@ -168,7 +168,7 @@ tbody tr.clickable-row { cursor: pointer; }
 tbody tr.clickable-row:hover { background: rgba(85, 232, 255, 0.04); }
 
 .pitcher-name { color: var(--text-bright); font-weight: 500; }
-.pitcher-top400 { color: #f0c040; font-weight: 600; }
+.pitcher-top400 { color: #ffc277; font-weight: 600; }
 .highlight-cell {
   border-radius: 4px; display: inline;
   padding: 1px 3px;
@@ -572,7 +572,7 @@ canvas { display: block; border: none; border-radius: 6px; }
 }
 .sb-tooltip-pa:last-child { border-bottom: none; }
 .sb-tooltip-relief {
-  font-size: 10px; color: var(--label, #fb9e2a);
+  font-size: 10px; color: var(--label, #ffc277);
   padding: 3px 0; margin: 2px 0;
   font-style: italic; font-weight: 500;
   border-bottom: 1px solid rgba(251, 158, 42, 0.2);

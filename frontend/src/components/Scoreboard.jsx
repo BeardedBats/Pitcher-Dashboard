@@ -6,12 +6,12 @@ function getResultColor(result) {
   if (!result) return null;
   const r = result.toLowerCase().replace(/\s+/g, "_");
   if (r === "strikeout" || r === "strikeout_double_play") return "#65FF9C";
-  if (r === "walk" || r === "intent_walk") return "#FFAB6E";
-  if (r === "hit_by_pitch") return "#FFAB6E";
+  if (r === "walk" || r === "intent_walk") return "#ffc277";
+  if (r === "hit_by_pitch") return "#ffc277";
   if (r === "home_run") return "#FF5EDC";
   if (r === "single" || r === "double" || r === "triple") return "#feffa3";
   if (r.includes("out") || r.includes("play") || r.includes("force") || r === "fielders_choice" || r === "sac_fly" || r === "sac_bunt" || r === "field_error") return "#65BAFF";
-  if (r === "catcher_interf") return "#FFAB6E";
+  if (r === "catcher_interf") return "#ffc277";
   return null;
 }
 
@@ -67,19 +67,28 @@ export default function Scoreboard({ data, pitcherId, onInningClick }) {
   const tooltipPitcherId = tooltipPas.length > 0 ? tooltipPas[0]?.pitcher_id : null;
   const isFeaturedPitcherPitching = pitcherId && tooltipPitcherId === pitcherId;
 
+  // Count real pitches (excluding non-pitch action events like pickoffs, balks,
+  // stolen base attempts, wild pitches) thrown by the featured pitcher in a list of PAs.
+  // Filters strictly by pa.pitcher_id so relievers in the same inning don't pollute the count.
+  const countFeaturedPitches = (pas) => {
+    if (!pas || pitcherId == null) return 0;
+    const targetPid = Number(pitcherId);
+    return pas.reduce((sum, pa) => {
+      if (pa == null || Number(pa.pitcher_id) !== targetPid) return sum;
+      if (!Array.isArray(pa.pitches)) return sum;
+      return sum + pa.pitches.filter(p => !p.is_action).length;
+    }, 0);
+  };
+
   // Compute cumulative pitch count for featured pitcher through the current tooltip's half-inning
   const featuredPitcherTotalPitches = pitcherId && plays && tooltip ? plays.reduce((sum, half) => {
     // Only count innings up to and including the current tooltip half-inning
     if (half.inning > tooltip.inning || (half.inning === tooltip.inning && half.top === false && tooltip.top === true)) return sum;
-    return sum + (half.pas || []).reduce((s, pa) => {
-      return s + (pa.pitcher_id === pitcherId && pa.pitches ? pa.pitches.length : 0);
-    }, 0);
+    return sum + countFeaturedPitches(half.pas);
   }, 0) : 0;
 
   // Compute pitch count in the current tooltip half-inning for featured pitcher
-  const tooltipInningPitches = tooltipPas.reduce((sum, pa) => {
-    return sum + (pa.pitcher_id === pitcherId && pa.pitches ? pa.pitches.length : 0);
-  }, 0);
+  const tooltipInningPitches = countFeaturedPitches(tooltipPas);
 
   // Handle tooltip viewport clamping
   useEffect(() => {
@@ -290,9 +299,9 @@ export default function Scoreboard({ data, pitcherId, onInningClick }) {
                     </span>
                     {" "}
                     <span style={{ color: "var(--text-bright)" }}>
-                      <span style={{ color: tooltip.top ? "#fb9e2a" : "var(--text-bright)" }}>{displayAbbrev(away_team)}</span>
+                      <span style={{ color: tooltip.top ? "#ffc277" : "var(--text-bright)" }}>{displayAbbrev(away_team)}</span>
                       {" "}{midAbAwayScore} - {midAbHomeScore}{" "}
-                      <span style={{ color: tooltip.top ? "var(--text-bright)" : "#fb9e2a" }}>{displayAbbrev(home_team)}</span>
+                      <span style={{ color: tooltip.top ? "var(--text-bright)" : "#ffc277" }}>{displayAbbrev(home_team)}</span>
                     </span>
                   </div>
                 )}
@@ -304,9 +313,9 @@ export default function Scoreboard({ data, pitcherId, onInningClick }) {
                     </span>
                     {" "}
                     <span style={{ color: "var(--text-bright)" }}>
-                      <span style={{ color: tooltip.top ? "#fb9e2a" : "var(--text-bright)" }}>{displayAbbrev(away_team)}</span>
+                      <span style={{ color: tooltip.top ? "#ffc277" : "var(--text-bright)" }}>{displayAbbrev(away_team)}</span>
                       {" "}{pa.away_score} - {pa.home_score}{" "}
-                      <span style={{ color: tooltip.top ? "var(--text-bright)" : "#fb9e2a" }}>{displayAbbrev(home_team)}</span>
+                      <span style={{ color: tooltip.top ? "var(--text-bright)" : "#ffc277" }}>{displayAbbrev(home_team)}</span>
                     </span>
                   </div>
                 )}

@@ -33,12 +33,12 @@ function getResultColorPBP(result) {
   if (!result) return null;
   const r = result.toLowerCase().replace(/\s+/g, "_");
   if (r === "strikeout" || r === "strikeout_double_play") return "#65FF9C";
-  if (r === "walk" || r === "intent_walk") return "#FFAB6E";
-  if (r === "hit_by_pitch") return "#FFAB6E";
+  if (r === "walk" || r === "intent_walk") return "#ffc277";
+  if (r === "hit_by_pitch") return "#ffc277";
   if (r === "home_run") return "#FF5EDC";
   if (r === "single" || r === "double" || r === "triple") return "#feffa3";
   if (r.includes("out") || r.includes("play") || r.includes("force") || r.endsWith("_dp") || r === "fielders_choice" || r === "sac_fly" || r === "sac_bunt" || r === "field_error") return "#65BAFF";
-  if (r === "catcher_interf") return "#FFAB6E";
+  if (r === "catcher_interf") return "#ffc277";
   return null;
 }
 
@@ -787,9 +787,9 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile, lines
                           <div style={{ fontSize: 10, padding: "1px 0 3px 0", lineHeight: 1.3 }}>
                             <span style={{ color: "#FF5EDC", fontWeight: 600 }}>{actionRuns} run{actionRuns > 1 ? "s" : ""} score{actionRuns === 1 ? "s" : ""}</span>{" "}
                             <span style={{ color: "var(--text-bright)" }}>
-                              <span style={{ color: half.isTop ? "#fb9e2a" : "var(--text-bright)" }}>{displayAbbrev(linescoreData.away_team)}</span>
+                              <span style={{ color: half.isTop ? "#ffc277" : "var(--text-bright)" }}>{displayAbbrev(linescoreData.away_team)}</span>
                               {" "}{midAbAwayScore} - {midAbHomeScore}{" "}
-                              <span style={{ color: half.isTop ? "var(--text-bright)" : "#fb9e2a" }}>{displayAbbrev(linescoreData.home_team)}</span>
+                              <span style={{ color: half.isTop ? "var(--text-bright)" : "#ffc277" }}>{displayAbbrev(linescoreData.home_team)}</span>
                             </span>
                           </div>
                         )}
@@ -797,9 +797,9 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile, lines
                           <div style={{ fontSize: 10, padding: "1px 0 3px 0", lineHeight: 1.3 }}>
                             <span style={{ color: "#FF5EDC", fontWeight: 600 }}>{paResultRuns} run{paResultRuns > 1 ? "s" : ""} score{paResultRuns === 1 ? "s" : ""}</span>{" "}
                             <span style={{ color: "var(--text-bright)" }}>
-                              <span style={{ color: half.isTop ? "#fb9e2a" : "var(--text-bright)" }}>{displayAbbrev(linescoreData.away_team)}</span>
+                              <span style={{ color: half.isTop ? "#ffc277" : "var(--text-bright)" }}>{displayAbbrev(linescoreData.away_team)}</span>
                               {" "}{pa.away_score} - {pa.home_score}{" "}
-                              <span style={{ color: half.isTop ? "var(--text-bright)" : "#fb9e2a" }}>{displayAbbrev(linescoreData.home_team)}</span>
+                              <span style={{ color: half.isTop ? "var(--text-bright)" : "#ffc277" }}>{displayAbbrev(linescoreData.home_team)}</span>
                             </span>
                           </div>
                         )}
