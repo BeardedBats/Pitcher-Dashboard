@@ -1,6 +1,6 @@
 export const PITCH_COLORS = {
   "Four-Seamer": "#FF839B",
-  "Sinker": "#F2B24B",
+  "Sinker": "#ffc277",
   "Cutter": "#C59C9C",
   "Slider": "#CE66FF",
   "Sweeper": "#FFAAF7",
@@ -173,13 +173,13 @@ export const RESULT_COLORS = {
 
 // Colors for individual pitch descriptions (called strike, ball, foul, etc.)
 export const PITCH_DESC_COLORS = {
-  called_strike: "#F59E0B",       // Amber
+  called_strike: "#ffc277",       // Amber
   swinging_strike: "#EF4444",     // Red
   swinging_strike_blocked: "#EF4444",
   ball: "#4ADE80",                // Green
-  foul: "#FACC15",                // Yellow
-  foul_tip: "#FACC15",
-  foul_bunt: "#FACC15",
+  foul: "#ffc277",                // Yellow
+  foul_tip: "#ffc277",
+  foul_bunt: "#ffc277",
   missed_bunt: "#EF4444",
   hit_into_play: "#60A5FA",       // Blue
   hit_by_pitch: "#A78BFA",        // Purple
@@ -194,14 +194,14 @@ export function getSZResultColor(pitch) {
   // Swinging strike (includes blocked and foul tip)
   if (desc.includes("swinging_strike") || desc === "foul_tip" || desc === "missed_bunt") return "#EF4444";
   // Called strike
-  if (desc === "called_strike") return "#F59E0B";
+  if (desc === "called_strike") return "#ffc277";
   // Foul (but not foul tip, already handled)
-  if (desc.includes("foul") && desc !== "foul_tip") return "#FACC15";
+  if (desc.includes("foul") && desc !== "foul_tip") return "#ffc277";
   // Ball
   if (desc.includes("ball") && !desc.includes("in_play")) return "#4ADE80";
   // In-play events
   if (event) {
-    if (event === "home_run") return "#FFD700";
+    if (event === "home_run") return "#ffc277";
     if (event === "triple") return "#FF6B6B";
     if (event === "single") return "#60A5FA";
     if (event === "double") return "#A78BFA";
@@ -217,8 +217,8 @@ export function getSZResultColor(pitch) {
 // Batted ball type colors for tooltips
 export const BATTED_BALL_COLORS = {
   "Barrel": "#ffa3a3",
-  "Solid": "#F59E0B",
-  "Burner": "#F59E0B",
+  "Solid": "#ffc277",
+  "Burner": "#ffc277",
   "Flare": "#65ff9c",
   "Topped": "#65ff9c",
   "Under": "#65ff9c",
@@ -227,7 +227,7 @@ export const BATTED_BALL_COLORS = {
 
 // BIP quality colors
 export const BIP_QUALITY_COLORS = {
-  "Hard BIP": "#F59E0B",
+  "Hard BIP": "#ffc277",
   "Weak BIP": "#65ff9c",
 };
 
@@ -280,8 +280,8 @@ const _OFFENSE_TIER_COLORS = {
 const _OFFENSE_HOME = {
   ATL: "top", DET: "top", LAD: "top", NYM: "top", NYY: "top", PHI: "top", TOR: "top",
   HOU: "solid", KCR: "solid", MIL: "solid", SDP: "solid", SEA: "solid",
-  ATH: "average", BAL: "average", BOS: "average", CHC: "average", SFG: "average", TEX: "average", WSN: "average",
-  ARI: "weak", CIN: "weak", PIT: "weak", STL: "weak", TBR: "weak",
+  ATH: "average", BAL: "average", BOS: "average", CHC: "average", PIT: "average", TEX: "average", WSN: "average",
+  ARI: "weak", CIN: "weak", SFG: "weak", STL: "weak", TBR: "weak",
   CHW: "poor", CLE: "poor", COL: "poor", LAA: "poor", MIA: "poor", MIN: "poor",
 };
 // away lookup (you go to them) — maps from opponent abbrev when is_away=true
