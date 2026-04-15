@@ -271,7 +271,7 @@ export const PITCH_RESULT_SHAPES = {
 // Check weekly on Tuesdays for changes.
 const _OFFENSE_TIER_COLORS = {
   top: "#ff8282",
-  solid: "#ffd2b8",
+  solid: "#ffa04b",
   average: "#d3b3ab",
   weak: "#9ed1f5",
   poor: "#6de95d",
