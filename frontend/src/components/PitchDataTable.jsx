@@ -156,10 +156,19 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
       if (key === "velo") return deltaNew;
       return deltaPlaceholder;
     }
-    // Map usage_vs_l / usage_vs_r deltas to the "usage" season avg key
-    let seasonKey = key;
-    if (key === "usage_vs_l" || key === "usage_vs_r") seasonKey = "usage";
-    let seasonVal = avg[seasonKey];
+    // Resolve season value for this delta key.
+    // For usage_vs_l / usage_vs_r, prefer the hand-split value from the
+    // season payload if present (season-to-date mode provides these, and
+    // the previous-season endpoint now does too). Fall back to overall
+    // `usage` for older cached payloads that don't include the split.
+    let seasonVal;
+    if (key === "usage_vs_l") {
+      seasonVal = avg.usage_vs_l != null ? avg.usage_vs_l : avg.usage;
+    } else if (key === "usage_vs_r") {
+      seasonVal = avg.usage_vs_r != null ? avg.usage_vs_r : avg.usage;
+    } else {
+      seasonVal = avg[key];
+    }
     if (seasonVal == null) return deltaPlaceholder;
     if (key === "ihb") seasonVal = -seasonVal;
     const delta = currentVal - seasonVal;

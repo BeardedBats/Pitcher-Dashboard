@@ -333,12 +333,29 @@ def pitcher_season_totals(pitcher_id: int = Query(...), start_date: str = Query(
 def game_linescore(game_pk: int = Query(...)): return get_game_linescore(game_pk)
 
 @app.get("/api/season-averages")
-def season_averages(pitcher_id: int = Query(...), season: int = Query(...)):
-    agg_key = f"season_avg_{pitcher_id}_{season}"
+def season_averages(
+    pitcher_id: int = Query(...),
+    season: int = Query(...),
+    before_date: str = Query(None),
+    exclude_game_pk: int = Query(None),
+):
+    # Cache key includes optional filters so season-to-date and plain-season
+    # results don't collide.
+    suffix = ""
+    if before_date:
+        suffix += f"_b{before_date}"
+    if exclude_game_pk is not None:
+        suffix += f"_x{exclude_game_pk}"
+    agg_key = f"season_avg_{pitcher_id}_{season}{suffix}"
     cached = get_agg_cache(agg_key)
     if cached is not None:
         return cached
-    result = get_season_averages(pitcher_id, season)
+    result = get_season_averages(
+        pitcher_id,
+        season,
+        before_date=before_date,
+        exclude_game_pk=exclude_game_pk,
+    )
     if result:
         set_agg_cache(agg_key, result)
     return result

@@ -110,8 +110,13 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
   const [pbpExpanded, setPbpExpanded] = useState({});
   const [pbpPitchHover, setPbpPitchHover] = useState(null);
 
-  const [seasonAvgs, setSeasonAvgs] = useState(null);
+  // Season-average deltas: we can compare the current game against either the
+  // pitcher's previous season (e.g. 2025) OR their season-to-date up to this
+  // start (e.g. 2026 before this game). Both are cached separately once fetched.
+  const [currentSeasonAvgs, setCurrentSeasonAvgs] = useState(null); // 2026 STD
+  const [prevSeasonAvgs, setPrevSeasonAvgs] = useState(null);       // 2025
   const [loadingAvgs, setLoadingAvgs] = useState(false);
+  const [compareTo, setCompareTo] = useState(null); // "current" | "prev" | null (pending)
   const [schedule, setSchedule] = useState(null);
 
   // Cross-component pitch hover highlight (shared between SZ plots and movement plot)
@@ -129,15 +134,44 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
   // Determine which season to compare against
   const currentYear = date ? parseInt(date.slice(0, 4)) : new Date().getFullYear();
   const prevSeason = currentYear - 1;
+  const gamePk = result?.game_pk;
 
+  // Helper: does a season-averages payload actually contain any pitch data?
+  const hasAvgData = (avgs) => avgs && typeof avgs === "object" && Object.keys(avgs).length > 0;
+
+  // Fetch current-season-to-date averages (excluding this game) on mount.
+  // If there's prior data, default compareTo to "current"; otherwise default
+  // to "prev" and lazily fetch the previous season below.
   useEffect(() => {
-    if (!seasonAvgs && pitcher_id) {
-      setLoadingAvgs(true);
-      fetchSeasonAverages(pitcher_id, prevSeason)
-        .then(avgs => { setSeasonAvgs(avgs); setLoadingAvgs(false); })
-        .catch(() => { setSeasonAvgs({}); setLoadingAvgs(false); });
-    }
-  }, [seasonAvgs, pitcher_id, prevSeason]);
+    if (currentSeasonAvgs !== null || !pitcher_id || !date) return;
+    setLoadingAvgs(true);
+    fetchSeasonAverages(pitcher_id, currentYear, { beforeDate: date, excludeGamePk: gamePk })
+      .then(avgs => {
+        const payload = avgs || {};
+        setCurrentSeasonAvgs(payload);
+        // Only set default once — user selection should survive re-renders.
+        setCompareTo(prev => prev || (hasAvgData(payload) ? "current" : "prev"));
+        setLoadingAvgs(false);
+      })
+      .catch(() => {
+        setCurrentSeasonAvgs({});
+        setCompareTo(prev => prev || "prev");
+        setLoadingAvgs(false);
+      });
+  }, [currentSeasonAvgs, pitcher_id, date, gamePk, currentYear]);
+
+  // Fetch previous-season averages on demand (when selected, or as fallback).
+  useEffect(() => {
+    if (prevSeasonAvgs !== null || !pitcher_id) return;
+    if (compareTo !== "prev") return;
+    setLoadingAvgs(true);
+    fetchSeasonAverages(pitcher_id, prevSeason)
+      .then(avgs => { setPrevSeasonAvgs(avgs || {}); setLoadingAvgs(false); })
+      .catch(() => { setPrevSeasonAvgs({}); setLoadingAvgs(false); });
+  }, [prevSeasonAvgs, pitcher_id, prevSeason, compareTo]);
+
+  // The season averages object passed to PitchDataTable for delta rendering
+  const seasonAvgs = compareTo === "current" ? currentSeasonAvgs : prevSeasonAvgs;
 
   // Use inline season totals from card response (no separate fetch needed)
   const seasonTotals = inlineSeasonTotals && inlineSeasonTotals.games ? inlineSeasonTotals : null;
@@ -394,6 +428,14 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
             </div>
           )}
           <div className="metrics-controls">
+            <div className="filter-pill-group">
+              <span className="filter-pill-label">Compare to</span>
+              <select className="game-filter-select" value={compareTo || "current"}
+                onChange={e => setCompareTo(e.target.value)}>
+                <option value="current">{currentYear}</option>
+                <option value="prev">{prevSeason}</option>
+              </select>
+            </div>
             <div className="filter-pill-group">
               <span className="filter-pill-label">LHB/RHB</span>
               <select className="game-filter-select" value={batterFilter}

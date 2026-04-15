@@ -446,8 +446,15 @@ def get_pitcher_card(date_str, pitcher_id, game_pk):
         "result": pitcher_result,
     }
 
-def get_season_averages(pitcher_id, season_year):
-    """Compute season averages per pitch type for a pitcher."""
+def get_season_averages(pitcher_id, season_year, before_date=None, exclude_game_pk=None):
+    """Compute season averages per pitch type for a pitcher.
+
+    Optional filters:
+    - before_date: Only include games strictly before this date (YYYY-MM-DD).
+      Used for "season-to-date" comparisons excluding the current game's date.
+    - exclude_game_pk: Exclude this specific game_pk from the aggregation.
+      Useful when before_date alone could include doubleheaders or same-day starts.
+    """
     df = fetch_pitcher_season(pitcher_id, season_year)
     if df is None or df.empty:
         return {}
@@ -458,10 +465,28 @@ def get_season_averages(pitcher_id, season_year):
         df = df.dropna(subset=["pitch_name"])
     if df.empty:
         return {}
+    # Filter by date (for season-to-date comparisons)
+    if before_date and "game_date" in df.columns:
+        df = df[df["game_date"].astype(str) < str(before_date)]
+        if df.empty:
+            return {}
+    if exclude_game_pk is not None and "game_pk" in df.columns:
+        try:
+            df = df[df["game_pk"] != int(exclude_game_pk)]
+        except (ValueError, TypeError):
+            pass
+        if df.empty:
+            return {}
     total_pitches = len(df)
+    # Totals by batter hand (for usage_vs_r / usage_vs_l)
+    has_stand = "stand" in df.columns
+    total_vs_r = int((df["stand"] == "R").sum()) if has_stand else 0
+    total_vs_l = int((df["stand"] == "L").sum()) if has_stand else 0
     result = {}
     for pitch_name, gdf in df.groupby("pitch_name"):
         count = len(gdf)
+        vs_r_count = int((gdf["stand"] == "R").sum()) if has_stand else 0
+        vs_l_count = int((gdf["stand"] == "L").sum()) if has_stand else 0
         avg = {
             "velo": round(gdf["release_speed"].mean(), 1) if "release_speed" in gdf.columns and gdf["release_speed"].notna().any() else None,
             "ihb": round(gdf["pfx_x"].mean() * 12, 1) if "pfx_x" in gdf.columns and gdf["pfx_x"].notna().any() else None,
@@ -469,6 +494,8 @@ def get_season_averages(pitcher_id, season_year):
             "ivb": round(gdf["pfx_z"].mean() * 12, 1) if "pfx_z" in gdf.columns and gdf["pfx_z"].notna().any() else None,
             "ext": round(gdf["release_extension"].mean(), 1) if "release_extension" in gdf.columns and gdf["release_extension"].notna().any() else None,
             "usage": round(count / total_pitches * 100, 1) if total_pitches > 0 else 0,
+            "usage_vs_r": round(vs_r_count / total_vs_r * 100, 1) if total_vs_r > 0 else None,
+            "usage_vs_l": round(vs_l_count / total_vs_l * 100, 1) if total_vs_l > 0 else None,
         }
         result[pitch_name] = avg
     return result
