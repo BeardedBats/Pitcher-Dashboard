@@ -784,12 +784,15 @@ def manual_refresh():
     try:
         today = get_default_date()
         clear_cache(today)
-        # Re-fetch today's pitch data (triggers Savant CSV download)
+        # Re-fetch today's pitch data (triggers Savant CSV download + warms cache)
         df = fetch_date(today)
-        # Re-compute today's daily aggregations
+        # Re-compute today's daily aggregations.
+        # aggregate_pitch_data / aggregate_pitcher_results take a date_str
+        # (NOT a DataFrame) and re-fetch internally — but they hit the warm
+        # cache from the fetch_date call above.
         if not df.empty:
-            pitch_agg = aggregate_pitch_data(df)
-            results_agg = aggregate_pitcher_results(df)
+            pitch_agg = aggregate_pitch_data(today)
+            results_agg = aggregate_pitcher_results(today)
             set_agg_cache(f"daily_pitch_{today}", pitch_agg)
             set_agg_cache(f"daily_results_{today}", results_agg)
         now = _now_et().isoformat()
