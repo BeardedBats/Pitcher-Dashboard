@@ -1202,17 +1202,19 @@ _TEAM_ABBREV = {
 _schedule_cache = {}  # { date_str: (timestamp, games_list) }
 SCHEDULE_CACHE_TTL = 120  # 2 minutes
 
-def _get_mlb_schedule(date_str):
-    """Get full game list from MLB Stats API (includes all game types). Cached."""
-    if date_str in _schedule_cache:
-        ts, games = _schedule_cache[date_str]
-        if time.time() - ts < SCHEDULE_CACHE_TTL:
-            return games
-    # L2: Redis
-    redis_val = redis_get(f"schedule:{date_str}")
-    if redis_val is not None:
-        _schedule_cache[date_str] = (time.time(), redis_val)
-        return redis_val
+def _get_mlb_schedule(date_str, force_refresh=False):
+    """Get full game list from MLB Stats API (includes all game types). Cached.
+    force_refresh=True bypasses both in-memory and Redis caches."""
+    if not force_refresh:
+        if date_str in _schedule_cache:
+            ts, games = _schedule_cache[date_str]
+            if time.time() - ts < SCHEDULE_CACHE_TTL:
+                return games
+        # L2: Redis
+        redis_val = redis_get(f"schedule:{date_str}")
+        if redis_val is not None:
+            _schedule_cache[date_str] = (time.time(), redis_val)
+            return redis_val
     try:
         url = MLB_SCHEDULE_URL.format(date=date_str)
         resp = requests.get(url, timeout=15)
@@ -1273,7 +1275,7 @@ def _get_mlb_schedule(date_str):
                     "inning_half": inning_half,
                 })
         _schedule_cache[date_str] = (time.time(), games)
-        redis_set(f"schedule:{date_str}", games)
+        redis_set(f"schedule:{date_str}", games, ttl=SCHEDULE_CACHE_TTL)
         return games
     except Exception as e:
         print(f"MLB Schedule API error: {e}")
@@ -1299,12 +1301,30 @@ def get_default_date():
     yesterday_str = (now_et - timedelta(days=1)).strftime("%Y-%m-%d")
 
     # Check if any game today has started
+    not_started = {"Scheduled", "Pre-Game", "Warmup", "Delayed Start"}
     schedule = _get_mlb_schedule(today_str)
     if schedule:
-        not_started = {"Scheduled", "Pre-Game", "Warmup", "Delayed Start"}
+        if any(g.get("status") not in not_started for g in schedule):
+            return today_str
+        # All games show not_started — but if any game's scheduled start
+        # time has already passed, the cache is likely stale. Force a fresh
+        # API fetch to verify.
+        from datetime import timezone as _tz
+        now_utc = datetime.now(_tz.utc)
+        should_have_started = False
         for g in schedule:
-            if g.get("status") not in not_started:
-                # At least one game is in progress or finished
+            game_utc_str = g.get("game_date_utc", "")
+            if game_utc_str:
+                try:
+                    game_utc = datetime.fromisoformat(game_utc_str.replace("Z", "+00:00"))
+                    if now_utc >= game_utc:
+                        should_have_started = True
+                        break
+                except Exception:
+                    pass
+        if should_have_started:
+            schedule = _get_mlb_schedule(today_str, force_refresh=True)
+            if schedule and any(g.get("status") not in not_started for g in schedule):
                 return today_str
     # No games started today (or no games at all) — show yesterday
     return yesterday_str
