@@ -5,6 +5,7 @@ import MovementPlot from "./MovementPlot";
 import PitchDataTable from "./PitchDataTable";
 import PitchFilterDropdown from "./PitchFilterDropdown";
 import ResultsTable from "./ResultsTable";
+import UsageTable from "./UsageTable";
 import VelocityTrend from "./VelocityTrend";
 import VelocityTrendV2 from "./VelocityTrendV2";
 import { PITCH_COLORS, PITCH_DESC_COLORS, RESULT_COLORS, CARD_PITCH_DATA_COLUMNS, displayAbbrev, getOpponentTierColor } from "../constants";
@@ -404,18 +405,22 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
         <div className="metrics-header">
           {isMobile ? (
             <select className="metrics-subnav-mobile" value={metricsView} onChange={e => setMetricsView(e.target.value)}>
-              <option value="pitch-data">Pitch Type Metrics</option>
+              <option value="pitch-data">Pitch Overview</option>
               <option value="results">Results</option>
+              <option value="usage">Usage</option>
               <option value="velocity-trend">Velocity Trend</option>
               {pitcherPBP && <option value="play-by-play">Play-by-Play</option>}
             </select>
           ) : (
             <div className="metrics-subnav">
               <button className={`metrics-subnav-btn${metricsView === "pitch-data" ? " active" : ""}`} onClick={() => setMetricsView("pitch-data")}>
-                Pitch Type Metrics
+                Pitch Overview
               </button>
               <button className={`metrics-subnav-btn${metricsView === "results" ? " active" : ""}`} onClick={() => setMetricsView("results")}>
                 Results
+              </button>
+              <button className={`metrics-subnav-btn${metricsView === "usage" ? " active" : ""}`} onClick={() => setMetricsView("usage")}>
+                Usage
               </button>
               <button className={`metrics-subnav-btn${metricsView === "velocity-trend" ? " active" : ""}`} onClick={() => setMetricsView("velocity-trend")}>
                 Velocity Trend
@@ -462,6 +467,13 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
         {metricsView === "results" && (
           <div className="metrics-card">
             <ResultsTable pitches={pitches} batterFilter={batterFilter} gameFilter="all" isMobile={isMobile}
+              selectedPitchType={selectedPitchType}
+              onPitchTypeClick={(type) => setSelectedPitchType(prev => prev === type ? null : type)} />
+          </div>
+        )}
+        {metricsView === "usage" && (
+          <div className="metrics-card">
+            <UsageTable pitches={pitches} batterFilter={batterFilter} gameFilter="all" isMobile={isMobile}
               selectedPitchType={selectedPitchType}
               onPitchTypeClick={(type) => setSelectedPitchType(prev => prev === type ? null : type)} />
           </div>
@@ -594,10 +606,12 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                             </div>
                             {pa.description && (
                               <div className="card-pbp-desc" style={{ color: resultColor }}>
-                                {paResult.isError ? pa.description.split(/(?<=\.\s*)/).map((sentence, idx) => {
-                                  const isErrorLine = /error/i.test(sentence);
-                                  return <span key={idx} style={isErrorLine ? { color: "#feffa3" } : undefined}>{sentence}</span>;
-                                }) : pa.description}
+                                {pa.description.split(/(?<=\.\s*)/).map((sentence, idx) => {
+                                  const isErrorLine = paResult.isError && /error/i.test(sentence);
+                                  const isScoringLine = /\bscores\b/i.test(sentence);
+                                  const color = isErrorLine ? "#feffa3" : isScoringLine ? "#FF5EDC" : undefined;
+                                  return <span key={idx} style={color ? { color } : undefined}>{sentence}</span>;
+                                })}
                               </div>
                             )}
                             {!isK && pa.launch_speed != null && (
@@ -608,7 +622,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                             )}
                             {/* Expanded pitch-by-pitch table */}
                             {isExp && pa.pitches?.length > 0 && (
-                              <div className="pbp-pitches" onClick={e => { e.stopPropagation(); setPbpActivePa(paKey); setPbpPitchHover(null); }}>
+                              <div className="pbp-pitches">
                                 <div className="pbp-pitch-hdr">
                                   <span className="pbp-ph-num">#</span>
                                   <span className="pbp-ph-count">CT.</span>

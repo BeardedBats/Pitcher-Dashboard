@@ -268,9 +268,9 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                       {half.pas[i].pitcher} relieved {half.pas[i - 1].pitcher}
                     </div>
                   )}
-                  <div className={`pbp-pa${isPitcherPA ? " pbp-pa-hl" : ""}${isActive ? " pbp-pa-active" : ""}`}>
+                  <div className={`pbp-pa${isPitcherPA ? " pbp-pa-hl" : ""}${isActive ? " pbp-pa-active" : ""}`} onClick={() => handlePAClick(i)} style={{ cursor: "pointer" }}>
                     {/* Row 1: Batter name (+ runs scored on PA result) left, Result right */}
-                    <div className="pbp-pa-top" onClick={() => handlePAClick(i)}>
+                    <div className="pbp-pa-top">
                       <div className="pbp-pa-left">
                         <span className="pbp-pa-batter">{pa.batter}</span>
                         {paResultRuns > 0 && renderScoreLine(paResultRuns, pa.away_score, pa.home_score)}
@@ -289,7 +289,7 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
 
 
                     {/* Row 2: vs Pitcher left, MPH + Pitch Type right (all at-bats) */}
-                    <div className="pbp-pa-meta-row" onClick={() => setActivePaIndex(i)} style={{ cursor: "pointer" }}>
+                    <div className="pbp-pa-meta-row">
                       <span className="pbp-pa-vs">vs {pa.pitcher}</span>
                       <span className="pbp-pa-secondary">
                         {lastPitch ? (
@@ -305,11 +305,13 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
 
                     {/* Row 3: Play description — colored to match result; error lines in yellow */}
                     {pa.description && (
-                      <div className="pbp-pa-desc" onClick={() => setActivePaIndex(i)} style={{ cursor: "pointer", color: resultColor }}>
-                        {paResult.isError ? pa.description.split(/(?<=\.\s*)/).map((sentence, idx) => {
-                          const isErrorLine = /error/i.test(sentence);
-                          return <span key={idx} style={isErrorLine ? { color: "#feffa3" } : undefined}>{sentence}</span>;
-                        }) : pa.description}
+                      <div className="pbp-pa-desc" style={{ color: resultColor }}>
+                        {pa.description.split(/(?<=\.\s*)/).map((sentence, idx) => {
+                          const isErrorLine = paResult.isError && /error/i.test(sentence);
+                          const isScoringLine = /\bscores\b/i.test(sentence);
+                          const color = isErrorLine ? "#feffa3" : isScoringLine ? "#FF5EDC" : undefined;
+                          return <span key={idx} style={color ? { color } : undefined}>{sentence}</span>;
+                        })}
                       </div>
                     )}
 
@@ -327,7 +329,7 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
 
                     {/* Row 4: EV/LA + batted ball type (after description, for balls in play) */}
                     {!isK && pa.launch_speed != null && (
-                      <div className="pbp-pa-ev-la" onClick={() => setActivePaIndex(i)} style={{ cursor: "pointer" }}>
+                      <div className="pbp-pa-ev-la">
                         {pa.launch_speed.toFixed(1)} EV{pa.launch_angle != null ? ` · ${pa.launch_angle.toFixed(0)}° LA` : ""}
                         {(() => {
                           const bbType = classifyBattedBall(pa.launch_speed, pa.launch_angle);
@@ -339,7 +341,7 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
 
                     {/* Expanded pitch-by-pitch */}
                     {isExpanded && pa.pitches && pa.pitches.length > 0 && (
-                      <div className="pbp-pitches" onClick={(e) => { e.stopPropagation(); setActivePaIndex(i); }}>
+                      <div className="pbp-pitches">
                         <div className="pbp-pitch-hdr">
                           <span className="pbp-ph-num">#</span>
                           <span className="pbp-ph-count">CT.</span>

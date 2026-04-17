@@ -124,6 +124,7 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
         csw_pct: total > 0 ? Math.round((csw / total) * 100) : 0,
         strike_pct: total > 0 ? Math.round((strikes / total) * 100) : 0,
         fouls,
+        foul_pct: total > 0 ? Math.round((fouls / total) * 100) : 0,
         bbs,
         ks,
         bip,
@@ -159,6 +160,31 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
     }
     if (batterFilter === "L") fp = fp.filter(p => p.stand === "L");
     else if (batterFilter === "R") fp = fp.filter(p => p.stand === "R");
+
+    // Plate appearance rollup: identifies unique PAs and whether each reached
+    // a two-strike count. Used for pitcher-level 2Str% and PAR% — both live
+    // on the totals row only since their formulas are not per-pitch-type.
+    const paMap = new Map();
+    for (const p of fp) {
+      if (!p.pitch_name) continue;
+      const paKey = `${p.game_pk}|${p.at_bat_number}`;
+      let pa = paMap.get(paKey);
+      if (!pa) {
+        pa = { reachedTwoStrikes: false, isK: false };
+        paMap.set(paKey, pa);
+      }
+      if ((p.strikes || 0) >= 2) pa.reachedTwoStrikes = true;
+      const ev = (p.events || "").toLowerCase();
+      if (ev === "strikeout" || ev === "strikeout_double_play") pa.isK = true;
+    }
+    let totalBF = 0, twoStrPAs = 0, twoStrKs = 0;
+    for (const pa of paMap.values()) {
+      totalBF++;
+      if (pa.reachedTwoStrikes) {
+        twoStrPAs++;
+        if (pa.isK) twoStrKs++;
+      }
+    }
 
     for (const p of fp) {
       if (!p.pitch_name) continue;
@@ -206,8 +232,11 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
       csw_pct: totalCount > 0 ? Math.round((csw / totalCount) * 100) : 0,
       strike_pct: totalCount > 0 ? Math.round((totalStrikes / totalCount) * 100) : 0,
       fouls: totalFouls,
+      foul_pct: totalCount > 0 ? Math.round((totalFouls / totalCount) * 100) : 0,
       bbs: totalBBs,
       ks: totalKs,
+      two_str_pct: totalBF > 0 ? Math.round((twoStrPAs / totalBF) * 100) : 0,
+      par_pct: twoStrPAs > 0 ? Math.round((twoStrKs / twoStrPAs) * 100) : 0,
       bip: totalBIP,
       hits: totalHits,
       outs_bip: totalOuts,
@@ -222,7 +251,10 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
   if (resultData.length === 0) return <div className="no-data">No result data available.</div>;
 
   const cols = CARD_RESULTS_COLUMNS;
-  const pctKeys = new Set(["zone_pct", "o_swing_pct", "csw_pct", "strike_pct", "gb_pct", "fb_pct", "weak_pct", "hard_pct"]);
+  const pctKeys = new Set(["zone_pct", "o_swing_pct", "csw_pct", "strike_pct", "foul_pct", "gb_pct", "fb_pct", "weak_pct", "hard_pct", "two_str_pct", "par_pct"]);
+  // 2Str% and PAR% are pitcher-level aggregates (PA-level formulas) and
+  // are only meaningful on the totals row.
+  const totalsOnlyKeys = new Set(["two_str_pct", "par_pct"]);
 
   const renderCell = (row, col, isTotal) => {
     const v = row[col.key];
@@ -231,6 +263,7 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
       const c = PITCH_COLORS[v] || "#D9D9D9";
       return <span style={{ color: c, fontWeight: 600 }}>{v}</span>;
     }
+    if (!isTotal && totalsOnlyKeys.has(col.key)) return <span style={{ color: "rgb(180, 185, 219)" }}>—</span>;
     if (v == null || v === "") return <span style={{ color: "rgb(180, 185, 219)" }}>—</span>;
     if (pctKeys.has(col.key)) return `${v}%`;
     return v;

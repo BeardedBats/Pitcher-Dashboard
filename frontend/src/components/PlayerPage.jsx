@@ -8,6 +8,7 @@ import StrikeZonePlot from "./StrikeZonePlot";
 import MovementPlot from "./MovementPlot";
 import PitchFilterDropdown from "./PitchFilterDropdown";
 import ResultsTable from "./ResultsTable";
+import UsageTable from "./UsageTable";
 import { classifyPitchResult, isRunScored, isStrikeoutPitch, isBallInPlay, classifyBIPQuality, RESULT_FILTER_OPTIONS, RESULT_QUICK_ACTIONS } from "../utils/pitchFilters";
 import VelocityTrend from "./VelocityTrend";
 
@@ -37,7 +38,10 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
   // Game filter for plots AND pitch metrics
   const [gameFilter, setGameFilter] = useState("all");
 
-  const prevSeason = 2025;
+  // Previous MLB season (resolved at fetch time — may be 2024 or earlier for
+  // players returning from injury / first-year starters / etc.)
+  const [prevSeason, setPrevSeason] = useState(null);
+  const currentYear = new Date().getFullYear();
 
   useEffect(() => {
     setLoading(true);
@@ -65,15 +69,23 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
     return () => { cancelled = true; clearTimeout(pollTimer); };
   }, [pitcherId]);
 
-  // Always fetch season averages for change display
+  // Always fetch season averages for change display.
+  // auto_fallback resolves the most recent prior MLB season with data — so
+  // deltas and (NEW) tags are relative to the player's actual last MLB season,
+  // not a hardcoded year.
   useEffect(() => {
     if (!seasonAvgs && pitcherId) {
       setLoadingAvgs(true);
-      fetchSeasonAverages(pitcherId, prevSeason)
-        .then(avgs => { setSeasonAvgs(avgs); setLoadingAvgs(false); })
-        .catch(() => { setSeasonAvgs({}); setLoadingAvgs(false); });
+      fetchSeasonAverages(pitcherId, currentYear, { autoFallback: true })
+        .then(payload => {
+          const avgs = payload?.averages || {};
+          setSeasonAvgs(avgs);
+          setPrevSeason(payload?.season || null);
+          setLoadingAvgs(false);
+        })
+        .catch(() => { setSeasonAvgs({}); setPrevSeason(null); setLoadingAvgs(false); });
     }
-  }, [seasonAvgs, pitcherId, prevSeason]);
+  }, [seasonAvgs, pitcherId, currentYear]);
 
   // Select correct pitch table based on batter filter AND game filter
   const activePitchData = useMemo(() => {
@@ -345,15 +357,17 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
               <div className="metrics-header">
                 {isMobile ? (
                   <select className="metrics-subnav-mobile" value={metricsView} onChange={e => setMetricsView(e.target.value)}>
-                    <option value="pitch-data">Pitch Type Metrics</option>
+                    <option value="pitch-data">Pitch Overview</option>
                     <option value="results">Results</option>
+                    <option value="usage">Usage</option>
                     <option value="velocity-trend">Velocity Trend</option>
                     <option value="play-by-play" disabled={pbpDisabled}>Play-by-Play</option>
                   </select>
                 ) : (
                   <div className="metrics-subnav">
-                    <button className={`metrics-subnav-btn${metricsView === "pitch-data" ? " active" : ""}`} onClick={() => setMetricsView("pitch-data")}>Pitch Type Metrics</button>
+                    <button className={`metrics-subnav-btn${metricsView === "pitch-data" ? " active" : ""}`} onClick={() => setMetricsView("pitch-data")}>Pitch Overview</button>
                     <button className={`metrics-subnav-btn${metricsView === "results" ? " active" : ""}`} onClick={() => setMetricsView("results")}>Results</button>
+                    <button className={`metrics-subnav-btn${metricsView === "usage" ? " active" : ""}`} onClick={() => setMetricsView("usage")}>Usage</button>
                     <button className={`metrics-subnav-btn${metricsView === "velocity-trend" ? " active" : ""}`} onClick={() => setMetricsView("velocity-trend")}>Velocity Trend</button>
                     {!pbpDisabled && pbpGamePk && pbpGameDate ? (
                       <a
@@ -419,6 +433,11 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
               {metricsView === "results" && (
                 <div className="metrics-card">
                   <ResultsTable pitches={data?.pitches} batterFilter={batterFilter} gameFilter={gameFilter} isMobile={isMobile} />
+                </div>
+              )}
+              {metricsView === "usage" && (
+                <div className="metrics-card">
+                  <UsageTable pitches={data?.pitches} batterFilter={batterFilter} gameFilter={gameFilter} isMobile={isMobile} />
                 </div>
               )}
               {metricsView === "velocity-trend" && (

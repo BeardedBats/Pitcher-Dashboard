@@ -37,10 +37,11 @@ export async function fetchPitcherCard(date, pitcherId, gamePk) {
   return res.json();
 }
 
-export async function fetchSeasonAverages(pitcherId, season, { beforeDate, excludeGamePk } = {}) {
+export async function fetchSeasonAverages(pitcherId, season, { beforeDate, excludeGamePk, autoFallback } = {}) {
   const params = new URLSearchParams({ pitcher_id: pitcherId, season });
   if (beforeDate) params.set("before_date", beforeDate);
   if (excludeGamePk != null) params.set("exclude_game_pk", excludeGamePk);
+  if (autoFallback) params.set("auto_fallback", "true");
   const res = await fetch(`${BASE}/api/season-averages?${params}`);
   if (!res.ok) throw new Error("Failed to fetch season averages");
   return res.json();

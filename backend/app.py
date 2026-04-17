@@ -25,6 +25,7 @@ from aggregation import (
     aggregate_pitch_data, aggregate_pitcher_results, get_pitcher_card,
     get_season_averages, aggregate_pitcher_results_range,
     aggregate_pitch_data_range, get_pitcher_game_log,
+    find_previous_mlb_season,
 )
 from redis_cache import redis_get, redis_set, redis_available
 
@@ -338,6 +339,7 @@ def season_averages(
     season: int = Query(...),
     before_date: str = Query(None),
     exclude_game_pk: int = Query(None),
+    auto_fallback: bool = Query(False),
 ):
     # Cache key includes optional filters so season-to-date and plain-season
     # results don't collide.
@@ -346,6 +348,30 @@ def season_averages(
         suffix += f"_b{before_date}"
     if exclude_game_pk is not None:
         suffix += f"_x{exclude_game_pk}"
+
+    # auto_fallback: `season` is the CURRENT year; walk back year-by-year until
+    # we find a prior MLB season with data. Intended for player-page deltas
+    # where "previous MLB season" may be 2+ years back (returning from injury,
+    # debut year, etc.).
+    if auto_fallback:
+        fb_key = f"season_avg_fb_{pitcher_id}_{season}{suffix}"
+        cached = get_agg_cache(fb_key)
+        if cached is not None:
+            return cached
+        resolved_season = find_previous_mlb_season(pitcher_id, season)
+        if resolved_season is None:
+            return {"season": None, "averages": {}}
+        averages = get_season_averages(
+            pitcher_id,
+            resolved_season,
+            before_date=before_date,
+            exclude_game_pk=exclude_game_pk,
+        )
+        payload = {"season": resolved_season, "averages": averages or {}}
+        if averages:
+            set_agg_cache(fb_key, payload)
+        return payload
+
     agg_key = f"season_avg_{pitcher_id}_{season}{suffix}"
     cached = get_agg_cache(agg_key)
     if cached is not None:

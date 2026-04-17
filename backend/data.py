@@ -407,6 +407,30 @@ def _fetch_game_from_mlb_api(game_pk, date_str):
             # Result info — normalize to Savant format
             ab_result = _normalize_mlb_event(pa.get("result", {}).get("event", ""))
             ab_desc = pa.get("result", {}).get("description", "")
+
+            # Enrich walk/HBP descriptions with runner movements
+            if ab_result in ("walk", "hit_by_pitch"):
+                _END_LABELS = {"1B": "1st", "2B": "2nd", "3B": "3rd"}
+                movements = []
+                for runner in pa.get("runners", []):
+                    mv = runner.get("movement", {})
+                    origin = mv.get("originBase")
+                    end = mv.get("end")
+                    if not origin:  # batter reaching base — skip
+                        continue
+                    name = runner.get("details", {}).get("runner", {}).get("fullName", "")
+                    if not name:
+                        continue
+                    if end == "score":
+                        movements.append(f"{name} scores.")
+                    elif end in _END_LABELS:
+                        movements.append(f"{name} to {_END_LABELS[end]}.")
+                if movements:
+                    ab_desc = ab_desc.rstrip()
+                    if not ab_desc.endswith("."):
+                        ab_desc += "."
+                    ab_desc += "  " + "  ".join(movements)
+
             at_bat_number = about.get("atBatIndex", 0)
             outs_when_up = pa.get("count", {}).get("outs", 0) if pa.get("count") else about.get("outs", 0)
 
@@ -1594,6 +1618,31 @@ def get_game_linescore(game_pk, pitcher_id=None):
         result = pa.get("result", {})
         result_event = result.get("event", "")
         result_desc = result.get("description", "")
+
+        # Enrich walk/HBP descriptions with runner movements
+        _evt_lower = (result_event or "").lower().replace(" ", "_")
+        if _evt_lower in ("walk", "intentional_walk", "hit_by_pitch"):
+            _END_LABELS = {"1B": "1st", "2B": "2nd", "3B": "3rd"}
+            movements = []
+            for runner in pa.get("runners", []):
+                mv = runner.get("movement", {})
+                origin = mv.get("originBase")
+                end = mv.get("end")
+                if not origin:  # batter reaching base — skip
+                    continue
+                name = runner.get("details", {}).get("runner", {}).get("fullName", "")
+                if not name:
+                    continue
+                if end == "score":
+                    movements.append(f"{name} scores.")
+                elif end in _END_LABELS:
+                    movements.append(f"{name} to {_END_LABELS[end]}.")
+            if movements:
+                result_desc = result_desc.rstrip()
+                if not result_desc.endswith("."):
+                    result_desc += "."
+                result_desc += "  " + "  ".join(movements)
+
         result_rbi = result.get("rbi", 0)
         result_home_score = result.get("homeScore")
         result_away_score = result.get("awayScore")

@@ -501,6 +501,17 @@ def get_season_averages(pitcher_id, season_year, before_date=None, exclude_game_
     return result
 
 
+def find_previous_mlb_season(pitcher_id, current_year, max_lookback=5):
+    """Return the most recent year (< current_year) with MLB pitch data for this pitcher.
+    Returns None if no prior season has data within the lookback window."""
+    for years_back in range(1, max_lookback + 1):
+        year = current_year - years_back
+        df = fetch_pitcher_season(pitcher_id, year)
+        if df is not None and not df.empty:
+            return year
+    return None
+
+
 def _prefetch_boxscores_parallel(game_pks):
     """Pre-fetch all boxscores in parallel. Returns dict { gpk: stats_map }."""
     box_maps = {}

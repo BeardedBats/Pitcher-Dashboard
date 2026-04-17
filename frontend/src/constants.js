@@ -66,19 +66,22 @@ export const CARD_PITCH_DATA_COLUMNS = [
   { key: "strike_pct", label: "Strike%", align: "right" },
 ];
 
-// Results tab columns: Type | # ||| Zone% | O-Swing% ||| Whiffs | CS | CSW% | Strike% | Fouls ||| BBs | Ks ||| BIP | Hits | Outs | HRs ||| Weak% | Hard%
+// Results tab columns: Type | # ||| Whiffs | CS | Fouls | CSW% | Strike% | Foul% ||| Zone% | O-Swing% ||| BBs | Ks | 2Str% | PAR% ||| BIP | Hits | Outs | HRs ||| Weak% | Hard%
 export const CARD_RESULTS_COLUMNS = [
   { key: "pitch_name", label: "Type", align: "left", dividerRight: true },
   { key: "count", label: "#", align: "right", dividerRight: true },
   { key: "whiffs", label: "Whiffs", align: "right" },
   { key: "cs", label: "CS", align: "right" },
+  { key: "fouls", label: "Fouls", align: "right" },
   { key: "csw_pct", label: "CSW%", align: "right" },
   { key: "strike_pct", label: "Strike%", align: "right" },
-  { key: "fouls", label: "Fouls", align: "right" },
+  { key: "foul_pct", label: "Foul%", align: "right", dividerRight: true },
   { key: "zone_pct", label: "Zone%", align: "right" },
   { key: "o_swing_pct", label: "O-Swing%", align: "right", dividerRight: true },
   { key: "bbs", label: "BB", align: "right" },
-  { key: "ks", label: "K", align: "right", dividerRight: true },
+  { key: "ks", label: "K", align: "right" },
+  { key: "two_str_pct", label: "2Str%", align: "right" },
+  { key: "par_pct", label: "PAR%", align: "right", dividerRight: true },
   { key: "hits", label: "Hits", align: "right" },
   { key: "hrs", label: "HRs", align: "right" },
   { key: "outs_bip", label: "Outs", align: "right" },
@@ -87,6 +90,20 @@ export const CARD_RESULTS_COLUMNS = [
   { key: "fb_pct", label: "FB%", align: "right" },
   { key: "weak_pct", label: "Weak%", align: "right" },
   { key: "hard_pct", label: "Hard%", align: "right" },
+];
+
+// Usage tab columns: Type | # ||| 0-0 | Early | Behind | Two-Strikes | PAR%
+// "Early" = 0-1, 1-0, 1-1; "Behind" = 2-0, 2-1, 3-0, 3-1; "Two-Strikes" = 0-2, 1-2, 2-2, 3-2.
+// Count-bucket columns show usage (% of pitches in that count that were this type).
+// PAR% is pitch-type level: Ks / pitches of this type thrown in 2-strike counts.
+export const CARD_USAGE_COLUMNS = [
+  { key: "pitch_name", label: "Type", align: "left", dividerRight: true },
+  { key: "count", label: "#", align: "right", dividerRight: true },
+  { key: "firstpitch_pct", label: "0-0", align: "right" },
+  { key: "early_pct", label: "Early", align: "right" },
+  { key: "behind_pct", label: "Behind", align: "right" },
+  { key: "two_str_use_pct", label: "Two-Strikes", align: "right", dividerRight: true },
+  { key: "par_pct", label: "PAR%", align: "right" },
 ];
 
 export const PITCHER_RESULTS_COLUMNS = [
