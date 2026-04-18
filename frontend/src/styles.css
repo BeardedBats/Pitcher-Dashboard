@@ -1493,11 +1493,6 @@ canvas { display: block; border: none; border-radius: var(--radius-sm); }
 
 /* Desktop: hide mobile-only elements */
 @media (min-width: 769px) {
-  /* Simulate Chrome 125% page zoom on desktop. Uses the non-standard `zoom`
-     property (supported in Chrome/Edge/Safari and, since v127, Firefox) so
-     every pixel value across the app scales uniformly without rewriting
-     layout. Mobile (<= 768px) stays at 1x to preserve touch target sizing. */
-  body { zoom: 1.25; }
   .metrics-subnav-mobile { display: none; }
   .mobile-tooltip-close { display: none; }
   .mobile-only { display: none !important; }
