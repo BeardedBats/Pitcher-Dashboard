@@ -1497,3 +1497,86 @@ canvas { display: block; border: none; border-radius: var(--radius-sm); }
   .mobile-tooltip-close { display: none; }
   .mobile-only { display: none !important; }
 }
+
+/* ── Desktop "125%" scale ───────────────────────────────────────────────────
+   Selective ~1.25x font-size + spacing bumps across the major surfaces.
+   Targeted instead of `body { zoom }` to avoid breaking position:fixed
+   tooltip math. Pixel-precise canvas plots (strikezone, velocity trend,
+   movement) are not scaled — bump those by their components' size props
+   if needed. */
+@media (min-width: 769px) {
+  /* Roots */
+  body { font-size: 24px; }                                 /* was 19px */
+  :root { --content-width: 1410px; }                        /* was 1130px */
+  .app { padding: 30px 40px; max-width: 2000px; }           /* was 24/32, max 1600 */
+
+  /* Header / titles */
+  .app-title { font-size: 33px; }                           /* 26 */
+  .pbp-title { font-size: 25px; }                           /* 20 */
+
+  /* Date picker / form controls */
+  .date-picker input[type="date"] { font-size: 17px; padding: 9px 17px; }
+  .filter-pill-btn,
+  .game-filter-select,
+  .sz-mode-select,
+  .quick-action-btn,
+  .reclass-input,
+  .filter-pill-btn-text,
+  .filter-options select,
+  button.metrics-subnav-btn,
+  .metrics-subnav-btn { font-size: 17px; }                  /* 14 */
+  .metrics-subnav-btn { padding-top: 9px; padding-bottom: 9px; padding-left: 20px; padding-right: 20px; }
+  .filter-pill-label,
+  .checkbox-btn { font-size: 16px; }                        /* 13 */
+  .rate-label { font-size: 12px; }                          /* 10 */
+
+  /* Generic tables */
+  table,
+  .table-card table,
+  .metrics-card table,
+  .card-gameline-table { font-size: 17px; }                 /* 14 */
+  table th,
+  .table-card table th,
+  .metrics-card table th,
+  .card-gameline-table th { font-size: 15px; padding: 10px 12px; }   /* 12 */
+  table td,
+  .table-card table td,
+  .metrics-card table td { padding: 9px 12px; }             /* 7/10 */
+
+  /* Pitcher card header block */
+  .card-name { font-size: 35px; }                           /* 28 */
+  .card-meta { font-size: 19px; }                           /* 15 */
+  .card-gameline-header,
+  .card-pbp-pitcher { font-size: 20px; }                    /* 16 */
+
+  /* PBP cards (PitcherCard PBP) */
+  .card-pbp-batter { font-size: 20px; }                     /* 16 */
+  .card-pbp-result { font-size: 17px; }                     /* 14 */
+  .card-pbp-vs { font-size: 16px; }                         /* 13 */
+  .card-pbp-desc { font-size: 17px; }                       /* 14 */
+  .card-pbp-pitch-meta,
+  .card-pbp-rbi { font-size: 16px; }                        /* 13 */
+  .card-pbp-evla,
+  .card-pbp-action-line { font-size: 15px; }                /* 12 */
+  .card-pbp-inning-label { font-size: 16px; }               /* 13 */
+
+  /* PBP modal cards */
+  .pbp-pa-batter { font-size: 22px; }                       /* 18 */
+  .pbp-pa-result,
+  .pbp-pa-vs,
+  .pbp-pa-rbi { font-size: 17px; }                          /* 14/15 */
+  .pbp-pa-desc { font-size: 19px; }                         /* 15 */
+  .pbp-pa-meta-row,
+  .pbp-pa-secondary { font-size: 16px; }                    /* 13 */
+
+  /* Tooltips — keep at 1x positioning math but bump readable text */
+  .pitch-tooltip { font-size: 15px; }                       /* 12 */
+  .sb-tooltip-pa { font-size: 14px; }                       /* 11 */
+  .sb-tooltip-hdr { font-size: 14px; }                      /* 11 */
+
+  /* Scoreboard */
+  .sb-team { font-size: 17px; }
+  .sb-cell { font-size: 17px; padding: 10px 12px; }
+  .sb-inn-hdr,
+  .sb-stat-hdr { font-size: 16px; }                         /* 13 */
+}

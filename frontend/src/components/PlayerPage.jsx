@@ -291,7 +291,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                         onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); onGameClick(row.date, pitcherId, row.game_pk, e); } }}
                       >
                         <td><a href={`#card/${row.date}/${pitcherId}/${row.game_pk}`} rel="nofollow" onClick={(e) => e.preventDefault()} onMouseDown={(e) => { if (e.button === 1) e.stopPropagation(); }} style={{ color: "inherit", textDecoration: "none" }}>{dateShort}</a></td>
-                        <td>{displayAbbrev(row.opponent)}</td>
+                        <td>{row.team && row.home_team && row.team !== row.home_team ? "@ " : ""}{displayAbbrev(row.opponent)}</td>
                         <td style={{ color: decColor, fontWeight: dec !== "ND" ? 700 : 500 }}>{dec}</td>
                         <td>{row.ip}</td>
                         <td>{row.runs != null ? row.runs : "—"}</td>

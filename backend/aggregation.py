@@ -750,6 +750,7 @@ def get_pitcher_game_log(df, pitcher_id):
         game_date = str(gdf["game_date"].iloc[0])[:10] if "game_date" in gdf.columns else ""
         team = gdf["pitcher_team"].iloc[0] if "pitcher_team" in gdf.columns else ""
         opp = gdf["opponent"].iloc[0] if "opponent" in gdf.columns else ""
+        home_team = gdf["home_team"].iloc[0] if "home_team" in gdf.columns else ""
 
         events_df = gdf.dropna(subset=["events"])
         events_df = events_df[events_df["events"] != ""]
@@ -788,6 +789,7 @@ def get_pitcher_game_log(df, pitcher_id):
             "date": game_date,
             "team": team,
             "opponent": opp,
+            "home_team": home_team,
             "ip": ip_str,
             "hits": hits,
             "bbs": bbs,

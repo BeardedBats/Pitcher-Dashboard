@@ -27,7 +27,7 @@ _override_version = 0  # Incremented on every save/remove to bust agg caches
 # Cache-shape version. Bump whenever a cached payload (card, season totals,
 # player page) gains or changes fields so all old cache entries miss after
 # deploy. Included in every relevant cache key alongside _override_version.
-CARD_SCHEMA_VERSION = 2
+CARD_SCHEMA_VERSION = 3
 
 def _load_overrides():
     global _overrides, _override_version
