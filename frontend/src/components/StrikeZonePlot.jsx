@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from "react";
 import { PITCH_COLORS, PITCH_DESC_COLORS, getSZResultColor, BATTED_BALL_COLORS } from "../constants";
 import { classifyBattedBall } from "../utils/formatting";
 import { getTooltipResult } from "../utils/pitchFilters";
+import { vpToZoomCoord } from "../utils/desktopZoom";
 
 const DEFAULT_W = 310, DEFAULT_H = 345;
 const PAD = { top: 16, right: 16, bottom: 44, left: 16 };
@@ -269,10 +270,14 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
             }
             const tx = hover.x + 16;
             const ty = hover.y - 16;
+            const leftVp = tx + 300 > window.innerWidth ? hover.x - 310 : tx;
+            const topVp = ty < 10 ? hover.y + 16 : (ty + 280 > window.innerHeight ? hover.y - 280 : ty);
             return {
               position: "fixed",
-              left: tx + 300 > window.innerWidth ? hover.x - 310 : tx,
-              top: ty < 10 ? hover.y + 16 : (ty + 280 > window.innerHeight ? hover.y - 280 : ty),
+              // Compensate for body { zoom: 1.25 } on desktop — inline coords
+              // are in zoomed coord system; mouse coords are in viewport px.
+              left: vpToZoomCoord(leftVp),
+              top: vpToZoomCoord(topVp),
               transform: "none",
               minWidth: 280,
               zIndex: 1000,

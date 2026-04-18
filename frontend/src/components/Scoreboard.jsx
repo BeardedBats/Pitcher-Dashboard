@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { displayAbbrev } from "../constants";
 import { getPBPResultColor, getPADescriptionSpans, isCIOrErrorEvent } from "../utils/pitchFilters";
+import { vpToZoomCoord, getDesktopZoom } from "../utils/desktopZoom";
 
 export default function Scoreboard({ data, pitcherId, onInningClick }) {
   const [tooltip, setTooltip] = useState(null); // { inning, top, x, y, above }
@@ -173,13 +174,21 @@ export default function Scoreboard({ data, pitcherId, onInningClick }) {
       </table>
 
       {/* Hover tooltip */}
-      {tooltip && tooltipPas.length > 0 && (
+      {tooltip && tooltipPas.length > 0 && (() => {
+        // Inline coords are interpreted in body's zoomed coord system; divide
+        // viewport-coord values by the zoom factor so the tooltip lands at
+        // the intended viewport pixel.
+        const zoom = getDesktopZoom();
+        const leftVp = clampedPos ? clampedPos.left : tooltip.x;
+        const topVp = clampedPos?.top || tooltip.y;
+        const above = clampedPos?.above;
+        return (
         <div ref={tooltipRef} className="sb-tooltip"
           style={{
-            left: clampedPos ? clampedPos.left : tooltip.x,
-            ...(clampedPos?.above
-              ? { bottom: `calc(100vh - ${clampedPos?.top || tooltip.y}px)` }
-              : { top: clampedPos?.top || tooltip.y }),
+            left: vpToZoomCoord(leftVp),
+            ...(above
+              ? { bottom: vpToZoomCoord(window.innerHeight - topVp) }
+              : { top: vpToZoomCoord(topVp) }),
             transform: "translateX(-50%)",
           }}>
           <div className="sb-tooltip-hdr" style={{
@@ -323,7 +332,8 @@ export default function Scoreboard({ data, pitcherId, onInningClick }) {
             );
           })}
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

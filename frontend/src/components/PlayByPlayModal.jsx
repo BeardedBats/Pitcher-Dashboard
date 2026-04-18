@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { PITCH_COLORS, PITCH_DESC_COLORS, BATTED_BALL_COLORS, BIP_QUALITY_COLORS, displayAbbrev } from "../constants";
 import { getResultColor, classifyBattedBall, getBIPQuality } from "../utils/formatting";
 import { getTooltipResult, getPADescriptionSpans, isCIOrErrorEvent } from "../utils/pitchFilters";
+import { vpToZoomCoord } from "../utils/desktopZoom";
 import useIsMobile from "../hooks/useIsMobile";
 import StrikeZonePBP from "./StrikeZonePBP";
 
@@ -449,10 +450,13 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                     <div className="pitch-tooltip" style={(() => {
                       const tx = pitchHover.clientX + 16;
                       const ty = pitchHover.clientY - 16;
+                      const leftVp = tx + 300 > window.innerWidth ? pitchHover.clientX - 310 : tx;
+                      const topVp = ty < 10 ? pitchHover.clientY + 16 : (ty + 280 > window.innerHeight ? pitchHover.clientY - 280 : ty);
                       return {
                         position: "fixed",
-                        left: tx + 300 > window.innerWidth ? pitchHover.clientX - 310 : tx,
-                        top: ty < 10 ? pitchHover.clientY + 16 : (ty + 280 > window.innerHeight ? pitchHover.clientY - 280 : ty),
+                        // Compensate for body { zoom: 1.25 } on desktop.
+                        left: vpToZoomCoord(leftVp),
+                        top: vpToZoomCoord(topVp),
                         transform: "none",
                         minWidth: 280,
                         zIndex: 1000,

@@ -12,6 +12,7 @@ import { PITCH_COLORS, PITCH_DESC_COLORS, RESULT_COLORS, CARD_PITCH_DATA_COLUMNS
 import { getResultColor } from "../utils/formatting";
 import { fetchSeasonAverages, fetchPitcherSchedule } from "../utils/api";
 import { classifyPitchResult, isRunScored, isStrikeoutPitch, isBallInPlay, classifyBIPQuality, classifyBattedBallFull, getTooltipResult, getPADescriptionSpans, isCIOrErrorEvent, RESULT_FILTER_OPTIONS, RESULT_QUICK_ACTIONS } from "../utils/pitchFilters";
+import { vpToZoomCoord } from "../utils/desktopZoom";
 
 function ordinal(n) {
   const s = ["th", "st", "nd", "rd"];
@@ -714,10 +715,13 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                                   <div className="pitch-tooltip" style={(() => {
                                     const tx = pbpPitchHover.clientX + 16;
                                     const ty = pbpPitchHover.clientY - 16;
+                                    const leftVp = tx + 300 > window.innerWidth ? pbpPitchHover.clientX - 310 : tx;
+                                    const topVp = ty < 10 ? pbpPitchHover.clientY + 16 : (ty + 280 > window.innerHeight ? pbpPitchHover.clientY - 280 : ty);
                                     return {
                                       position: "fixed",
-                                      left: tx + 300 > window.innerWidth ? pbpPitchHover.clientX - 310 : tx,
-                                      top: ty < 10 ? pbpPitchHover.clientY + 16 : (ty + 280 > window.innerHeight ? pbpPitchHover.clientY - 280 : ty),
+                                      // Compensate for body { zoom: 1.25 } on desktop.
+                                      left: vpToZoomCoord(leftVp),
+                                      top: vpToZoomCoord(topVp),
                                       transform: "none",
                                       minWidth: 280,
                                       zIndex: 1000,

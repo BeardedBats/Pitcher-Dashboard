@@ -1491,8 +1491,15 @@ canvas { display: block; border: none; border-radius: var(--radius-sm); }
   .toast-notification { top: 10px; right: 10px; font-size: 13px; padding: 10px 14px; }
 }
 
-/* Desktop: hide mobile-only elements */
+/* Desktop: hide mobile-only elements + 125% page-zoom equivalent */
 @media (min-width: 769px) {
+  /* Chrome-125%-equivalent scale on desktop. Every descendant size scales
+     uniformly without per-element CSS rewrites. Mobile (<= 768px) stays at
+     1x to keep touch targets and compact layouts unaffected.
+     Tooltips (position: fixed) need their inline top/left divided by 1.25
+     to compensate for the zoom-coord-system shift — handled in JS via
+     utils/desktopZoom.js (vpToZoomCoord). */
+  body { zoom: 1.25; }
   .metrics-subnav-mobile { display: none; }
   .mobile-tooltip-close { display: none; }
   .mobile-only { display: none !important; }

@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useCallback, useMemo } from "react"
 import { PITCH_COLORS, BATTED_BALL_COLORS, displayAbbrev } from "../constants";
 import { isRunScored, getTooltipResult, getPBPResultColor, getPADescriptionSpans, isCIOrErrorEvent } from "../utils/pitchFilters";
 import { classifyBattedBall } from "../utils/formatting";
+import { vpToZoomCoord } from "../utils/desktopZoom";
 
 const DOT_R = 4.5;
 const DOT_PAD = 3;
@@ -679,8 +680,10 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile, lines
       {inningHover && inningTooltipHalves.length > 0 && linescoreData && (
         <div ref={inningTooltipRef} className="sb-tooltip"
           style={{
-            left: inningClampedPos?.left || inningHover.x,
-            top: inningClampedPos?.top || (inningHover.y + 12),
+            // Inline coords are in body's zoomed coord system; convert from
+            // viewport coords so the tooltip lands at the intended pixel.
+            left: vpToZoomCoord(inningClampedPos?.left || inningHover.x),
+            top: vpToZoomCoord(inningClampedPos?.top || (inningHover.y + 12)),
             transform: "translateX(-50%)",
           }}>
           {inningTooltipHalves.map((half, hi) => {
@@ -813,10 +816,14 @@ function VelocityTooltipV2Mobile({ pitch: p, x, y, onClose }) {
 
   const tx = x + 16;
   const ty = y - 16;
+  const leftVp = tx + 300 > window.innerWidth ? x - 310 : tx;
+  const topVp = ty + 260 > window.innerHeight ? y - 260 : ty;
   const style = {
     position: "fixed",
-    left: tx + 300 > window.innerWidth ? x - 310 : tx,
-    top: ty + 260 > window.innerHeight ? y - 260 : ty,
+    // Inline coords are in zoomed coord system on desktop; convert from
+    // viewport coords so the tooltip lands at the cursor.
+    left: vpToZoomCoord(leftVp),
+    top: vpToZoomCoord(topVp),
     zIndex: 1000,
     pointerEvents: "auto",
   };
@@ -944,10 +951,12 @@ function VelocityTooltipV2({ pitch: p, x, y }) {
 
   const tx = x + 16;
   const ty = y - 16;
+  const leftVp = tx + 300 > window.innerWidth ? x - 310 : tx;
+  const topVp = ty + 260 > window.innerHeight ? y - 260 : ty;
   const style = {
     position: "fixed",
-    left: tx + 300 > window.innerWidth ? x - 310 : tx,
-    top: ty + 260 > window.innerHeight ? y - 260 : ty,
+    left: vpToZoomCoord(leftVp),
+    top: vpToZoomCoord(topVp),
     zIndex: 1000,
     pointerEvents: "none",
   };
