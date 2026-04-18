@@ -200,6 +200,73 @@ export function normalizePitchDesc(desc) {
 }
 
 /**
+ * Detect catcher's interference or error PA results.
+ * Handles MLB Live API string variants ("Catcher Interference", "Field Error",
+ * "Fielding Error", etc.) plus the truncated Statcast event "catcher_interf".
+ */
+export function isCIOrErrorEvent(result) {
+  if (!result) return false;
+  const r = result.toLowerCase().replace(/\s+/g, "_");
+  return r === "catcher_interf" || r.includes("interference") || r.includes("error");
+}
+
+/**
+ * Color for a PA result in the play-by-play tooltips and PBP cards.
+ * Single source of truth — used by Scoreboard, VelocityTrendV2 inning tooltip,
+ * PitcherCard PBP, and PlayByPlayModal.
+ *
+ * Catcher's interference and errors return single yellow (#feffa3); the renderer
+ * is expected to highlight the "X reaches on..." sentence in walk orange.
+ * Returns null if the result doesn't map to a known color.
+ */
+export function getPBPResultColor(result) {
+  if (!result) return null;
+  const r = result.toLowerCase().replace(/\s+/g, "_");
+  if (r === "strikeout" || r === "strikeout_double_play") return "#65FF9C";
+  if (r === "walk" || r === "intent_walk") return "#ffc277";
+  if (r === "hit_by_pitch") return "#ffc277";
+  if (r === "home_run") return "#FF5EDC";
+  if (r === "single" || r === "double" || r === "triple") return "#feffa3";
+  // CI / error events render in single yellow with the batter event highlighted
+  // in walk orange by the description renderer (see getPADescriptionSpans).
+  if (r === "catcher_interf" || r.includes("interference") || r.includes("error")) return "#feffa3";
+  if (r.includes("out") || r.includes("play") || r.includes("force") || r.endsWith("_dp") ||
+      r === "fielders_choice" || r === "sac_fly" || r === "sac_bunt") return "#65BAFF";
+  return null;
+}
+
+const _SCORES_RE = /\bscores\b/i;
+const _REACHES_ON_RE = /\breaches on\b/i;
+const _OUT_PATTERNS_RE = /\bout at\b|\bout advancing\b|\bthrown out\b/i;
+
+/**
+ * Split a PA description into colored sentence spans.
+ *
+ * Rules (in priority order):
+ *  - Sentences containing "scores" → HR pink (#FF5EDC), bold (run scoring is the
+ *    most important callout in any tooltip).
+ *  - For CI/error events, sentences matching "reaches on ..." → walk orange
+ *    (#ffc277) — the batter event sentence is highlighted within the otherwise
+ *    yellow text.
+ *  - For hits with subsequent outs (e.g. "X singles ... Y out at 3rd"), the
+ *    out sentence is colored blue (#65BAFF).
+ *  - Everything else stays default.
+ *
+ * Returns an array of { text, style } records — callers wrap each in <span>.
+ * Centralized so Scoreboard, VelocityTrendV2, PitcherCard PBP, and
+ * PlayByPlayModal stay in sync.
+ */
+export function getPADescriptionSpans(description, { isCIOrError = false, isHitWithOut = false } = {}) {
+  if (!description) return [];
+  return description.split(/(?<=\.\s+)/).map(text => {
+    if (_SCORES_RE.test(text)) return { text, style: { color: "#FF5EDC", fontWeight: 700 } };
+    if (isCIOrError && _REACHES_ON_RE.test(text)) return { text, style: { color: "#ffc277" } };
+    if (isHitWithOut && _OUT_PATTERNS_RE.test(text)) return { text, style: { color: "#65BAFF" } };
+    return { text, style: null };
+  });
+}
+
+/**
  * Get tooltip result label + color for any pitch.
  * PA-ending pitches show the event result; mid-AB pitches show the pitch description.
  * Returns { label, color, isK, isCalledStrikeThree, subLabel }.
@@ -236,8 +303,10 @@ export function getTooltipResult(pitch, opts) {
     if (ev === "triple") return { label: "Triple", color: "#feffa3" };
     if (ev === "sac_fly" || ev === "sac_fly_double_play") return { label: "Sac Fly", color: "#AAB9FF" };
     if (ev === "sac_bunt") return { label: "Sac Bunt", color: "#AAB9FF" };
-    if (ev === "field_error") {
-      // Trajectory-based out label in blue, "(Error)" suffix in single yellow
+    if (ev === "field_error" || ev === "fielding_error" || ev === "error") {
+      // Trajectory-based out label in blue, "(Error)" suffix in walk orange.
+      // Per-PA renderer (getPADescriptionSpans) colors the batter event sentence
+      // in walk orange — the label here echoes that for visual consistency.
       const la = pitch.launch_angle != null ? pitch.launch_angle : (opts?.launchAngle ?? null);
       let outType = null;
       if (la != null) {
@@ -247,9 +316,11 @@ export function getTooltipResult(pitch, opts) {
         else outType = "Popout";
       }
       const label = outType ? `${outType} (Error)` : "Error";
-      return { label, color: "#65BAFF", isError: true, errorOutType: outType };
+      return { label, color: "#feffa3", isError: true, errorOutType: outType };
     }
-    if (ev === "catcher_interf") return { label: "Catcher Int.", color: "#ffc277" };
+    if (ev === "catcher_interf" || ev === "catcher_interference") {
+      return { label: "Catcher Int.", color: "#feffa3", isError: true };
+    }
     // Outs with trajectory-based labels (includes fielder's choice, force outs, double plays)
     if (ev.includes("out") || ev.includes("play") || ev.includes("force") || ev.endsWith("_dp") || ev === "fielders_choice") {
       const la = pitch.launch_angle != null ? pitch.launch_angle : (opts?.launchAngle ?? null);

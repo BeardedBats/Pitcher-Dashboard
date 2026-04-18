@@ -280,6 +280,9 @@ def _compute_season_totals(pitcher_id, start_date, end_date):
     total_runs = sum(g.get("runs", 0) for g in game_log)
     total_batters_faced = sum(g.get("batters_faced", 0) for g in game_log)
     total_games_started = sum(g.get("games_started", 0) for g in game_log)
+    total_pa_count = sum(g.get("pa_count", 0) for g in game_log)
+    total_two_str_pas = sum(g.get("two_strike_pas", 0) for g in game_log)
+    total_two_str_ks = sum(g.get("two_strike_ks", 0) for g in game_log)
     result = {
         "games": len(game_log),
         "games_started": total_games_started,
@@ -296,6 +299,8 @@ def _compute_season_totals(pitcher_id, start_date, end_date):
         "swstr_pct": round(total_whiffs / total_pitches * 100, 1) if total_pitches > 0 else 0,
         "csw_pct": round(sum(g.get("csw_pct", 0) * g.get("pitches", 0) for g in game_log) / total_pitches, 1) if total_pitches > 0 else 0,
         "strike_pct": round(total_strikes / total_pitches * 100, 1) if total_pitches > 0 else 0,
+        "two_str_pct": round(total_two_str_pas / total_pa_count * 100, 1) if total_pa_count > 0 else 0,
+        "par_pct": round(total_two_str_ks / total_two_str_pas * 100, 1) if total_two_str_pas > 0 else 0,
         "pitches": total_pitches,
         "wins": sum(1 for g in game_log if g.get("decision") == "W"),
         "losses": sum(1 for g in game_log if g.get("decision") == "L"),

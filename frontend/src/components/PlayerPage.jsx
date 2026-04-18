@@ -275,7 +275,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                   <tr>
                     <th>Date</th><th>Opp</th><th>Dec.</th><th>IP</th><th>R</th><th>ER</th><th>Hits</th><th>BB</th>
                     <th className="gameline-divider-right">K</th>
-                    <th>Whiffs</th><th>SwStr%</th><th>CSW%</th><th>#</th><th>HR</th>
+                    <th>Whiffs</th><th>SwStr%</th><th>CSW%</th><th>2Str%</th><th>PAR%</th><th>#</th><th>HR</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -302,6 +302,8 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                         <td>{row.whiffs}</td>
                         <td>{row.swstr_pct != null ? Math.round(row.swstr_pct) + "%" : "—"}</td>
                         <td>{row.csw_pct != null ? row.csw_pct.toFixed(1) : "—"}</td>
+                        <td>{row.two_str_pct != null ? Math.round(row.two_str_pct) + "%" : "—"}</td>
+                        <td>{row.par_pct != null ? Math.round(row.par_pct) + "%" : "—"}</td>
                         <td>{row.pitches}</td>
                         <td>{row.hrs}</td>
                       </tr>
@@ -339,6 +341,8 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
                         <td><span className="rate-label">Whf/G</span>{whfg}</td>
                         <td><span className="rate-label">SwStr%</span>{rs.swstr_pct != null ? Math.round(rs.swstr_pct) + "%" : "—"}</td>
                         <td><span className="rate-label">CSW%</span>{rs.csw_pct != null ? rs.csw_pct.toFixed(1) + "%" : "—"}</td>
+                        <td><span className="rate-label">2Str%</span>{rs.two_str_pct != null ? Math.round(rs.two_str_pct) + "%" : "—"}</td>
+                        <td><span className="rate-label">PAR%</span>{rs.par_pct != null ? Math.round(rs.par_pct) + "%" : "—"}</td>
                         <td><span className="rate-label">PPG</span>{ppg}</td>
                         <td><span className="rate-label">HR/9</span>{hr9}</td>
                       </tr>

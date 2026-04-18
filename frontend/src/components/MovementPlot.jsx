@@ -328,7 +328,7 @@ export default function MovementPlot({ pitches, hand, onReclassify, isMobile = f
               </div>
               <div style={{ whiteSpace: "nowrap", color: result.color, fontWeight: 600, marginLeft: 12 }}>
                 {result.isError && result.errorOutType
-                  ? <>{result.errorOutType} <span style={{ color: "#feffa3" }}>(Error)</span></>
+                  ? <>{result.errorOutType} <span style={{ color: "#ffc277" }}>(Error)</span></>
                   : result.label}
                 {result.isK && (
                   result.isCalledStrikeThree

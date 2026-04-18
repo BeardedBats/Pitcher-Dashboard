@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { PITCH_COLORS, BATTED_BALL_COLORS, displayAbbrev } from "../constants";
-import { isRunScored, getTooltipResult } from "../utils/pitchFilters";
+import { isRunScored, getTooltipResult, getPBPResultColor, getPADescriptionSpans, isCIOrErrorEvent } from "../utils/pitchFilters";
 import { classifyBattedBall } from "../utils/formatting";
 
 const DOT_R = 4.5;
@@ -28,19 +28,8 @@ function basesString(on1b, on2b, on3b) {
   return bases.join(" & ");
 }
 
-// Map PA result events to play-by-play card colors (same as Scoreboard)
-function getResultColorPBP(result) {
-  if (!result) return null;
-  const r = result.toLowerCase().replace(/\s+/g, "_");
-  if (r === "strikeout" || r === "strikeout_double_play") return "#65FF9C";
-  if (r === "walk" || r === "intent_walk") return "#ffc277";
-  if (r === "hit_by_pitch") return "#ffc277";
-  if (r === "home_run") return "#FF5EDC";
-  if (r === "single" || r === "double" || r === "triple") return "#feffa3";
-  if (r.includes("out") || r.includes("play") || r.includes("force") || r.endsWith("_dp") || r === "fielders_choice" || r === "sac_fly" || r === "sac_bunt" || r === "field_error") return "#65BAFF";
-  if (r === "catcher_interf") return "#ffc277";
-  return null;
-}
+// PA result colors are sourced from getPBPResultColor (utils/pitchFilters) so
+// Scoreboard, this component, PitcherCard, and PlayByPlayModal stay in sync.
 
 export default function VelocityTrendV2({ pitches, onReclassify, isMobile, linescoreData, pitcherId }) {
   const canvasRef = useRef(null);
@@ -730,7 +719,11 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile, lines
                   const prevPa = i > 0 ? half.pas[i - 1] : null;
                   const isPitcherChange = prevPa && prevPa.pitcher_id !== pa.pitcher_id;
                   const isFeaturedPa = isFeaturedPitcherPitching && pa.pitcher_id === pitcherId;
-                  const resultColor = isFeaturedPa ? getResultColorPBP(pa.result) : null;
+                  const resultColor = isFeaturedPa ? getPBPResultColor(pa.result) : null;
+                  const isCIErr = isCIOrErrorEvent(pa.result);
+                  const _r = (pa.result || "").toLowerCase().replace(/\s+/g, "_");
+                  const _isHit = _r === "single" || _r === "double" || _r === "triple";
+                  const isHitWithOut = _isHit && /\bout at\b|\bout advancing\b|\bthrown out\b/i.test(pa.description || "");
                   const midAbActions = (pa.pitches || []).filter(p => p.is_action && (p.scored || ["Wild Pitch", "Caught Stealing", "Pickoff CS", "Passed Ball", "Balk"].some(e => (p.event_type || "").toLowerCase().includes(e.toLowerCase()) || (p.desc || "").toLowerCase().includes(e.toLowerCase()))));
                   const actionRuns = midAbActions.filter(a => a.scored).reduce((sum) => sum + 1, 0);
                   let runsScored = 0;
@@ -760,23 +753,16 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile, lines
                         </div>
                       )}
                       <div className={`sb-tooltip-pa${isFeaturedPa ? " sb-hl" : ""}`}
-                        style={isFeaturedPa ? { color: resultColor || "var(--text-bright)", fontWeight: 600 } : {}}>
+                        style={isFeaturedPa ? { color: resultColor || "var(--text-bright)", fontWeight: 600 } : (isCIErr ? { color: "#feffa3", fontWeight: 600 } : {})}>
                         {(() => {
                           const desc = pa.description || `${pa.batter}: ${pa.result}`;
-                          if (!isFeaturedPa || !resultColor) return desc;
-                          const r = (pa.result || "").toLowerCase().replace(/\s+/g, "_");
-                          const isHit = r === "single" || r === "double" || r === "triple";
-                          if (isHit) {
-                            const sentences = desc.split(/(?<=\.\s+)/);
-                            const hasOut = sentences.some(s => /\bout at\b|\bout advancing\b|\bthrown out\b/i.test(s));
-                            if (hasOut) {
-                              return sentences.map((s, idx) => {
-                                const isOutSentence = /\bout at\b|\bout advancing\b|\bthrown out\b/i.test(s);
-                                return <span key={idx} style={isOutSentence ? { color: "#65BAFF" } : undefined}>{s}</span>;
-                              });
-                            }
-                          }
-                          return desc;
+                          // Centralized sentence-level coloring so "scores" sentences,
+                          // CI/error batter events, and hit-with-out outs render
+                          // consistently across all PBP tooltips.
+                          const spans = getPADescriptionSpans(desc, { isCIOrError: isCIErr, isHitWithOut });
+                          return spans.map((s, idx) => (
+                            <span key={idx} style={s.style || undefined}>{s.text}</span>
+                          ));
                         })()}
                         {midAbActions.length > 0 && midAbActions.map((action, ai) => (
                           <div key={`action-${ai}`} style={{ fontSize: 10, padding: "1px 0 1px 0", lineHeight: 1.3, fontStyle: "italic", color: action.scored ? "#FF5EDC" : "rgba(180,184,210,0.7)" }}>
@@ -863,7 +849,7 @@ function VelocityTooltipV2Mobile({ pitch: p, x, y, onClose }) {
         </div>
         <div style={{ whiteSpace: "nowrap", color: result.color, fontWeight: 600, marginLeft: 12 }}>
           {result.isError && result.errorOutType
-            ? <>{result.errorOutType} <span style={{ color: "#feffa3" }}>(Error)</span></>
+            ? <>{result.errorOutType} <span style={{ color: "#ffc277" }}>(Error)</span></>
             : result.label}
           {result.isK && (
             result.isCalledStrikeThree
@@ -978,7 +964,7 @@ function VelocityTooltipV2({ pitch: p, x, y }) {
         </div>
         <div style={{ whiteSpace: "nowrap", color: result.color, fontWeight: 600, marginLeft: 12 }}>
           {result.isError && result.errorOutType
-            ? <>{result.errorOutType} <span style={{ color: "#feffa3" }}>(Error)</span></>
+            ? <>{result.errorOutType} <span style={{ color: "#ffc277" }}>(Error)</span></>
             : result.label}
           {result.isK && (
             result.isCalledStrikeThree

@@ -66,7 +66,7 @@ export const CARD_PITCH_DATA_COLUMNS = [
   { key: "strike_pct", label: "Strike%", align: "right" },
 ];
 
-// Results tab columns: Type | # ||| Whiffs | CS | Fouls | CSW% | Strike% | Foul% ||| Zone% | O-Swing% ||| BBs | Ks | 2Str% | PAR% ||| BIP | Hits | Outs | HRs ||| Weak% | Hard%
+// Results tab columns: Type | # ||| Whiffs | CS | Fouls | CSW% | Strike% | Foul% ||| Zone% | O-Swing% ||| BBs | Ks ||| BIP | Hits | Outs | HRs ||| Weak% | Hard%
 export const CARD_RESULTS_COLUMNS = [
   { key: "pitch_name", label: "Type", align: "left", dividerRight: true },
   { key: "count", label: "#", align: "right", dividerRight: true },
@@ -79,9 +79,7 @@ export const CARD_RESULTS_COLUMNS = [
   { key: "zone_pct", label: "Zone%", align: "right" },
   { key: "o_swing_pct", label: "O-Swing%", align: "right", dividerRight: true },
   { key: "bbs", label: "BB", align: "right" },
-  { key: "ks", label: "K", align: "right" },
-  { key: "two_str_pct", label: "2Str%", align: "right" },
-  { key: "par_pct", label: "PAR%", align: "right", dividerRight: true },
+  { key: "ks", label: "K", align: "right", dividerRight: true },
   { key: "hits", label: "Hits", align: "right" },
   { key: "hrs", label: "HRs", align: "right" },
   { key: "outs_bip", label: "Outs", align: "right" },
@@ -92,17 +90,25 @@ export const CARD_RESULTS_COLUMNS = [
   { key: "hard_pct", label: "Hard%", align: "right" },
 ];
 
-// Usage tab columns: Type | # ||| 0-0 | Early | Behind | Two-Strikes | PAR%
+// Usage tab columns: Type | (vs LHB: # 0-0 Early Behind Two-Strikes) | (vs RHB: # 0-0 Early Behind Two-Strikes) | PAR%
 // "Early" = 0-1, 1-0, 1-1; "Behind" = 2-0, 2-1, 3-0, 3-1; "Two-Strikes" = 0-2, 1-2, 2-2, 3-2.
-// Count-bucket columns show usage (% of pitches in that count that were this type).
-// PAR% is pitch-type level: Ks / pitches of this type thrown in 2-strike counts.
+// Count-bucket columns show usage (% of pitches in that count that were this type, per batter hand).
+// PAR% is pitch-type level (combined across hands): Ks on this pitch / pitches of this type thrown in 2-strike counts.
 export const CARD_USAGE_COLUMNS = [
   { key: "pitch_name", label: "Type", align: "left", dividerRight: true },
-  { key: "count", label: "#", align: "right", dividerRight: true },
-  { key: "firstpitch_pct", label: "0-0", align: "right" },
-  { key: "early_pct", label: "Early", align: "right" },
-  { key: "behind_pct", label: "Behind", align: "right" },
-  { key: "two_str_use_pct", label: "Two-Strikes", align: "right", dividerRight: true },
+  // vs LHB
+  { key: "count_l", label: "#", align: "right", group: "lhb" },
+  { key: "firstpitch_pct_l", label: "0-0", align: "right", group: "lhb" },
+  { key: "early_pct_l", label: "Early", align: "right", group: "lhb" },
+  { key: "behind_pct_l", label: "Behind", align: "right", group: "lhb" },
+  { key: "two_str_use_pct_l", label: "Two-Strikes", align: "right", group: "lhb", dividerRight: true },
+  // vs RHB
+  { key: "count_r", label: "#", align: "right", group: "rhb" },
+  { key: "firstpitch_pct_r", label: "0-0", align: "right", group: "rhb" },
+  { key: "early_pct_r", label: "Early", align: "right", group: "rhb" },
+  { key: "behind_pct_r", label: "Behind", align: "right", group: "rhb" },
+  { key: "two_str_use_pct_r", label: "Two-Strikes", align: "right", group: "rhb", dividerRight: true },
+  // Combined
   { key: "par_pct", label: "PAR%", align: "right" },
 ];
 

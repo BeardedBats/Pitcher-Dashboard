@@ -1063,6 +1063,9 @@ def compute_player_page(df, pitcher_id):
             full = int(parts[0])
             thirds = int(parts[1]) if len(parts) > 1 else 0
             total_ip_thirds += full * 3 + thirds
+        total_pa_count = sum(g.get("pa_count", 0) for g in game_log)
+        total_two_str_pas = sum(g.get("two_strike_pas", 0) for g in game_log)
+        total_two_str_ks = sum(g.get("two_strike_ks", 0) for g in game_log)
         results_summary = {
             "games": len(game_log),
             "ip": f"{total_ip_thirds // 3}.{total_ip_thirds % 3}",
@@ -1078,6 +1081,8 @@ def compute_player_page(df, pitcher_id):
             "swstr_pct": round(sum(g.get("whiffs", 0) for g in game_log) / total_pitches * 100, 1) if total_pitches > 0 else 0,
             "csw_pct": round(sum(g.get("csw_pct", 0) * g.get("pitches", 0) for g in game_log) / total_pitches, 1) if total_pitches > 0 else 0,
             "strike_pct": round(sum(g.get("strikes", 0) for g in game_log) / total_pitches * 100, 1) if total_pitches > 0 else 0,
+            "two_str_pct": round(total_two_str_pas / total_pa_count * 100, 1) if total_pa_count > 0 else 0,
+            "par_pct": round(total_two_str_ks / total_two_str_pas * 100, 1) if total_two_str_pas > 0 else 0,
             "ip_thirds": total_ip_thirds,
             "pitches": total_pitches,
             "wins": sum(1 for g in game_log if g.get("decision") == "W"),

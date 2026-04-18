@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { PITCH_COLORS, PITCH_DESC_COLORS, BATTED_BALL_COLORS, BIP_QUALITY_COLORS, displayAbbrev } from "../constants";
 import { getResultColor, classifyBattedBall, getBIPQuality } from "../utils/formatting";
-import { getTooltipResult } from "../utils/pitchFilters";
+import { getTooltipResult, getPADescriptionSpans, isCIOrErrorEvent } from "../utils/pitchFilters";
 import useIsMobile from "../hooks/useIsMobile";
 import StrikeZonePBP from "./StrikeZonePBP";
 
@@ -277,7 +277,7 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                       </div>
                       <span className="pbp-pa-result" style={{ color: resultColor }}>
                         {paResult.isError && paResult.errorOutType
-                          ? <>{paResult.errorOutType} <span style={{ color: "#feffa3" }}>(Error)</span></>
+                          ? <>{paResult.errorOutType} <span style={{ color: "#ffc277" }}>(Error)</span></>
                           : resultLabel}
                         {paResult.isK && (
                           paResult.isCalledStrikeThree
@@ -303,17 +303,21 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                       </span>
                     </div>
 
-                    {/* Row 3: Play description — colored to match result; error lines in yellow */}
-                    {pa.description && (
-                      <div className="pbp-pa-desc" style={{ color: resultColor }}>
-                        {pa.description.split(/(?<=\.\s*)/).map((sentence, idx) => {
-                          const isErrorLine = paResult.isError && /error/i.test(sentence);
-                          const isScoringLine = /\bscores\b/i.test(sentence);
-                          const color = isErrorLine ? "#feffa3" : isScoringLine ? "#FF5EDC" : undefined;
-                          return <span key={idx} style={color ? { color } : undefined}>{sentence}</span>;
-                        })}
-                      </div>
-                    )}
+                    {/* Row 3: Play description — sentence-level coloring (CI/error: yellow base + walk-orange "reaches on"; "scores" sentences pink+bold). */}
+                    {pa.description && (() => {
+                      const isCIErr = paResult.isError || isCIOrErrorEvent(pa.result);
+                      const _r = (pa.result || "").toLowerCase().replace(/\s+/g, "_");
+                      const _isHit = _r === "single" || _r === "double" || _r === "triple";
+                      const isHitWithOut = _isHit && /\bout at\b|\bout advancing\b|\bthrown out\b/i.test(pa.description);
+                      const baseColor = isCIErr ? "#feffa3" : resultColor;
+                      return (
+                        <div className="pbp-pa-desc" style={{ color: baseColor }}>
+                          {getPADescriptionSpans(pa.description, { isCIOrError: isCIErr, isHitWithOut }).map((s, idx) => (
+                            <span key={idx} style={s.style || undefined}>{s.text}</span>
+                          ))}
+                        </div>
+                      );
+                    })()}
 
                     {/* Mid-AB action events (wild pitch, caught stealing, etc.) with run scoring */}
                     {midAbActions.length > 0 && midAbActions.map((action, ai) => (
@@ -465,7 +469,7 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
                         </div>
                         <div style={{ whiteSpace: "nowrap", color: result.color, fontWeight: 600, marginLeft: 12 }}>
                           {result.isError && result.errorOutType
-                            ? <>{result.errorOutType} <span style={{ color: "#feffa3" }}>(Error)</span></>
+                            ? <>{result.errorOutType} <span style={{ color: "#ffc277" }}>(Error)</span></>
                             : result.label}
                           {result.isK && (
                             result.isCalledStrikeThree

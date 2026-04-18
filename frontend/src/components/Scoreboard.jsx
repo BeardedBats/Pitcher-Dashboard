@@ -1,19 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { displayAbbrev } from "../constants";
-
-// Map PA result events to play-by-play card colors
-function getResultColor(result) {
-  if (!result) return null;
-  const r = result.toLowerCase().replace(/\s+/g, "_");
-  if (r === "strikeout" || r === "strikeout_double_play") return "#65FF9C";
-  if (r === "walk" || r === "intent_walk") return "#ffc277";
-  if (r === "hit_by_pitch") return "#ffc277";
-  if (r === "home_run") return "#FF5EDC";
-  if (r === "single" || r === "double" || r === "triple") return "#feffa3";
-  if (r.includes("out") || r.includes("play") || r.includes("force") || r === "fielders_choice" || r === "sac_fly" || r === "sac_bunt" || r === "field_error") return "#65BAFF";
-  if (r === "catcher_interf") return "#ffc277";
-  return null;
-}
+import { getPBPResultColor, getPADescriptionSpans, isCIOrErrorEvent } from "../utils/pitchFilters";
 
 export default function Scoreboard({ data, pitcherId, onInningClick }) {
   const [tooltip, setTooltip] = useState(null); // { inning, top, x, y, above }
@@ -232,7 +219,12 @@ export default function Scoreboard({ data, pitcherId, onInningClick }) {
             const prevPa = i > 0 ? tooltipPas[i - 1] : null;
             const isPitcherChange = prevPa && prevPa.pitcher_id !== pa.pitcher_id;
             const isFeaturedPa = isFeaturedPitcherPitching && pa.pitcher_id === pitcherId;
-            const resultColor = isFeaturedPa ? getResultColor(pa.result) : null;
+            const resultColor = isFeaturedPa ? getPBPResultColor(pa.result) : null;
+            const isCIErr = isCIOrErrorEvent(pa.result);
+            // Hits where a runner was thrown out — the out sentence renders blue
+            const _r = (pa.result || "").toLowerCase().replace(/\s+/g, "_");
+            const _isHit = _r === "single" || _r === "double" || _r === "triple";
+            const isHitWithOut = _isHit && /\bout at\b|\bout advancing\b|\bthrown out\b/i.test(pa.description || "");
 
             // Extract mid-AB action events from this PA's pitches
             const midAbActions = (pa.pitches || []).filter(p => p.is_action && (p.scored || ["Wild Pitch", "Caught Stealing", "Pickoff CS", "Passed Ball", "Balk"].some(e => (p.event_type || "").toLowerCase().includes(e.toLowerCase()) || (p.desc || "").toLowerCase().includes(e.toLowerCase()))));
@@ -282,8 +274,16 @@ export default function Scoreboard({ data, pitcherId, onInningClick }) {
                   style={isFeaturedPa ? {
                     color: resultColor || "var(--text-bright)",
                     fontWeight: 600,
-                  } : {}}>
-                  {pa.description || `${pa.batter}: ${pa.result}`}
+                  } : (isCIErr ? { color: "#feffa3", fontWeight: 600 } : {})}>
+                  {(() => {
+                    const desc = pa.description || `${pa.batter}: ${pa.result}`;
+                    // Always run sentence-level coloring so "scores" + CI/error
+                    // and hit-with-out highlights show even on non-featured PAs.
+                    const spans = getPADescriptionSpans(desc, { isCIOrError: isCIErr, isHitWithOut });
+                    return spans.map((s, idx) => (
+                      <span key={idx} style={s.style || undefined}>{s.text}</span>
+                    ));
+                  })()}
                 </div>
                 {/* Show mid-AB action events (wild pitch, caught stealing, etc.) */}
                 {midAbActions.length > 0 && midAbActions.map((action, ai) => (

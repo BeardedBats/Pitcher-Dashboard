@@ -11,7 +11,7 @@ import VelocityTrendV2 from "./VelocityTrendV2";
 import { PITCH_COLORS, PITCH_DESC_COLORS, RESULT_COLORS, CARD_PITCH_DATA_COLUMNS, displayAbbrev, getOpponentTierColor } from "../constants";
 import { getResultColor } from "../utils/formatting";
 import { fetchSeasonAverages, fetchPitcherSchedule } from "../utils/api";
-import { classifyPitchResult, isRunScored, isStrikeoutPitch, isBallInPlay, classifyBIPQuality, classifyBattedBallFull, getTooltipResult, RESULT_FILTER_OPTIONS, RESULT_QUICK_ACTIONS } from "../utils/pitchFilters";
+import { classifyPitchResult, isRunScored, isStrikeoutPitch, isBallInPlay, classifyBIPQuality, classifyBattedBallFull, getTooltipResult, getPADescriptionSpans, isCIOrErrorEvent, RESULT_FILTER_OPTIONS, RESULT_QUICK_ACTIONS } from "../utils/pitchFilters";
 
 function ordinal(n) {
   const s = ["th", "st", "nd", "rd"];
@@ -331,7 +331,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                 <tr>
                   <th>Pitcher</th><th>Dec.</th><th>IP</th><th>R</th><th>ER</th><th>Hits</th><th>BB</th>
                   <th className="gameline-divider-right">K</th>
-                  <th>Whiffs</th><th>SwStr%</th><th>CSW%</th><th>Strike%</th><th>#</th><th>HR</th>
+                  <th>Whiffs</th><th>SwStr%</th><th>CSW%</th><th>Strike%</th><th>2Str%</th><th>PAR%</th><th>#</th><th>HR</th>
                 </tr>
               </thead>
               <tbody>
@@ -354,6 +354,8 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                   <td>{result.swstr_pct != null ? Math.round(result.swstr_pct) + "%" : "-"}</td>
                   <td>{result.csw_pct != null ? Math.round(result.csw_pct) + "%" : "-"}</td>
                   <td>{result.strike_pct != null ? Math.round(result.strike_pct) + "%" : "-"}</td>
+                  <td>{result.two_str_pct != null ? Math.round(result.two_str_pct) + "%" : "-"}</td>
+                  <td>{result.par_pct != null ? Math.round(result.par_pct) + "%" : "-"}</td>
                   <td>{result.pitches}</td>
                   <td>{result.hrs}</td>
                 </tr>
@@ -389,6 +391,8 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                       <td><span className="rate-label">SwStr%</span>{seasonTotals.swstr_pct != null ? Math.round(seasonTotals.swstr_pct) + "%" : "-"}</td>
                       <td><span className="rate-label">CSW%</span>{seasonTotals.csw_pct != null ? Math.round(seasonTotals.csw_pct) + "%" : "-"}</td>
                       <td><span className="rate-label">Str%</span>{seasonTotals.strike_pct != null ? Math.round(seasonTotals.strike_pct) + "%" : "-"}</td>
+                      <td><span className="rate-label">2Str%</span>{seasonTotals.two_str_pct != null ? Math.round(seasonTotals.two_str_pct) + "%" : "-"}</td>
+                      <td><span className="rate-label">PAR%</span>{seasonTotals.par_pct != null ? Math.round(seasonTotals.par_pct) + "%" : "-"}</td>
                       <td><span className="rate-label">PPG</span>{ppg}</td>
                       <td><span className="rate-label">HR/9</span>{hr9}</td>
                     </tr>
@@ -498,7 +502,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                     <div className="card-pbp-inning-header">
                       <span className="card-pbp-inning-label">{seg.label}</span>
                       <span className="card-pbp-inning-stats">
-                        {stats.ip} IP · {stats.runs} R · {stats.hits} H · {stats.bbs} BB · {stats.ks} K · {stats.hrs} HR · {stats.pitches} P
+                        {" - "}{stats.ip} IP · {stats.runs} Runs · {stats.hits} Hits · {stats.bbs} BB · {stats.ks} K · {stats.hrs} HR · {stats.pitches} Pitches
                       </span>
                     </div>
                     {seg.pas.map((pa, pi) => {
@@ -582,7 +586,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                               </div>
                               <span className="card-pbp-result" style={{ color: resultColor }}>
                                 {paResult.isError && paResult.errorOutType
-                                  ? <>{paResult.errorOutType} <span style={{ color: "#feffa3" }}>(Error)</span></>
+                                  ? <>{paResult.errorOutType} <span style={{ color: "#ffc277" }}>(Error)</span></>
                                   : resultLabel}
                                 {paResult.isK && (
                                   paResult.isCalledStrikeThree
@@ -604,16 +608,20 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                                 ) : null}
                               </span>
                             </div>
-                            {pa.description && (
-                              <div className="card-pbp-desc" style={{ color: resultColor }}>
-                                {pa.description.split(/(?<=\.\s*)/).map((sentence, idx) => {
-                                  const isErrorLine = paResult.isError && /error/i.test(sentence);
-                                  const isScoringLine = /\bscores\b/i.test(sentence);
-                                  const color = isErrorLine ? "#feffa3" : isScoringLine ? "#FF5EDC" : undefined;
-                                  return <span key={idx} style={color ? { color } : undefined}>{sentence}</span>;
-                                })}
-                              </div>
-                            )}
+                            {pa.description && (() => {
+                              const isCIErr = paResult.isError || isCIOrErrorEvent(pa.result);
+                              const _r = (pa.result || "").toLowerCase().replace(/\s+/g, "_");
+                              const _isHit = _r === "single" || _r === "double" || _r === "triple";
+                              const isHitWithOut = _isHit && /\bout at\b|\bout advancing\b|\bthrown out\b/i.test(pa.description);
+                              const baseColor = isCIErr ? "#feffa3" : resultColor;
+                              return (
+                                <div className="card-pbp-desc" style={{ color: baseColor }}>
+                                  {getPADescriptionSpans(pa.description, { isCIOrError: isCIErr, isHitWithOut }).map((s, idx) => (
+                                    <span key={idx} style={s.style || undefined}>{s.text}</span>
+                                  ))}
+                                </div>
+                              );
+                            })()}
                             {!isK && pa.launch_speed != null && (
                               <div className="card-pbp-evla">
                                 {pa.launch_speed.toFixed(1)} EV{pa.launch_angle != null ? ` · ${pa.launch_angle.toFixed(0)}° LA` : ""}
@@ -726,7 +734,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                                       </div>
                                       <div style={{ whiteSpace: "nowrap", color: result.color, fontWeight: 600, marginLeft: 12 }}>
                                         {result.isError && result.errorOutType
-                                          ? <>{result.errorOutType} <span style={{ color: "#feffa3" }}>(Error)</span></>
+                                          ? <>{result.errorOutType} <span style={{ color: "#ffc277" }}>(Error)</span></>
                                           : result.label}
                                         {result.isK && (
                                           result.isCalledStrikeThree
