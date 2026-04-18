@@ -27,7 +27,7 @@ _override_version = 0  # Incremented on every save/remove to bust agg caches
 # Cache-shape version. Bump whenever a cached payload (card, season totals,
 # player page) gains or changes fields so all old cache entries miss after
 # deploy. Included in every relevant cache key alongside _override_version.
-CARD_SCHEMA_VERSION = 3
+CARD_SCHEMA_VERSION = 4
 
 def _load_overrides():
     global _overrides, _override_version
@@ -523,11 +523,15 @@ def _fetch_game_from_mlb_api(game_pk, date_str):
                 }
                 rows.append(row)
 
-                # Update count for next pitch
+                # Update count for next pitch. Codes mirror _MLB_TYPE_MAP:
+                # balls = B/H/P/I/V/*B, strikes = C/S/F/T/L/M/A/*S, in-play = X/D/E.
+                # ("F" = foul — was missing previously, which left cur_strikes
+                # stuck at <2 for any PA with foul balls and made PAR%
+                # denominators wildly under-counted.)
                 code = details.get("code", "")
                 if code in ("B", "H", "P", "I", "V", "*B"):
                     cur_balls = min(cur_balls + 1, 4)
-                elif code in ("C", "S", "T", "M", "L", "A", "*S"):
+                elif code in ("C", "S", "F", "T", "L", "M", "A", "*S"):
                     cur_strikes = min(cur_strikes + 1, 2)
 
             # After this PA: update base state from runner movements
