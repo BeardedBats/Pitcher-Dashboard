@@ -19,7 +19,7 @@ from data import (
     start_warmup, get_warmup_status, get_agg_cache, set_agg_cache,
     warmup_range_data, fetch_date, compute_player_page,
     get_top400_pitcher_ids, warmup_player_pages,
-    get_override_version,
+    get_override_version, CARD_SCHEMA_VERSION,
 )
 from aggregation import (
     aggregate_pitch_data, aggregate_pitcher_results, get_pitcher_card,
@@ -38,6 +38,8 @@ _FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend-build"
 
 # ── Detect environment: serverless (Vercel) vs persistent (local/Electron) ──
 _IS_SERVERLESS = os.environ.get("VERCEL") == "1" or os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is not None
+# CARD_SCHEMA_VERSION is imported from data.py — bump it there when a cached
+# payload shape changes so all card/season-totals/player-page caches miss.
 
 # ── Stadium coordinates (lat, lon) for weather lookups ──
 STADIUM_COORDS = {
@@ -257,7 +259,7 @@ def clear(date: str = Query(None)):
 
 def _compute_season_totals(pitcher_id, start_date, end_date):
     """Compute season totals for a pitcher. Returns dict or {} if no data."""
-    agg_key = f"season_totals_{pitcher_id}_{start_date}_{end_date}"
+    agg_key = f"season_totals_{pitcher_id}_{start_date}_{end_date}_s{CARD_SCHEMA_VERSION}"
     cached = get_agg_cache(agg_key)
     if cached is not None:
         return cached
@@ -282,7 +284,8 @@ def _compute_season_totals(pitcher_id, start_date, end_date):
     total_games_started = sum(g.get("games_started", 0) for g in game_log)
     total_pa_count = sum(g.get("pa_count", 0) for g in game_log)
     total_two_str_pas = sum(g.get("two_strike_pas", 0) for g in game_log)
-    total_two_str_ks = sum(g.get("two_strike_ks", 0) for g in game_log)
+    total_two_str_pitches = sum(g.get("two_strike_pitches", 0) for g in game_log)
+    total_strikeouts_par = sum(g.get("strikeouts_for_par", 0) for g in game_log)
     result = {
         "games": len(game_log),
         "games_started": total_games_started,
@@ -300,7 +303,8 @@ def _compute_season_totals(pitcher_id, start_date, end_date):
         "csw_pct": round(sum(g.get("csw_pct", 0) * g.get("pitches", 0) for g in game_log) / total_pitches, 1) if total_pitches > 0 else 0,
         "strike_pct": round(total_strikes / total_pitches * 100, 1) if total_pitches > 0 else 0,
         "two_str_pct": round(total_two_str_pas / total_pa_count * 100, 1) if total_pa_count > 0 else 0,
-        "par_pct": round(total_two_str_ks / total_two_str_pas * 100, 1) if total_two_str_pas > 0 else 0,
+        # Per-pitch PAR%: Ks / pitches thrown in 2-strike counts.
+        "par_pct": round(total_strikeouts_par / total_two_str_pitches * 100, 1) if total_two_str_pitches > 0 else 0,
         "pitches": total_pitches,
         "wins": sum(1 for g in game_log if g.get("decision") == "W"),
         "losses": sum(1 for g in game_log if g.get("decision") == "L"),
@@ -311,7 +315,7 @@ def _compute_season_totals(pitcher_id, start_date, end_date):
 @app.get("/api/pitcher-card")
 def pitcher_card(date: str = Query(...), pitcher_id: int = Query(...), game_pk: int = Query(...)):
     # Include override version in cache key so reclassifications always bust the cache
-    agg_key = f"card_{date}_{pitcher_id}_{game_pk}_v{get_override_version()}"
+    agg_key = f"card_{date}_{pitcher_id}_{game_pk}_v{get_override_version()}_s{CARD_SCHEMA_VERSION}"
     cached = get_agg_cache(agg_key)
     if cached is not None:
         return cached
@@ -445,7 +449,7 @@ def team_pitchers(team: str = Query(...), start_date: str = Query("2026-03-25"),
 @app.get("/api/player-page")
 def player_page(pitcher_id: int = Query(...), start_date: str = Query("2026-03-25"), end_date: str = Query("")):
     end_date = _resolve_end_date(end_date)
-    agg_key = f"player_v2_{pitcher_id}_{start_date}_{end_date}"
+    agg_key = f"player_v2_{pitcher_id}_{start_date}_{end_date}_s{CARD_SCHEMA_VERSION}"
     cached = get_agg_cache(agg_key)
     if cached is not None:
         return cached
@@ -650,7 +654,7 @@ def cron_warmup_daily_cards(request: Request):
         totals_warmed = 0
         for pid in unique_pids:
             pid = int(pid)
-            st_key = f"season_totals_{pid}_{season_start}_{totals_end}"
+            st_key = f"season_totals_{pid}_{season_start}_{totals_end}_s{CARD_SCHEMA_VERSION}"
             if get_agg_cache(st_key) is not None:
                 continue
             try:
@@ -663,7 +667,7 @@ def cron_warmup_daily_cards(request: Request):
         combos = day_df.groupby(["pitcher", "game_pk"]).size().reset_index()[["pitcher", "game_pk"]]
         for _, row in combos.iterrows():
             pid, gpk = int(row["pitcher"]), int(row["game_pk"])
-            agg_key = f"card_{yesterday}_{pid}_{gpk}_v{get_override_version()}"
+            agg_key = f"card_{yesterday}_{pid}_{gpk}_v{get_override_version()}_s{CARD_SCHEMA_VERSION}"
             if get_agg_cache(agg_key) is not None:
                 continue
             try:
@@ -788,7 +792,7 @@ def cron_warmup_live_cards(request: Request):
             pid, gpk = int(row["pitcher"]), int(row["game_pk"])
             if pid not in pids_to_cache:
                 continue
-            agg_key = f"card_{today}_{pid}_{gpk}_v{get_override_version()}"
+            agg_key = f"card_{today}_{pid}_{gpk}_v{get_override_version()}_s{CARD_SCHEMA_VERSION}"
             try:
                 card = get_pitcher_card(today, pid, gpk)
                 if card:

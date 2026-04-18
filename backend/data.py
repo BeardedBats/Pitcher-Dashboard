@@ -24,6 +24,11 @@ OVERRIDES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pitch
 _overrides = {}  # { "gamePk_pitcherId_atBat_pitchNum": {"original":"FF","new":"FC",...} }
 _override_version = 0  # Incremented on every save/remove to bust agg caches
 
+# Cache-shape version. Bump whenever a cached payload (card, season totals,
+# player page) gains or changes fields so all old cache entries miss after
+# deploy. Included in every relevant cache key alongside _override_version.
+CARD_SCHEMA_VERSION = 2
+
 def _load_overrides():
     global _overrides, _override_version
     # Try Redis first
@@ -1065,7 +1070,8 @@ def compute_player_page(df, pitcher_id):
             total_ip_thirds += full * 3 + thirds
         total_pa_count = sum(g.get("pa_count", 0) for g in game_log)
         total_two_str_pas = sum(g.get("two_strike_pas", 0) for g in game_log)
-        total_two_str_ks = sum(g.get("two_strike_ks", 0) for g in game_log)
+        total_two_str_pitches = sum(g.get("two_strike_pitches", 0) for g in game_log)
+        total_strikeouts_par = sum(g.get("strikeouts_for_par", 0) for g in game_log)
         results_summary = {
             "games": len(game_log),
             "ip": f"{total_ip_thirds // 3}.{total_ip_thirds % 3}",
@@ -1082,7 +1088,8 @@ def compute_player_page(df, pitcher_id):
             "csw_pct": round(sum(g.get("csw_pct", 0) * g.get("pitches", 0) for g in game_log) / total_pitches, 1) if total_pitches > 0 else 0,
             "strike_pct": round(sum(g.get("strikes", 0) for g in game_log) / total_pitches * 100, 1) if total_pitches > 0 else 0,
             "two_str_pct": round(total_two_str_pas / total_pa_count * 100, 1) if total_pa_count > 0 else 0,
-            "par_pct": round(total_two_str_ks / total_two_str_pas * 100, 1) if total_two_str_pas > 0 else 0,
+            # Per-pitch PAR%: Ks / pitches thrown in 2-strike counts.
+            "par_pct": round(total_strikeouts_par / total_two_str_pitches * 100, 1) if total_two_str_pitches > 0 else 0,
             "ip_thirds": total_ip_thirds,
             "pitches": total_pitches,
             "wins": sum(1 for g in game_log if g.get("decision") == "W"),
@@ -1149,7 +1156,7 @@ def warmup_player_pages(df, start_date, end_date, pitcher_ids=None, only_date=No
     computed = 0
     skipped = 0
     for pid in target_ids:
-        agg_key = f"player_v2_{pid}_{start_date}_{end_date}"
+        agg_key = f"player_v2_{pid}_{start_date}_{end_date}_s{CARD_SCHEMA_VERSION}"
         try:
             result = compute_player_page(df, pid)
             if result is not None:

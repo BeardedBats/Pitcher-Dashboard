@@ -14,25 +14,30 @@ _HR_EVENTS = frozenset(["home_run"])
 
 
 def _compute_two_strike_pa_stats(gdf):
-    """Return (pa_count, two_strike_pas, two_strike_ks) for the given pitch DataFrame.
-    PAs are identified by at_bat_number (unique within a game). A PA "reached"
-    a 2-strike count when any pitch was thrown with strikes >= 2 before release.
+    """Return (pa_count, two_strike_pas, two_strike_pitches, strikeouts) for a pitch DataFrame.
+
+    - pa_count: total PAs (unique at_bat_numbers). Used as denominator for 2Str%.
+    - two_strike_pas: PAs where any pitch was thrown with strikes >= 2 (i.e.
+      the PA "reached" a 2-strike count). Numerator for 2Str%.
+    - two_strike_pitches: number of pitches thrown with strikes >= 2 at release.
+      Denominator for PAR%.
+    - strikeouts: PAs that ended in a strikeout (events in _K_EVENTS).
+      Numerator for PAR% — every K is recorded on a 2-strike pitch by
+      definition (you need 3 strikes to K, so the K-recording pitch always
+      has pre-release strikes == 2).
     """
-    if gdf is None or gdf.empty or "at_bat_number" not in gdf.columns:
-        return 0, 0, 0
-    if "strikes" not in gdf.columns:
-        return 0, 0, 0
+    if gdf is None or gdf.empty or "at_bat_number" not in gdf.columns or "strikes" not in gdf.columns:
+        return 0, 0, 0, 0
+    strikes_col = gdf["strikes"]
     pa_two_strikes = gdf.groupby("at_bat_number")["strikes"].max() >= 2
     pa_count = int(pa_two_strikes.size)
     two_strike_pas = int(pa_two_strikes.sum())
+    two_strike_pitches = int((strikes_col >= 2).sum())
     if "events" in gdf.columns:
-        ev_per_pa = gdf.groupby("at_bat_number")["events"].apply(
-            lambda s: s.dropna().astype(str).str.lower().isin(_K_EVENTS).any()
-        )
-        two_strike_ks = int((pa_two_strikes & ev_per_pa.reindex(pa_two_strikes.index, fill_value=False)).sum())
+        strikeouts = int(gdf["events"].dropna().astype(str).str.lower().isin(_K_EVENTS).sum())
     else:
-        two_strike_ks = 0
-    return pa_count, two_strike_pas, two_strike_ks
+        strikeouts = 0
+    return pa_count, two_strike_pas, two_strike_pitches, strikeouts
 _OUT_EVENTS = frozenset(["field_out", "strikeout", "grounded_into_double_play", "force_out", "double_play",
                           "fielders_choice", "fielders_choice_out", "strikeout_double_play", "triple_play",
                           "sac_fly", "sac_bunt", "sac_fly_double_play", "sac_bunt_double_play"])
@@ -427,7 +432,7 @@ def get_pitcher_card(date_str, pitcher_id, game_pk):
     away_team_r = pdf_r["away_team"].iloc[0] if "away_team" in pdf_r.columns else ""
     swings_r = int(pdf_r["description"].isin(_SWING_DESCS).sum())
     strikes_r = int(pdf_r["type"].isin(_STRIKE_TYPES).sum()) if "type" in pdf_r.columns else 0
-    pa_count_r, two_strike_pas_r, two_strike_ks_r = _compute_two_strike_pa_stats(pdf_r)
+    pa_count_r, two_strike_pas_r, two_strike_pitches_r, strikeouts_r = _compute_two_strike_pa_stats(pdf_r)
     pitcher_result = {
         "pitcher_id": int(pitcher_id), "game_pk": int(game_pk),
         "pitcher": name, "team": team, "hand": hand, "opponent": opp,
@@ -436,8 +441,11 @@ def get_pitcher_card(date_str, pitcher_id, game_pk):
         "swstr_pct": round(whiffs_r / total_pitches * 100, 1) if total_pitches > 0 else 0,
         "csw_pct": round((called_strikes_r + whiffs_r) / total_pitches * 100, 1) if total_pitches > 0 else 0,
         "strike_pct": round(strikes_r / total_pitches * 100, 1) if total_pitches > 0 else 0,
+        # 2Str%: batters faced who reached a two-strike count / total BF
         "two_str_pct": round(two_strike_pas_r / pa_count_r * 100, 1) if pa_count_r > 0 else 0,
-        "par_pct": round(two_strike_ks_r / two_strike_pas_r * 100, 1) if two_strike_pas_r > 0 else 0,
+        # PAR% (per-pitch): pitches thrown in a two-strike count that recorded
+        # a strikeout / total pitches thrown in a two-strike count.
+        "par_pct": round(strikeouts_r / two_strike_pitches_r * 100, 1) if two_strike_pitches_r > 0 else 0,
         "pitches": total_pitches, "hrs": hrs_r,
         "appearance_order": appearance_order_r,
         "home_team": home_team_r, "away_team": away_team_r,
@@ -774,7 +782,7 @@ def get_pitcher_game_log(df, pitcher_id):
             game_started = pbox.get("games_started", 0)
             decision = pbox.get("decision", "")
 
-        pa_count, two_strike_pas, two_strike_ks = _compute_two_strike_pa_stats(gdf)
+        pa_count, two_strike_pas, two_strike_pitches, strikeouts = _compute_two_strike_pa_stats(gdf)
         results.append({
             "game_pk": int(game_pk),
             "date": game_date,
@@ -800,9 +808,11 @@ def get_pitcher_game_log(df, pitcher_id):
             # without re-iterating per-pitch data.
             "pa_count": pa_count,
             "two_strike_pas": two_strike_pas,
-            "two_strike_ks": two_strike_ks,
+            "two_strike_pitches": two_strike_pitches,
+            "strikeouts_for_par": strikeouts,
             "two_str_pct": round(two_strike_pas / pa_count * 100, 1) if pa_count > 0 else 0,
-            "par_pct": round(two_strike_ks / two_strike_pas * 100, 1) if two_strike_pas > 0 else 0,
+            # Per-pitch PAR% — strikeouts / pitches thrown in 2-strike counts.
+            "par_pct": round(strikeouts / two_strike_pitches * 100, 1) if two_strike_pitches > 0 else 0,
         })
     results.sort(key=lambda r: r["date"])
     return results
