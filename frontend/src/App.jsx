@@ -76,8 +76,6 @@ export default function App() {
   const [selectedTeamPage, setSelectedTeamPage] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
-  const [flashKey, setFlashKey] = useState(0);
-  const [tableLoading, setTableLoading] = useState(false);
   const [toast, setToast] = useState(null); // { message, type: "success"|"error" }
 
   // Lifted sort state so it persists across card navigation
@@ -152,7 +150,6 @@ export default function App() {
         setResultsData(newResults);
         if (newLinescore) setLinescoreData(newLinescore);
       }
-      setFlashKey((k) => k + 1);
     } catch (e) {
       setToast({ message: "Refresh failed", type: "error" });
     } finally {
@@ -341,13 +338,13 @@ export default function App() {
     }
     // Don't nuke an open card or fetch table data while viewing a card
     if (cardData) return;
-    setLoading(true); setTableLoading(true); setError(null);
+    setLoading(true); setError(null);
     Promise.all([
       fetchPitchData(date, selectedGame),
       fetchPitcherResults(date, selectedGame),
     ]).then(([pd, pr]) => {
-      setPitchData(pd); setResultsData(pr); setLoading(false); setTableLoading(false);
-    }).catch(e => { setError(e.message); setLoading(false); setTableLoading(false); });
+      setPitchData(pd); setResultsData(pr); setLoading(false);
+    }).catch(e => { setError(e.message); setLoading(false); });
   }, [selectedGame, date, games.length]); // eslint-disable-line
 
   // Fetch linescore when a specific game is selected or card opens.
@@ -512,7 +509,7 @@ export default function App() {
         title="Refresh data"
       >
         <span className={`refresh-icon${refreshing ? " spinning" : ""}`}>&#x21bb;</span>
-        {lastRefresh ? <span key={flashKey} className={`refresh-ts${flashKey > 0 ? " timestamp-flash" : ""}`}>Updated {formatRefreshTime(lastRefresh)}</span> : null}
+        {lastRefresh ? <span className="refresh-ts">Updated {formatRefreshTime(lastRefresh)}</span> : null}
       </button>
       <select
         className="team-select"
@@ -644,12 +641,12 @@ export default function App() {
 
       {!loading && !error && !cardData && page === "games" && (
         <div className={splitByTeam ? "table-card-none" : "table-card"}>
-          <div className={`table-container ${tableLoading ? "table-loading" : "table-loaded"}`}>
+          <div className="table-container">
             {view === "pitch-data" && (
-              <PitchDataTable data={filteredPitchData} date={date} selectedGame={selectedGame} onPitcherClick={openCard} splitByTeam={splitByTeam} spOnly={spOnly} isMobile={isMobile} sortKey={pitchSortKey} onSortKeyChange={setPitchSortKey} sortDir={pitchSortDir} onSortDirChange={setPitchSortDir} />
+              <PitchDataTable data={filteredPitchData} date={date} onPitcherClick={openCard} splitByTeam={splitByTeam} spOnly={spOnly} isMobile={isMobile} sortKey={pitchSortKey} onSortKeyChange={setPitchSortKey} sortDir={pitchSortDir} onSortDirChange={setPitchSortDir} />
             )}
             {view === "pitcher-results" && (
-              <PitcherResultsTable data={filteredResultsData} date={date} selectedGame={selectedGame} onPitcherClick={openCard} spOnly={spOnly} splitByTeam={splitByTeam} isMobile={isMobile} sortKey={resultsSortKey} onSortKeyChange={setResultsSortKey} sortDir={resultsSortDir} onSortDirChange={setResultsSortDir} hiddenCols={resultsHiddenCols} />
+              <PitcherResultsTable data={filteredResultsData} date={date} onPitcherClick={openCard} spOnly={spOnly} splitByTeam={splitByTeam} isMobile={isMobile} sortKey={resultsSortKey} onSortKeyChange={setResultsSortKey} sortDir={resultsSortDir} onSortDirChange={setResultsSortDir} hiddenCols={resultsHiddenCols} />
             )}
           </div>
         </div>
@@ -679,10 +676,6 @@ export default function App() {
                 <Scoreboard data={linescoreData} pitcherId={cardData?.result?.pitcher_id} onInningClick={(inn, isTop) => setPbpModal({ inning: inn, isTop })} />
               )}
             </div>
-            <div
-              key={`${cardData?.result?.pitcher_id || cardData?.pitcher_id || ''}-${cardData?.result?.game_pk || cardData?.game_pk || ''}`}
-              className="pitcher-card-animated"
-            >
             <PitcherCard cardData={cardData} date={date} linescoreData={linescoreData} isMobile={isMobile} onPlayerClick={(id, e) => navigateToPlayer(id, null, e)} onGameClick={(e) => {
               const gamePk = cardData?.result?.game_pk || selectedGame;
               const pitcherId = cardData?.result?.pitcher_id;
@@ -706,7 +699,6 @@ export default function App() {
                 }).catch(e => { setError(e.message); setLoading(false); });
               }
             }} onReclassify={(pitch) => setReclassifyPitch(pitch)} />
-            </div>
           </div>
         </>
       )}

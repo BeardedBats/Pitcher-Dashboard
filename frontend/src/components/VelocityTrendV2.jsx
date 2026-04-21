@@ -37,10 +37,6 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile, lines
   const wrapRef = useRef(null);
   const dotsRef = useRef([]);
   const inningHeadersRef = useRef([]); // hit regions for inning headers
-  const animFrameRef = useRef(null);
-  const animStartRef = useRef(null);
-  const prevPitchesRef = useRef(null);
-  const ANIM_DURATION = 250;
   const [hover, setHover] = useState(null);
   const [inningHover, setInningHover] = useState(null); // { inning, x, y }
   const inningTooltipRef = useRef(null);
@@ -49,13 +45,6 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile, lines
   const [highlightType, setHighlightType] = useState(null);
   const [lockedType, setLockedType] = useState(null);
   const [mobileTooltipVis, setMobileTooltipVis] = useState(null);
-
-  // Cleanup animation frame on unmount
-  useEffect(() => {
-    return () => {
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    };
-  }, []);
 
   const { ordered, inningBounds, typeStats, pitchTypes, globalMin, globalMax, inningStats } = useMemo(() => {
     if (!pitches || pitches.length === 0)
@@ -149,6 +138,7 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile, lines
     canvas.style.width = W + "px";
     canvas.style.height = H + "px";
     const ctx = canvas.getContext("2d");
+    ctx.scale(dpr, dpr);
 
     const PAD = { top: 46, bottom: 40, left: 20, right: 70 };
     const plotW = W - PAD.left - PAD.right;
@@ -156,6 +146,9 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile, lines
     const laneInnerPad = 6;
     const innerTop = PAD.top + laneInnerPad;
     const innerH = plotH - laneInnerPad * 2;
+
+    ctx.fillStyle = "#252840";
+    ctx.fillRect(0, 0, W, H);
 
     const totalPitches = ordered.length;
     const toX = (pn) => PAD.left + ((pn - 1) / Math.max(totalPitches - 1, 1)) * plotW;
@@ -177,25 +170,9 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile, lines
       }
     }
 
-    const drawChart = (clipWidth) => {
-      // Reset transform and clear
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.scale(dpr, dpr);
-
-      // Clip chart body to animated width
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, clipWidth, H);
-      ctx.clip();
-
-      // Background fill
-      ctx.fillStyle = "#252840";
-      ctx.fillRect(0, 0, W, H);
-
-      // Full lane background
-      ctx.fillStyle = "rgba(255,255,255,0.02)";
-      ctx.fillRect(PAD.left, innerTop, plotW, innerH);
+    // Full lane background
+    ctx.fillStyle = "rgba(255,255,255,0.02)";
+    ctx.fillRect(PAD.left, innerTop, plotW, innerH);
 
     // Alternating inning panels
     const containerTop = innerTop;
@@ -272,9 +249,6 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile, lines
       ctx.stroke();
       ctx.restore();
     }
-
-    // End chart-body clip; static elements below are always fully visible
-    ctx.restore();
 
     // Inning headers: "Xth: avg (min / max)" centered above each inning
     // Compute game-wide fastball avg (whichever of Four-Seamer/Sinker has more pitches)
@@ -491,32 +465,8 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile, lines
       ctx.fillText(i, toX(i), containerBot + 8);
     }
 
-      dotsRef.current = dots;
-    };
-
-    // Dispatch: animate on pitcher change, else redraw instantly
-    const shouldAnimate = prevPitchesRef.current !== pitches;
-    prevPitchesRef.current = pitches;
-
-    if (shouldAnimate) {
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-      animStartRef.current = null;
-      const step = (timestamp) => {
-        if (!animStartRef.current) animStartRef.current = timestamp;
-        const elapsed = timestamp - animStartRef.current;
-        const progress = Math.min(elapsed / ANIM_DURATION, 1);
-        const eased = 1 - Math.pow(1 - progress, 3);
-        const clipW = Math.floor(W * eased);
-        drawChart(clipW);
-        if (progress < 1) {
-          animFrameRef.current = requestAnimationFrame(step);
-        }
-      };
-      animFrameRef.current = requestAnimationFrame(step);
-    } else {
-      drawChart(W);
-    }
-  }, [ordered, pitchTypes, typeStats, inningBounds, inningStats, dims, globalMin, globalMax, activeHighlight, lockedType, pitches]);
+    dotsRef.current = dots;
+  }, [ordered, pitchTypes, typeStats, inningBounds, inningStats, dims, globalMin, globalMax, activeHighlight, lockedType]);
 
   // Hover handling
   const handleMouseMove = useCallback(

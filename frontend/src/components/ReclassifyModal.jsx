@@ -3,7 +3,6 @@ import { PITCH_TYPE_FILTERS, PITCH_COLORS } from "../constants";
 
 export default function ReclassifyModal({ pitch, gamePk, pitcherId, date, onConfirm, onClose }) {
   const [newType, setNewType] = useState("");
-  const [pressing, setPressing] = useState(false);
 
   useEffect(() => {
     const handleKey = e => { if (e.key === "Escape") onClose(); };
@@ -18,23 +17,19 @@ export default function ReclassifyModal({ pitch, gamePk, pitcherId, date, onConf
 
   const handleSubmit = () => {
     if (!newType || newType === currentName) return;
-    setPressing(true);
-    setTimeout(() => {
-      setPressing(false);
-      onConfirm({
-        game_pk: gamePk,
-        pitcher_id: pitcherId,
-        at_bat_number: pitch.at_bat_number,
-        pitch_number: pitch.pitch_number,
-        new_pitch_type: newType,
-        date: date || "",
-      });
-    }, 80);
+    onConfirm({
+      game_pk: gamePk,
+      pitcher_id: pitcherId,
+      at_bat_number: pitch.at_bat_number,
+      pitch_number: pitch.pitch_number,
+      new_pitch_type: newType,
+      date: date || "",
+    });
   };
 
   return (
-    <div className="reclass-backdrop modal-backdrop-animated" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="reclass-panel reclassify-modal-animated">
+    <div className="reclass-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="reclass-panel">
         <div className="reclass-header">
           <span className="reclass-title">Reclassify Pitch</span>
           <button className="reclass-close" onClick={onClose}>&times;</button>
@@ -60,7 +55,7 @@ export default function ReclassifyModal({ pitch, gamePk, pitcherId, date, onConf
         </div>
         <div className="reclass-actions">
           <button className="reclass-btn reclass-btn-cancel" onClick={onClose}>Cancel</button>
-          <button className={`reclass-btn reclass-btn-confirm${pressing ? " btn-press-active" : ""}`} onClick={handleSubmit} disabled={!newType || newType === currentName}>
+          <button className="reclass-btn reclass-btn-confirm" onClick={handleSubmit} disabled={!newType || newType === currentName}>
             Change
           </button>
         </div>

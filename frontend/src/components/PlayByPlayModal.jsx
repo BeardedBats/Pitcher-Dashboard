@@ -180,8 +180,8 @@ export default function PlayByPlayModal({ data, inning: initialInning, isTop: in
   const nextLabel = hasNext ? `${ordinal(pitcherHalfInnings[currentHalfIdx + 1].inning)} →` : null;
 
   return (
-    <div className="pbp-backdrop modal-backdrop-animated" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="pbp-panel pbp-modal-animated">
+    <div className="pbp-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="pbp-panel">
         <div className="pbp-header">
           {/* Left arrow / prev inning */}
           <button className="pbp-nav-btn" onClick={goToPrev} disabled={!hasPrev} title={hasPrev ? `Go to ${ordinal(pitcherHalfInnings[currentHalfIdx - 1].inning)}` : ""}>
