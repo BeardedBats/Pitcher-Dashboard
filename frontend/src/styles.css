@@ -1511,6 +1511,20 @@ canvas { display: block; border: none; border-radius: var(--radius-sm); }
 
 /* ======== ANIMATIONS ======== */
 
+/* Contain animation transforms so they don't trigger page scrollbars.
+ * overflow: clip clips paint without creating a scroll container, preserving
+ * sticky positioning inside the table. html/body overflow-x: hidden catches
+ * any stray horizontal extension from cell-pulse scale or translate. */
+html, body {
+  overflow-x: hidden;
+}
+.table-container,
+.pitcher-card-animated,
+.reclass-backdrop,
+.pbp-backdrop {
+  overflow: clip;
+}
+
 /* 1. Table row appear on data load */
 @keyframes rowReveal {
   from {
