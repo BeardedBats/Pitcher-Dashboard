@@ -3,6 +3,130 @@ import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from data import fetch_date, fetch_pitcher_season, get_earned_runs, get_boxscore_ip, get_boxscore_full, get_game_state
 
+
+def _ip_to_outs(ip_str):
+    """Convert IP string like '7.1' (7⅓) to outs (22). '.1' = ⅓, '.2' = ⅔."""
+    if ip_str is None:
+        return 0
+    try:
+        parts = str(ip_str).split(".")
+        whole = int(parts[0])
+        thirds = int(parts[1]) if len(parts) > 1 and parts[1] else 0
+        return whole * 3 + thirds
+    except (ValueError, TypeError):
+        return 0
+
+
+_season_game_agg_cache = {}  # { (pitcher_id, year, before_date): [game_dicts] }
+
+
+def _pitcher_season_game_aggregates(pitcher_id, season_year, before_date=None):
+    """Per-game aggregates for a pitcher's season (cached).
+    Returns a list of dicts: {game_pk, game_date, pitches, outs, appearance_order}.
+    """
+    cache_key = (int(pitcher_id), int(season_year), str(before_date) if before_date else None)
+    if cache_key in _season_game_agg_cache:
+        return _season_game_agg_cache[cache_key]
+    df = fetch_pitcher_season(pitcher_id, season_year)
+    if df is None or df.empty:
+        _season_game_agg_cache[cache_key] = []
+        return []
+    if before_date and "game_date" in df.columns:
+        df = df[df["game_date"].astype(str) < str(before_date)]
+        if df.empty:
+            _season_game_agg_cache[cache_key] = []
+            return []
+    results = []
+    group_cols = [c for c in ["game_pk", "game_date"] if c in df.columns]
+    if not group_cols:
+        _season_game_agg_cache[cache_key] = []
+        return []
+    for key, gdf in df.groupby(group_cols):
+        game_pk = key[0] if isinstance(key, tuple) else key
+        game_date = key[1] if isinstance(key, tuple) and len(key) > 1 else ""
+        total_pitches = len(gdf)
+        if "events" in gdf.columns:
+            ev_col = gdf["events"].dropna()
+            ev_col = ev_col[ev_col.astype(str) != ""].astype(str).str.lower()
+            outs = _compute_outs_vectorized(ev_col)
+        else:
+            outs = 0
+        appearance_order = int(gdf["at_bat_number"].min()) if "at_bat_number" in gdf.columns and gdf["at_bat_number"].notna().any() else 999
+        results.append({
+            "game_pk": int(game_pk),
+            "game_date": str(game_date),
+            "pitches": int(total_pitches),
+            "outs": int(outs),
+            "appearance_order": appearance_order,
+        })
+    _season_game_agg_cache[cache_key] = results
+    return results
+
+
+def _check_opener_swap(first, second, season_year, before_date=None):
+    """Return True if the 'opener' swap applies (first=RP, second=SP).
+
+    All four conditions must be true:
+      A: first pitcher never threw more than 3 IP in any game this season
+      B: first pitcher threw < 50 pitches OR <= 2 IP in this game
+      C: second pitcher has thrown > 60 pitches in at least one game this season
+         AND was labeled as SP (appearance_order == 1) in at least one prior game
+      D: second pitcher threw more IP OR more pitches than first in this game
+    """
+    first_pitches = int(first.get("pitches", 0) or 0)
+    first_outs = _ip_to_outs(first.get("ip", "0.0"))
+    cond_b = first_pitches < 50 or first_outs <= 6
+    if not cond_b:
+        return False
+
+    second_pitches = int(second.get("pitches", 0) or 0)
+    second_outs = _ip_to_outs(second.get("ip", "0.0"))
+    cond_d = (second_outs > first_outs) or (second_pitches > first_pitches)
+    if not cond_d:
+        return False
+
+    first_season = _pitcher_season_game_aggregates(first["pitcher_id"], season_year, before_date=before_date)
+    cond_a = all(g["outs"] <= 9 for g in first_season)
+    if not cond_a:
+        return False
+
+    second_season = _pitcher_season_game_aggregates(second["pitcher_id"], season_year, before_date=before_date)
+    cond_c_pitches = any(g["pitches"] > 60 for g in second_season)
+    if not cond_c_pitches:
+        return False
+    cond_c_sp = any(g["appearance_order"] == 1 for g in second_season)
+    return cond_c_sp
+
+
+def classify_pitcher_roles(results_for_game, season_year=None, before_date=None):
+    """Classify pitchers in a game as 'SP' or 'RP'.
+
+    results_for_game: list of result rows for a single game's pitchers. Each row
+    needs pitcher_id, team, appearance_order, ip, and pitches.
+
+    Default rule: first pitcher (lowest appearance_order) per team = SP, rest = RP.
+    Opener override: if _check_opener_swap returns True, first = RP and second = SP.
+
+    Returns dict { pitcher_id: 'SP' | 'RP' }.
+    """
+    roles = {}
+    if not results_for_game:
+        return roles
+    by_team = {}
+    for r in results_for_game:
+        by_team.setdefault(r.get("team", ""), []).append(r)
+    for team, rows in by_team.items():
+        sorted_rows = sorted(rows, key=lambda r: r.get("appearance_order", 999))
+        for i, r in enumerate(sorted_rows):
+            roles[r["pitcher_id"]] = "SP" if i == 0 else "RP"
+        if len(sorted_rows) >= 2 and season_year is not None:
+            first = sorted_rows[0]
+            second = sorted_rows[1]
+            if _check_opener_swap(first, second, season_year, before_date=before_date):
+                roles[first["pitcher_id"]] = "RP"
+                roles[second["pitcher_id"]] = "SP"
+    return roles
+
 # ── Vectorized classification sets ──
 _SWING_DESCS = frozenset(["hit_into_play", "foul", "swinging_strike", "foul_tip", "swinging_strike_blocked", "foul_bunt", "missed_bunt", "bunt_foul_tip"])
 _WHIFF_DESCS = frozenset(["swinging_strike", "swinging_strike_blocked", "foul_tip"])
@@ -190,6 +314,7 @@ def aggregate_pitcher_results(date_str, game_pk=None):
         total_pitches = len(gdf)
         whiffs = int(gdf["is_whiff"].sum())
         called_strikes = int(gdf["is_called_strike"].sum())
+        strikes_total = int(gdf["type"].isin(_STRIKE_TYPES).sum()) if "type" in gdf.columns else 0
         appearance_order = int(gdf["at_bat_number"].min()) if "at_bat_number" in gdf.columns and gdf["at_bat_number"].notna().any() else 999
         events_df = gdf.dropna(subset=["events"])
         events_df = events_df[events_df["events"] != ""]
@@ -201,12 +326,15 @@ def aggregate_pitcher_results(date_str, game_pk=None):
         outs = _compute_outs_vectorized(ev_col)
         fallback_ip = f"{outs // 3}.{outs % 3}"
         home_team, away_team = game_teams.get(gp, ("", ""))
+        _, _, two_strike_pitches, strikeouts_for_par = _compute_two_strike_pa_stats(gdf)
         row = {
             "pitcher_id": int(pitcher_id), "game_pk": int(gp),
             "pitcher": name, "team": team, "hand": hand, "opponent": opp,
             "ip": fallback_ip, "hits": hits, "bbs": bbs, "ks": ks,
             "whiffs": whiffs,
             "csw_pct": round((called_strikes + whiffs) / total_pitches * 100, 1) if total_pitches > 0 else 0,
+            "strike_pct": round(strikes_total / total_pitches * 100, 1) if total_pitches > 0 else 0,
+            "par_pct": round(strikeouts_for_par / two_strike_pitches * 100, 1) if two_strike_pitches > 0 else 0,
             "pitches": total_pitches, "hrs": hrs,
             "appearance_order": appearance_order,
             "home_team": home_team, "away_team": away_team,
@@ -238,6 +366,18 @@ def aggregate_pitcher_results(date_str, game_pk=None):
         r["home_score"] = gs.get("home_score", 0)
         r["away_score"] = gs.get("away_score", 0)
         r["game_state"] = gs.get("game_state", "")
+    # Classify SP/RP role per game (opener detection may override)
+    try:
+        season_year = int(str(date_str)[:4])
+    except (ValueError, TypeError):
+        season_year = None
+    results_by_game = {}
+    for r in results:
+        results_by_game.setdefault(r["game_pk"], []).append(r)
+    for game_rows in results_by_game.values():
+        roles = classify_pitcher_roles(game_rows, season_year=season_year, before_date=date_str)
+        for r in game_rows:
+            r["role"] = roles.get(r["pitcher_id"], "RP")
     results.sort(key=lambda r: (r["team"], r["appearance_order"]))
     return results
 
@@ -585,6 +725,14 @@ def aggregate_pitcher_results_range(df):
     all_game_pks = [int(gpk) for gpk in df["game_pk"].unique()]
     box_maps = _prefetch_boxscores_parallel(all_game_pks)
 
+    # Pre-compute per-team min appearance_order per game — used to classify
+    # each pitcher as SP/RP per game, then aggregate across the range.
+    per_game_min_order = {}
+    if "at_bat_number" in df.columns and "pitcher_team" in df.columns and "game_pk" in df.columns:
+        ao = df.groupby(["game_pk", "pitcher_team", "pitcher"])["at_bat_number"].min()
+        team_min = ao.groupby(level=[0, 1]).min()
+        per_game_min_order = team_min.to_dict()
+
     results = []
     grouped = df.groupby(["pitcher", "player_name", "p_throws"])
     for (pitcher_id, name, hand), gdf in grouped:
@@ -624,6 +772,20 @@ def aggregate_pitcher_results_range(df):
         if use_boxscore_ip:
             ip_str = f"{total_ip_thirds // 3}.{total_ip_thirds % 3}"
 
+        # Role across the range: SP if this pitcher was the first pitcher on
+        # their team in a majority of their games; otherwise RP.
+        sp_games = 0
+        rp_games = 0
+        if "at_bat_number" in gdf.columns:
+            for (gpk, pteam), pgdf in gdf.groupby(["game_pk", "pitcher_team"]):
+                my_min = int(pgdf["at_bat_number"].min())
+                team_min = per_game_min_order.get((gpk, pteam))
+                if team_min is not None and my_min == int(team_min):
+                    sp_games += 1
+                else:
+                    rp_games += 1
+        role = "SP" if sp_games > rp_games else "RP"
+
         row = {
             "pitcher_id": int(pitcher_id),
             "pitcher": name,
@@ -639,6 +801,7 @@ def aggregate_pitcher_results_range(df):
             "whiffs": whiffs,
             "csw_pct": round((called_strikes + whiffs) / total_pitches * 100, 1) if total_pitches > 0 else 0,
             "pitches": total_pitches,
+            "role": role,
         }
         results.append(row)
     results.sort(key=lambda r: r["pitches"], reverse=True)

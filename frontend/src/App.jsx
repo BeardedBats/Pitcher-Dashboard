@@ -13,7 +13,6 @@ const TeamPage = lazy(() => import("./components/TeamPage"));
 const PlayerPage = lazy(() => import("./components/PlayerPage"));
 import { fetchGames, fetchPitchData, fetchPitcherResults, fetchPitcherCard, fetchDefaultDate, fetchGameLinescore, reclassifyPitch, fetchInitialLoad, fetchRefresh, fetchLastRefresh } from "./utils/api";
 import { PITCH_TYPE_FILTERS, PITCH_COLORS, TEAMS_LIST, PITCHER_RESULTS_COLUMNS } from "./constants";
-import { TOP_400_NAMES, isTop400 } from "./top400";
 import useIsMobile from "./hooks/useIsMobile";
 
 function getYesterdayEST() {
@@ -64,9 +63,9 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [spOnly, setSpOnly] = useState(true);
+  const [rpOnly, setRpOnly] = useState(false);
   const [splitByTeam, setSplitByTeam] = useState(false);
   const [pitchFilter, setPitchFilter] = useState("Four-Seamer");
-  const [top400Only, setTop400Only] = useState(false);
   const [resultsHiddenCols, setResultsHiddenCols] = useState(["team", "hand"]);
   const [showColFilter, setShowColFilter] = useState(false);
   const [linescoreData, setLinescoreData] = useState(null);
@@ -80,8 +79,8 @@ export default function App() {
   const [toast, setToast] = useState(null); // { message, type: "success"|"error" }
 
   // Lifted sort state so it persists across card navigation
-  const [resultsSortKey, setResultsSortKey] = useState("er");
-  const [resultsSortDir, setResultsSortDir] = useState("asc");
+  const [resultsSortKey, setResultsSortKey] = useState("ip");
+  const [resultsSortDir, setResultsSortDir] = useState("desc");
   const [pitchSortKey, setPitchSortKey] = useState(null);
   const [pitchSortDir, setPitchSortDir] = useState("asc");
 
@@ -373,14 +372,13 @@ export default function App() {
   const filteredPitchData = useMemo(() => {
     let rows = pitchData;
     if (pitchFilter) rows = rows.filter(r => r.pitch_name === pitchFilter);
-    if (top400Only) rows = rows.filter(r => isTop400(r.pitcher));
     return rows;
-  }, [pitchData, pitchFilter, top400Only]);
+  }, [pitchData, pitchFilter]);
 
   const filteredResultsData = useMemo(() => {
-    if (!top400Only) return resultsData;
-    return resultsData.filter(r => isTop400(r.pitcher));
-  }, [resultsData, top400Only]);
+    if (!rpOnly) return resultsData;
+    return resultsData.filter(r => r.role === "RP");
+  }, [resultsData, rpOnly]);
 
   const openCard = (pitcherId, gamePk, e) => {
     // Ctrl+Click / Cmd+Click / Middle-click → open in new tab, don't navigate current page
@@ -587,16 +585,16 @@ export default function App() {
                 </button>
                 <div className="toggle-group">
                   <label className="toggle-label">
-                    <input type="checkbox" checked={spOnly} onChange={e => setSpOnly(e.target.checked)} />
+                    <input type="checkbox" checked={spOnly} onChange={e => { setSpOnly(e.target.checked); if (e.target.checked) setRpOnly(false); }} />
                     <span>SP Only</span>
+                  </label>
+                  <label className="toggle-label">
+                    <input type="checkbox" checked={rpOnly} onChange={e => { setRpOnly(e.target.checked); if (e.target.checked) setSpOnly(false); }} />
+                    <span>RP Only</span>
                   </label>
                   <label className="toggle-label">
                     <input type="checkbox" checked={splitByTeam} onChange={e => setSplitByTeam(e.target.checked)} />
                     <span>By Team</span>
-                  </label>
-                  <label className="toggle-label">
-                    <input type="checkbox" checked={top400Only} onChange={e => setTop400Only(e.target.checked)} />
-                    <span>Top 400 SP</span>
                   </label>
                   {view === "pitcher-results" && (
                     <div className="col-filter-inline">
@@ -645,10 +643,10 @@ export default function App() {
         <div className={splitByTeam ? "table-card-none" : "table-card"}>
           <div className="table-container">
             {view === "pitch-data" && (
-              <PitchDataTable data={filteredPitchData} date={date} onPitcherClick={openCard} splitByTeam={splitByTeam} spOnly={spOnly} top400Names={TOP_400_NAMES} isMobile={isMobile} sortKey={pitchSortKey} onSortKeyChange={setPitchSortKey} sortDir={pitchSortDir} onSortDirChange={setPitchSortDir} />
+              <PitchDataTable data={filteredPitchData} date={date} onPitcherClick={openCard} splitByTeam={splitByTeam} spOnly={spOnly} isMobile={isMobile} sortKey={pitchSortKey} onSortKeyChange={setPitchSortKey} sortDir={pitchSortDir} onSortDirChange={setPitchSortDir} />
             )}
             {view === "pitcher-results" && (
-              <PitcherResultsTable data={filteredResultsData} date={date} onPitcherClick={openCard} spOnly={spOnly} splitByTeam={splitByTeam} top400Names={TOP_400_NAMES} isMobile={isMobile} sortKey={resultsSortKey} onSortKeyChange={setResultsSortKey} sortDir={resultsSortDir} onSortDirChange={setResultsSortDir} hiddenCols={resultsHiddenCols} />
+              <PitcherResultsTable data={filteredResultsData} date={date} onPitcherClick={openCard} spOnly={spOnly} splitByTeam={splitByTeam} isMobile={isMobile} sortKey={resultsSortKey} onSortKeyChange={setResultsSortKey} sortDir={resultsSortDir} onSortDirChange={setResultsSortDir} hiddenCols={resultsHiddenCols} />
             )}
           </div>
         </div>

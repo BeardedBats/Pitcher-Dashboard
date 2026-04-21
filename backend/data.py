@@ -413,9 +413,12 @@ def _fetch_game_from_mlb_api(game_pk, date_str):
             ab_result = _normalize_mlb_event(pa.get("result", {}).get("event", ""))
             ab_desc = pa.get("result", {}).get("description", "")
 
-            # Enrich walk/HBP descriptions with runner movements
+            # Enrich walk/HBP descriptions with runner movements — only when the
+            # MLB API description doesn't already contain the movement text
+            # (it usually does; appending unconditionally caused duplication).
             if ab_result in ("walk", "hit_by_pitch"):
                 _END_LABELS = {"1B": "1st", "2B": "2nd", "3B": "3rd"}
+                existing_desc_lower = (ab_desc or "").lower()
                 movements = []
                 for runner in pa.get("runners", []):
                     mv = runner.get("movement", {})
@@ -427,9 +430,13 @@ def _fetch_game_from_mlb_api(game_pk, date_str):
                     if not name:
                         continue
                     if end == "score":
-                        movements.append(f"{name} scores.")
+                        movement_str = f"{name} scores."
                     elif end in _END_LABELS:
-                        movements.append(f"{name} to {_END_LABELS[end]}.")
+                        movement_str = f"{name} to {_END_LABELS[end]}."
+                    else:
+                        continue
+                    if movement_str.lower() not in existing_desc_lower:
+                        movements.append(movement_str)
                 if movements:
                     ab_desc = ab_desc.rstrip()
                     if not ab_desc.endswith("."):
@@ -1635,10 +1642,12 @@ def get_game_linescore(game_pk, pitcher_id=None):
         result_event = result.get("event", "")
         result_desc = result.get("description", "")
 
-        # Enrich walk/HBP descriptions with runner movements
+        # Enrich walk/HBP descriptions with runner movements — only when the
+        # MLB API description doesn't already contain the movement text.
         _evt_lower = (result_event or "").lower().replace(" ", "_")
         if _evt_lower in ("walk", "intentional_walk", "hit_by_pitch"):
             _END_LABELS = {"1B": "1st", "2B": "2nd", "3B": "3rd"}
+            existing_desc_lower = (result_desc or "").lower()
             movements = []
             for runner in pa.get("runners", []):
                 mv = runner.get("movement", {})
@@ -1650,9 +1659,13 @@ def get_game_linescore(game_pk, pitcher_id=None):
                 if not name:
                     continue
                 if end == "score":
-                    movements.append(f"{name} scores.")
+                    movement_str = f"{name} scores."
                 elif end in _END_LABELS:
-                    movements.append(f"{name} to {_END_LABELS[end]}.")
+                    movement_str = f"{name} to {_END_LABELS[end]}."
+                else:
+                    continue
+                if movement_str.lower() not in existing_desc_lower:
+                    movements.append(movement_str)
             if movements:
                 result_desc = result_desc.rstrip()
                 if not result_desc.endswith("."):

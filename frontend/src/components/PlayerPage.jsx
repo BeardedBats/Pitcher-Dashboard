@@ -180,6 +180,13 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
         // "Strikeout" is an overlay — strikeout PA's last pitch is classified as
         // Called Strike or Whiff by description, so check the event directly
         if (effectiveResultFilter.has("Strikeout") && isStrikeoutPitch(p)) return true;
+        // "Walk" overlay — the ball-four pitch that ends a walk PA only. Requires:
+        // balls==3 pre-pitch, pitch outcome is a ball, PA event is a walk, not HBP.
+        if (effectiveResultFilter.has("Walk")) {
+          const ev = (p.events || "").toLowerCase();
+          const desc = (p.description || "").toLowerCase();
+          if (p.balls === 3 && cat === "Ball" && ev === "walk" && desc !== "hit_by_pitch") return true;
+        }
         return effectiveResultFilter.has(cat) || cat === "Other";
       });
     }

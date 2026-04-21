@@ -238,29 +238,25 @@ export function getPBPResultColor(result) {
 const _SCORES_RE = /\bscores\b/i;
 const _REACHES_ON_RE = /\breaches on\b/i;
 const _OUT_PATTERNS_RE = /\bout at\b|\bout advancing\b|\bthrown out\b/i;
+const _WP_PB_RE = /\bwild pitch\b|\bpassed ball\b/i;
 
 /**
  * Split a PA description into colored sentence spans.
  *
  * Rules (in priority order):
- *  - Sentences containing "scores" → HR pink (#FF5EDC), bold (run scoring is the
- *    most important callout in any tooltip).
- *  - For CI/error events, sentences matching "reaches on ..." → walk orange
- *    (#ffc277) — the batter event sentence is highlighted within the otherwise
- *    yellow text.
- *  - For hits with subsequent outs (e.g. "X singles ... Y out at 3rd"), the
- *    out sentence is colored blue (#65BAFF).
+ *  - Sentences containing "scores" → HR pink (#FF5EDC), bold.
+ *  - Sentences mentioning a wild pitch or passed ball → barrel red (#ffa3a3).
+ *  - For CI/error events, sentences matching "reaches on ..." → barrel red
+ *    (#ffa3a3) so the batter-event sentence pops inside the yellow baseline.
+ *  - For hits with subsequent outs, the out sentence is colored blue (#65BAFF).
  *  - Everything else stays default.
- *
- * Returns an array of { text, style } records — callers wrap each in <span>.
- * Centralized so Scoreboard, VelocityTrendV2, PitcherCard PBP, and
- * PlayByPlayModal stay in sync.
  */
 export function getPADescriptionSpans(description, { isCIOrError = false, isHitWithOut = false } = {}) {
   if (!description) return [];
   return description.split(/(?<=\.\s+)/).map(text => {
     if (_SCORES_RE.test(text)) return { text, style: { color: "#FF5EDC", fontWeight: 700 } };
-    if (isCIOrError && _REACHES_ON_RE.test(text)) return { text, style: { color: "#ffc277" } };
+    if (_WP_PB_RE.test(text)) return { text, style: { color: "#ffa3a3" } };
+    if (isCIOrError && _REACHES_ON_RE.test(text)) return { text, style: { color: "#ffa3a3" } };
     if (isHitWithOut && _OUT_PATTERNS_RE.test(text)) return { text, style: { color: "#65BAFF" } };
     return { text, style: null };
   });

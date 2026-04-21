@@ -268,8 +268,13 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
         // "Strikeout" is an overlay — strikeout PA's last pitch is classified as
         // Called Strike or Whiff by description, so check the event directly
         if (effectiveResultFilter.has("Strikeout") && isStrikeoutPitch(p)) return true;
-        // "Walk" includes Ball pitches — walks are PAs made up of balls
-        if (effectiveResultFilter.has("Walk") && cat === "Ball") return true;
+        // "Walk" overlay — the ball-four pitch that ends a walk PA only. Requires:
+        // balls==3 pre-pitch, pitch outcome is a ball, PA event is a walk, not HBP.
+        if (effectiveResultFilter.has("Walk")) {
+          const ev = (p.events || "").toLowerCase();
+          const desc = (p.description || "").toLowerCase();
+          if (p.balls === 3 && cat === "Ball" && ev === "walk" && desc !== "hit_by_pitch") return true;
+        }
         return effectiveResultFilter.has(cat) || (cat === "Other");
       });
     }
@@ -502,8 +507,8 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                   <div key={si} className="card-pbp-segment">
                     <div className="card-pbp-inning-header">
                       <span className="card-pbp-inning-label">{seg.label}</span>
-                      <span className="card-pbp-inning-stats">
-                        {" - "}{stats.ip} IP · {stats.runs} Runs · {stats.hits} Hits · {stats.bbs} BB · {stats.ks} K · {stats.hrs} HR · {stats.pitches} Pitches
+                      <span className="card-pbp-inning-stats" style={{ fontSize: 12, marginLeft: 6 }}>
+                        {"- "}{stats.ip} IP · {stats.runs} Runs · {stats.hits} Hits · {stats.bbs} BB · {stats.ks} K · {stats.hrs} HR · {stats.pitches} Pitches
                       </span>
                     </div>
                     {seg.pas.map((pa, pi) => {
@@ -587,7 +592,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                               </div>
                               <span className="card-pbp-result" style={{ color: resultColor }}>
                                 {paResult.isError && paResult.errorOutType
-                                  ? <>{paResult.errorOutType} <span style={{ color: "#ffc277" }}>(Error)</span></>
+                                  ? <>{paResult.errorOutType} <span style={{ color: "#ffa3a3" }}>(Error)</span></>
                                   : resultLabel}
                                 {paResult.isK && (
                                   paResult.isCalledStrikeThree
@@ -641,7 +646,11 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                                 </div>
                                 {pa.pitches.map((p, j) => {
                                   if (p.is_action) {
-                                    const actionColor = p.is_error ? "#feffa3" : p.scored ? "#FF5EDC" : "rgba(180,184,210,0.7)";
+                                    const _actDesc = (p.desc || "").toLowerCase();
+                                    const _actEvt = (p.event_type || "").toLowerCase();
+                                    const _isWpPb = _actDesc.includes("wild pitch") || _actDesc.includes("passed ball")
+                                      || _actEvt.includes("wild_pitch") || _actEvt.includes("passed_ball");
+                                    const actionColor = (p.is_error || _isWpPb) ? "#ffa3a3" : p.scored ? "#FF5EDC" : "rgba(180,184,210,0.7)";
                                     return (
                                       <div key={j} className="pbp-pitch-row pbp-action-row">
                                         <span className="pbp-action-desc" style={{ color: actionColor }}>{p.desc}</span>
@@ -738,7 +747,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                                       </div>
                                       <div style={{ whiteSpace: "nowrap", color: result.color, fontWeight: 600, marginLeft: 12 }}>
                                         {result.isError && result.errorOutType
-                                          ? <>{result.errorOutType} <span style={{ color: "#ffc277" }}>(Error)</span></>
+                                          ? <>{result.errorOutType} <span style={{ color: "#ffa3a3" }}>(Error)</span></>
                                           : result.label}
                                         {result.isK && (
                                           result.isCalledStrikeThree

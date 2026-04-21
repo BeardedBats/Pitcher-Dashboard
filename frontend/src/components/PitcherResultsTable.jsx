@@ -1,14 +1,30 @@
 import React, { useState, useMemo } from "react";
 import { PITCHER_RESULTS_COLUMNS, TEAM_FULL_NAMES, displayAbbrev } from "../constants";
 import { fmtPct, fmtInt } from "../utils/formatting";
-import { isTop400 } from "../top400";
 
 const TEAM_SPLIT_HIDE = ["team", "opponent"];
 const MOBILE_HIDE = ["hand"];
 
-export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly, splitByTeam, top400Names, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, hiddenCols = [] }) {
-  const [sortKeyLocal, setSortKeyLocal] = useState(null);
-  const [sortDirLocal, setSortDirLocal] = useState("asc");
+// IP string like "7.1" represents 7⅓ innings (decimal part = outs: 0, 1, or 2)
+function ipToNumeric(ip) {
+  if (ip == null) return 0;
+  const parts = String(ip).split(".");
+  const whole = parseInt(parts[0], 10) || 0;
+  const thirds = parseInt(parts[1] || "0", 10) || 0;
+  return whole + thirds / 3;
+}
+
+const DECISION_COLORS = {
+  W: "#6DE95D",
+  L: "#FF839B",
+  HLD: "#55e8ff",
+  S: "#ffc277",
+  BS: "#FF5EDC",
+};
+
+export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly, splitByTeam, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, hiddenCols = [] }) {
+  const [sortKeyLocal, setSortKeyLocal] = useState("ip");
+  const [sortDirLocal, setSortDirLocal] = useState("desc");
   const sortKey = onSortKeyChange ? sortKeyProp : sortKeyLocal;
   const setSortKey = onSortKeyChange || setSortKeyLocal;
   const sortDir = onSortDirChange ? sortDirProp : sortDirLocal;
@@ -22,14 +38,21 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
   const filtered = useMemo(() => {
     let rows = data || [];
     if (spOnly) {
-      const spMap = {};
-      rows.forEach(r => {
-        const k = r.team + "|" + r.game_pk;
-        if (!(k in spMap) || r.appearance_order < spMap[k]) {
-          spMap[k] = r.appearance_order;
-        }
-      });
-      rows = rows.filter(r => r.appearance_order === spMap[r.team + "|" + r.game_pk]);
+      // Prefer backend-classified role (which handles opener swaps). Fall back to
+      // per-team minimum appearance_order if rows don't carry a role yet.
+      const hasRole = rows.some(r => r && r.role);
+      if (hasRole) {
+        rows = rows.filter(r => r.role === "SP");
+      } else {
+        const spMap = {};
+        rows.forEach(r => {
+          const k = r.team + "|" + r.game_pk;
+          if (!(k in spMap) || r.appearance_order < spMap[k]) {
+            spMap[k] = r.appearance_order;
+          }
+        });
+        rows = rows.filter(r => r.appearance_order === spMap[r.team + "|" + r.game_pk]);
+      }
     }
     return rows;
   }, [data, spOnly]);
@@ -39,13 +62,18 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
       return [...filtered].sort((a, b) => {
         let av = a[sortKey], bv = b[sortKey];
         if (av == null) return 1; if (bv == null) return -1;
+        // IP sort: "7.1" means 7⅓ innings, not 7.1
+        if (sortKey === "ip") {
+          av = ipToNumeric(av);
+          bv = ipToNumeric(bv);
+        }
         // Sort team column by full name, not abbreviation
         if (sortKey === "team") { av = TEAM_FULL_NAMES[av] || av; bv = TEAM_FULL_NAMES[bv] || bv; }
         if (typeof av === "string") return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
         const primary = sortDir === "asc" ? av - bv : bv - av;
         if (primary === 0 && sortKey === "er") {
-          const aip = parseFloat(a.ip) || 0;
-          const bip = parseFloat(b.ip) || 0;
+          const aip = ipToNumeric(a.ip);
+          const bip = ipToNumeric(b.ip);
           return bip - aip; // higher IP first on ER tie
         }
         return primary;
@@ -70,7 +98,7 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
     if (key === "pitcher") return isMobile ? 130 : maxPitcherWidth;
     if (key === "hand") return 52;
     if (key === "opponent") return 175;
-    if (key === "csw_pct") return 65;
+    if (key === "csw_pct" || key === "strike_pct" || key === "par_pct") return 65;
     return 50;
   };
 
@@ -81,13 +109,14 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
     const isHome = row.home_team && row.team === row.home_team;
     const homeAbbr = displayAbbrev(row.home_team) || row.home_team || "";
     const awayAbbr = displayAbbrev(row.away_team) || row.away_team || "";
-    const pitcherTeam = displayAbbrev(row.team) || row.team;
     const homeScore = row.home_score != null ? row.home_score : "";
     const awayScore = row.away_score != null ? row.away_score : "";
     const gs = row.game_state || "";
-    const hi = { color: "#d0d0d0", fontWeight: 600 };
-    const awayStyle = !isHome ? hi : undefined;
-    const homeStyle = isHome ? hi : undefined;
+    const decColor = DECISION_COLORS[row.decision];
+    const baseHighlight = { color: "#d0d0d0", fontWeight: 600 };
+    const decHighlight = decColor ? { color: decColor, fontWeight: 700 } : baseHighlight;
+    const awayStyle = !isHome ? decHighlight : undefined;
+    const homeStyle = isHome ? decHighlight : undefined;
     if (homeScore === "" && awayScore === "") {
       return <span style={{ fontSize: 12, color: "#a5a5a5" }}><span style={awayStyle}>{awayAbbr}</span> - <span style={homeStyle}>{homeAbbr}</span></span>;
     }
@@ -102,8 +131,8 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
     const v = row[col.key];
     if (col.key === "pitcher") {
       if (!v) return <span className="pitcher-name" style={{ color: "rgb(180, 185, 219)" }}>--</span>;
-      const isTop = top400Names && isTop400(v);
-      const nameClass = top400Names ? (isTop ? "pitcher-name pitcher-top400" : "pitcher-name") : "pitcher-name";
+      const isSP = row.role === "SP";
+      const nameClass = isSP ? "pitcher-name pitcher-sp-highlight" : "pitcher-name";
       if (onPitcherClick && row.pitcher_id && row.game_pk && date) {
         return <a className={nameClass} href={`#card/${date}/${row.pitcher_id}/${row.game_pk}`} rel="nofollow" onClick={(e) => e.preventDefault()} onMouseDown={(e) => { if (e.button === 1) e.stopPropagation(); }} style={{ textDecoration: "none" }}>{v}</a>;
       }
@@ -115,7 +144,7 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
       return v === "R" ? "RHP" : v === "L" ? "LHP" : v;
     }
     if (col.key === "opponent") return formatGameLine(row);
-    if (col.key === "csw_pct") return dim(fmtPct(v));
+    if (col.key === "csw_pct" || col.key === "strike_pct" || col.key === "par_pct") return dim(fmtPct(v));
     if (col.key === "ip") return v != null ? v : <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
     return dim(fmtInt(v));
   };
@@ -153,14 +182,20 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
           )}
           <thead>
             <tr>
-              {cols.map(c => (
-                <th key={c.key}
-                  className={isMobile && c.key === "pitcher" ? "mobile-sticky-col" : ""}
-                  style={{ textAlign: c.align || "left", ...(isMobile && c.key === "pitcher" ? { left: 0, minWidth: 130 } : {}) }}
-                  onClick={() => handleSort(c.key)}>
-                  <span className={sortKey === c.key ? "sort-active" : ""}>{c.label}</span>
-                </th>
-              ))}
+              {cols.map(c => {
+                const classes = [];
+                if (isMobile && c.key === "pitcher") classes.push("mobile-sticky-col");
+                if (c.dividerRight) classes.push("col-divider-right");
+                return (
+                  <th key={c.key}
+                    className={classes.join(" ")}
+                    title={c.tooltip || undefined}
+                    style={{ textAlign: c.align || "left", ...(isMobile && c.key === "pitcher" ? { left: 0, minWidth: 130 } : {}) }}
+                    onClick={() => handleSort(c.key)}>
+                    <span className={sortKey === c.key ? "sort-active" : ""}>{c.label}</span>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -168,13 +203,18 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
               <tr key={i} className="clickable-row"
                   onClick={(e) => onPitcherClick && onPitcherClick(r.pitcher_id, r.game_pk, e)}
                   onMouseDown={(e) => { if (e.button === 1 && onPitcherClick) { e.preventDefault(); onPitcherClick(r.pitcher_id, r.game_pk, e); } }}>
-                {cols.map(c => (
-                  <td key={c.key}
-                    className={isMobile && c.key === "pitcher" ? "mobile-sticky-col" : ""}
-                    style={{ textAlign: c.align || "left", ...(isMobile && c.key === "pitcher" ? { left: 0, minWidth: 130 } : {}) }}>
-                    {renderCell(r, c)}
-                  </td>
-                ))}
+                {cols.map(c => {
+                  const classes = [];
+                  if (isMobile && c.key === "pitcher") classes.push("mobile-sticky-col");
+                  if (c.dividerRight) classes.push("col-divider-right");
+                  return (
+                    <td key={c.key}
+                      className={classes.join(" ")}
+                      style={{ textAlign: c.align || "left", ...(isMobile && c.key === "pitcher" ? { left: 0, minWidth: 130 } : {}) }}>
+                      {renderCell(r, c)}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

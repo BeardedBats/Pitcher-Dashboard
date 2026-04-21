@@ -35,8 +35,8 @@ function emptyBucketTotals() {
 function emptyTypeRec() {
   return {
     count: 0,
-    l: { count: 0, firstpitch: 0, early: 0, behind: 0, two_str: 0 },
-    r: { count: 0, firstpitch: 0, early: 0, behind: 0, two_str: 0 },
+    l: { count: 0, firstpitch: 0, early: 0, behind: 0, two_str: 0, two_str_ks: 0 },
+    r: { count: 0, firstpitch: 0, early: 0, behind: 0, two_str: 0, two_str_ks: 0 },
     two_str_all: 0,
     two_str_ks_all: 0,
   };
@@ -71,12 +71,15 @@ export default function UsageTable({ pitches, gameFilter, isMobile, selectedPitc
           else bucketTotalsR[b]++;
         }
       }
-      // Combined PAR% — count pitches of this type thrown in 2-strike counts
-      // (regardless of batter hand) and Ks among those pitches.
+      // PAR% — for each pitch type, count pitches in 2-strike counts and Ks
+      // recorded on them. Tracked both combined and split by batter hand.
       if (b === "two_str") {
-        rec.two_str_all++;
         const ev = (p.events || "").toLowerCase();
-        if (ev === "strikeout" || ev === "strikeout_double_play") rec.two_str_ks_all++;
+        const isK = ev === "strikeout" || ev === "strikeout_double_play";
+        rec.two_str_all++;
+        if (isK) rec.two_str_ks_all++;
+        if (stand === "l" && isK) rec.l.two_str_ks++;
+        else if (stand === "r" && isK) rec.r.two_str_ks++;
       }
     }
 
@@ -85,48 +88,51 @@ export default function UsageTable({ pitches, gameFilter, isMobile, selectedPitc
     for (const [name, r] of byType.entries()) {
       rows.push({
         pitch_name: name,
+        count: r.count,
+        par_pct: r.two_str_all > 0 ? Math.round((r.two_str_ks_all / r.two_str_all) * 100) : null,
         // LHB
-        count_l: r.l.count,
         firstpitch_pct_l: pct(r.l.firstpitch, bucketTotalsL.firstpitch),
         early_pct_l: pct(r.l.early, bucketTotalsL.early),
         behind_pct_l: pct(r.l.behind, bucketTotalsL.behind),
         two_str_use_pct_l: pct(r.l.two_str, bucketTotalsL.two_str),
+        par_pct_vs_l: r.l.two_str > 0 ? Math.round((r.l.two_str_ks / r.l.two_str) * 100) : null,
         // RHB
-        count_r: r.r.count,
         firstpitch_pct_r: pct(r.r.firstpitch, bucketTotalsR.firstpitch),
         early_pct_r: pct(r.r.early, bucketTotalsR.early),
         behind_pct_r: pct(r.r.behind, bucketTotalsR.behind),
         two_str_use_pct_r: pct(r.r.two_str, bucketTotalsR.two_str),
-        // Combined
-        par_pct: r.two_str_all > 0 ? Math.round((r.two_str_ks_all / r.two_str_all) * 100) : null,
+        par_pct_vs_r: r.r.two_str > 0 ? Math.round((r.r.two_str_ks / r.r.two_str) * 100) : null,
         _count: r.count,
       });
     }
     rows.sort((a, b) => b._count - a._count);
 
-    const totalTwoStrAll = rows.reduce((s, r) => {
-      const rec = byType.get(r.pitch_name);
-      return s + (rec ? rec.two_str_all : 0);
+    const sumBy = (fn) => rows.reduce((s, row) => {
+      const rec = byType.get(row.pitch_name);
+      return s + (rec ? fn(rec) : 0);
     }, 0);
-    const totalKsTwoStrAll = rows.reduce((s, r) => {
-      const rec = byType.get(r.pitch_name);
-      return s + (rec ? rec.two_str_ks_all : 0);
-    }, 0);
+    const totalTwoStrAll = sumBy(rec => rec.two_str_all);
+    const totalKsTwoStrAll = sumBy(rec => rec.two_str_ks_all);
+    const totalTwoStrL = sumBy(rec => rec.l.two_str);
+    const totalKsTwoStrL = sumBy(rec => rec.l.two_str_ks);
+    const totalTwoStrR = sumBy(rec => rec.r.two_str);
+    const totalKsTwoStrR = sumBy(rec => rec.r.two_str_ks);
 
     const totals = {
       pitch_name: "Total",
-      // Totals row shows raw bucket counts (since per-type % sums to 100% by construction)
-      count_l: rows.reduce((s, r) => s + r.count_l, 0),
+      count: rows.reduce((s, r) => s + r.count, 0),
+      par_pct: totalTwoStrAll > 0 ? Math.round((totalKsTwoStrAll / totalTwoStrAll) * 100) : null,
+      // Bucket columns show raw counts in the totals row (per-type % sums to 100% by construction)
       firstpitch_pct_l: bucketTotalsL.firstpitch,
       early_pct_l: bucketTotalsL.early,
       behind_pct_l: bucketTotalsL.behind,
       two_str_use_pct_l: bucketTotalsL.two_str,
-      count_r: rows.reduce((s, r) => s + r.count_r, 0),
+      par_pct_vs_l: totalTwoStrL > 0 ? Math.round((totalKsTwoStrL / totalTwoStrL) * 100) : null,
       firstpitch_pct_r: bucketTotalsR.firstpitch,
       early_pct_r: bucketTotalsR.early,
       behind_pct_r: bucketTotalsR.behind,
       two_str_use_pct_r: bucketTotalsR.two_str,
-      par_pct: totalTwoStrAll > 0 ? Math.round((totalKsTwoStrAll / totalTwoStrAll) * 100) : null,
+      par_pct_vs_r: totalTwoStrR > 0 ? Math.round((totalKsTwoStrR / totalTwoStrR) * 100) : null,
     };
 
     return { rows, totals };
@@ -138,7 +144,7 @@ export default function UsageTable({ pitches, gameFilter, isMobile, selectedPitc
   const pctKeys = new Set([
     "firstpitch_pct_l", "early_pct_l", "behind_pct_l", "two_str_use_pct_l",
     "firstpitch_pct_r", "early_pct_r", "behind_pct_r", "two_str_use_pct_r",
-    "par_pct",
+    "par_pct", "par_pct_vs_l", "par_pct_vs_r",
   ]);
   // Totals row displays raw counts (not %) for the bucket usage columns.
   const totalsRawKeys = new Set([
@@ -181,7 +187,10 @@ export default function UsageTable({ pitches, gameFilter, isMobile, selectedPitc
     }
     if (v == null || v === "") return <span style={{ color: "rgb(180, 185, 219)" }}>—</span>;
     if (isTotal && totalsRawKeys.has(col.key)) return v;
-    if (pctKeys.has(col.key)) return `${v}%`;
+    if (pctKeys.has(col.key)) {
+      if (v === 0) return <span style={{ color: "var(--text-dim, #8A8EB0)" }}>0%</span>;
+      return `${v}%`;
+    }
     return v;
   };
 
@@ -196,11 +205,14 @@ export default function UsageTable({ pitches, gameFilter, isMobile, selectedPitc
                 className={h.dividerRight ? "col-divider-right" : ""}
                 style={{
                   textAlign: "center",
-                  fontSize: 11,
+                  fontSize: h.isGroup ? 14 : 11,
                   textTransform: "uppercase",
                   letterSpacing: 0.5,
-                  color: h.isGroup ? "var(--text-dim, #8a8eb0)" : "transparent",
-                  paddingBottom: 2,
+                  color: h.isGroup ? "var(--label)" : "transparent",
+                  fontWeight: h.isGroup ? 600 : 400,
+                  paddingTop: h.isGroup ? 12 : 2,
+                  paddingBottom: h.isGroup ? 10 : 2,
+                  verticalAlign: "middle",
                   borderBottom: "none",
                 }}>
               {h.label || "\u00a0"}
