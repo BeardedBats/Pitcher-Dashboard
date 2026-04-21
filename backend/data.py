@@ -1,6 +1,7 @@
 import io
 import os
 import json
+import re
 import time
 import threading
 from datetime import datetime, timezone
@@ -366,6 +367,109 @@ def _normalize_mlb_event(raw_event):
         return ""
     return _MLB_EVENT_MAP.get(raw_event, raw_event.lower().replace(" ", "_"))
 
+
+_BASE_END_LABELS = {"1B": "1st", "2B": "2nd", "3B": "3rd"}
+
+
+def _runner_wp_pb_reason(runner):
+    """Return "Wild Pitch" / "Passed Ball" if this runner's movement was
+    caused by one of those events; otherwise None."""
+    details = runner.get("details", {}) or {}
+    # Primary signals: details.event ("Wild Pitch") and details.eventType
+    # ("wild_pitch"). movementReason carries a per-runner hint sometimes
+    # prefixed with "r_" (e.g. "r_wild_pitch", "r_passed_ball").
+    ev = str(details.get("event") or details.get("eventType") or "").lower().replace(" ", "_")
+    reason = str(details.get("movementReason") or "").lower()
+    if reason.startswith("r_"):
+        reason = reason[2:]
+    if ev == "wild_pitch" or reason == "wild_pitch":
+        return "Wild Pitch"
+    if ev == "passed_ball" or reason == "passed_ball":
+        return "Passed Ball"
+    return None
+
+
+def _extract_wp_pb_moves(play_events):
+    """Scan a PA's play_events for mid-PA wild-pitch / passed-ball actions and
+    return { (runner_id, end_base): "Wild Pitch"|"Passed Ball" }. Used as a
+    fallback when pa.runners' details.event doesn't carry the cause."""
+    moves = {}
+    for ev in play_events or []:
+        det = ev.get("details", {}) or {}
+        et = str(det.get("eventType") or "").lower()
+        if et not in ("wild_pitch", "passed_ball"):
+            continue
+        reason = "Wild Pitch" if et == "wild_pitch" else "Passed Ball"
+        for r in ev.get("runners", []) or []:
+            runner_id = r.get("details", {}).get("runner", {}).get("id")
+            end = r.get("movement", {}).get("end")
+            if runner_id is not None and end:
+                moves[(runner_id, end)] = reason
+    return moves
+
+
+def _enrich_pa_description(desc, runners, include_plain=False, play_events=None):
+    """Enrich a PA description with runner-movement sentences.
+
+    - Upgrades plain "X to 2nd." to "X advances to 2nd on Wild Pitch." (or
+      Passed Ball) for any runner whose movement was caused by a WP/PB. Runs
+      for every PA so mid-PA WP/PB advances get annotated regardless of how
+      the PA ended.
+    - When include_plain=True (walk/HBP PAs), appends missing plain "X to
+      Nth." sentences so the description always lists all base movements.
+    - If play_events is provided, mid-PA WP/PB actions are cross-referenced
+      to catch cases where pa.runners' details.event points at the PA event
+      instead of the specific mid-PA cause.
+    """
+    if not runners:
+        return desc or ""
+    desc = desc or ""
+    wp_pb_moves = _extract_wp_pb_moves(play_events)
+    append_list = []
+    for runner in runners:
+        mv = runner.get("movement", {}) or {}
+        origin = mv.get("originBase")
+        end = mv.get("end")
+        if not origin:
+            continue
+        details = runner.get("details", {}) or {}
+        name = details.get("runner", {}).get("fullName", "")
+        if not name:
+            continue
+        wp_pb = _runner_wp_pb_reason(runner)
+        if not wp_pb:
+            runner_id = details.get("runner", {}).get("id")
+            wp_pb = wp_pb_moves.get((runner_id, end)) if runner_id is not None else None
+        if end == "score":
+            plain = f"{name} scores."
+            annotated = f"{name} scores on {wp_pb}." if wp_pb else None
+        elif end in _BASE_END_LABELS:
+            label = _BASE_END_LABELS[end]
+            plain = f"{name} to {label}."
+            annotated = f"{name} advances to {label} on {wp_pb}." if wp_pb else None
+        else:
+            continue
+
+        if wp_pb and annotated:
+            if annotated.lower() in desc.lower():
+                continue  # already annotated
+            pattern = re.compile(re.escape(plain), re.IGNORECASE)
+            if pattern.search(desc):
+                desc = pattern.sub(annotated, desc, count=1)
+            else:
+                append_list.append(annotated)
+        elif include_plain:
+            if plain.lower() not in desc.lower():
+                append_list.append(plain)
+
+    if append_list:
+        desc = desc.rstrip()
+        if desc and not desc.endswith("."):
+            desc += "."
+        joiner = "  " if desc else ""
+        desc = f"{desc}{joiner}" + "  ".join(append_list)
+    return desc
+
 def _fetch_game_from_mlb_api(game_pk, date_str):
     """Fetch pitch-by-pitch data from MLB Stats API for a single game.
     Returns a DataFrame in the same column format as Savant data."""
@@ -413,35 +517,15 @@ def _fetch_game_from_mlb_api(game_pk, date_str):
             ab_result = _normalize_mlb_event(pa.get("result", {}).get("event", ""))
             ab_desc = pa.get("result", {}).get("description", "")
 
-            # Enrich walk/HBP descriptions with runner movements — only when the
-            # MLB API description doesn't already contain the movement text
-            # (it usually does; appending unconditionally caused duplication).
-            if ab_result in ("walk", "hit_by_pitch"):
-                _END_LABELS = {"1B": "1st", "2B": "2nd", "3B": "3rd"}
-                existing_desc_lower = (ab_desc or "").lower()
-                movements = []
-                for runner in pa.get("runners", []):
-                    mv = runner.get("movement", {})
-                    origin = mv.get("originBase")
-                    end = mv.get("end")
-                    if not origin:  # batter reaching base — skip
-                        continue
-                    name = runner.get("details", {}).get("runner", {}).get("fullName", "")
-                    if not name:
-                        continue
-                    if end == "score":
-                        movement_str = f"{name} scores."
-                    elif end in _END_LABELS:
-                        movement_str = f"{name} to {_END_LABELS[end]}."
-                    else:
-                        continue
-                    if movement_str.lower() not in existing_desc_lower:
-                        movements.append(movement_str)
-                if movements:
-                    ab_desc = ab_desc.rstrip()
-                    if not ab_desc.endswith("."):
-                        ab_desc += "."
-                    ab_desc += "  " + "  ".join(movements)
+            # Annotate WP/PB-caused runner movements on every PA, and also
+            # ensure walk/HBP PAs list all base movements (the MLB API
+            # description usually has them, but not always).
+            ab_desc = _enrich_pa_description(
+                ab_desc,
+                pa.get("runners"),
+                include_plain=ab_result in ("walk", "hit_by_pitch"),
+                play_events=pa.get("playEvents"),
+            )
 
             at_bat_number = about.get("atBatIndex", 0)
             outs_when_up = pa.get("count", {}).get("outs", 0) if pa.get("count") else about.get("outs", 0)
@@ -1642,35 +1726,15 @@ def get_game_linescore(game_pk, pitcher_id=None):
         result_event = result.get("event", "")
         result_desc = result.get("description", "")
 
-        # Enrich walk/HBP descriptions with runner movements — only when the
-        # MLB API description doesn't already contain the movement text.
+        # Annotate WP/PB-caused runner movements on every PA, and also ensure
+        # walk/HBP PAs list all base movements.
         _evt_lower = (result_event or "").lower().replace(" ", "_")
-        if _evt_lower in ("walk", "intentional_walk", "hit_by_pitch"):
-            _END_LABELS = {"1B": "1st", "2B": "2nd", "3B": "3rd"}
-            existing_desc_lower = (result_desc or "").lower()
-            movements = []
-            for runner in pa.get("runners", []):
-                mv = runner.get("movement", {})
-                origin = mv.get("originBase")
-                end = mv.get("end")
-                if not origin:  # batter reaching base — skip
-                    continue
-                name = runner.get("details", {}).get("runner", {}).get("fullName", "")
-                if not name:
-                    continue
-                if end == "score":
-                    movement_str = f"{name} scores."
-                elif end in _END_LABELS:
-                    movement_str = f"{name} to {_END_LABELS[end]}."
-                else:
-                    continue
-                if movement_str.lower() not in existing_desc_lower:
-                    movements.append(movement_str)
-            if movements:
-                result_desc = result_desc.rstrip()
-                if not result_desc.endswith("."):
-                    result_desc += "."
-                result_desc += "  " + "  ".join(movements)
+        result_desc = _enrich_pa_description(
+            result_desc,
+            pa.get("runners"),
+            include_plain=_evt_lower in ("walk", "intentional_walk", "hit_by_pitch"),
+            play_events=pa.get("playEvents"),
+        )
 
         result_rbi = result.get("rbi", 0)
         result_home_score = result.get("homeScore")
