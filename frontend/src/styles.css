@@ -1508,3 +1508,130 @@ canvas { display: block; border: none; border-radius: var(--radius-sm); }
   .mobile-tooltip-close { display: none; }
   .mobile-only { display: none !important; }
 }
+
+/* ======== ANIMATIONS ======== */
+
+/* 1. Table row appear on data load */
+@keyframes rowReveal {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.table-row-animated {
+  animation: rowReveal 120ms ease-out both;
+}
+
+/* 3. Cell highlight pulse */
+@keyframes cellHighlightPulse {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.03); }
+  100% { transform: scale(1); }
+}
+
+.cell-highlight-pulse {
+  animation: cellHighlightPulse 200ms ease-out both;
+  border-radius: 3px;
+  display: inline-block;
+  width: 100%;
+  text-align: right;
+}
+
+/* 6. Pitcher card open/close */
+@keyframes cardExpand {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    max-height: 2000px;
+    transform: translateY(0);
+  }
+}
+
+.pitcher-card-animated {
+  animation: cardExpand 180ms ease-out both;
+  overflow: hidden;
+}
+
+/* 7. Date change stale flash */
+.table-loading {
+  opacity: 0.4;
+  transition: opacity 80ms ease;
+  pointer-events: none;
+}
+
+.table-loaded {
+  opacity: 1;
+  transition: opacity 80ms ease;
+}
+
+/* 8. Modal animations */
+@keyframes backdropIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes reclassifyModalIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pbpModalIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modal-backdrop-animated {
+  animation: backdropIn 120ms ease both;
+}
+
+.reclassify-modal-animated {
+  animation: reclassifyModalIn 120ms cubic-bezier(0.2, 0, 0, 1) both;
+  transform-origin: center center;
+}
+
+.pbp-modal-animated {
+  animation: pbpModalIn 150ms ease-out both;
+}
+
+/* 10. Reclassify confirm button press */
+@keyframes btnPress {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(0.96); }
+  100% { transform: scale(1); }
+}
+
+.btn-press-active {
+  animation: btnPress 120ms ease-out both;
+}
+
+/* 11. Last updated timestamp flash */
+@keyframes timestampFlash {
+  0%   { color: var(--text-dim); }
+  25%  { color: var(--accent); }
+  100% { color: var(--text-dim); }
+}
+
+.timestamp-flash {
+  animation: timestampFlash 600ms ease-out both;
+}

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { PITCHER_RESULTS_COLUMNS, TEAM_FULL_NAMES, displayAbbrev } from "../constants";
 import { fmtPct, fmtInt } from "../utils/formatting";
+import { useFlipAnimation } from "../hooks/useFlipAnimation";
 
 const TEAM_SPLIT_HIDE = ["team", "opponent"];
 const MOBILE_HIDE = ["hand"];
@@ -22,7 +23,7 @@ const DECISION_COLORS = {
   BS: "#FF5EDC",
 };
 
-export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly, splitByTeam, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, hiddenCols = [] }) {
+export default function PitcherResultsTable({ data, date, selectedGame, onPitcherClick, spOnly, splitByTeam, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, hiddenCols = [] }) {
   const [sortKeyLocal, setSortKeyLocal] = useState("ip");
   const [sortDirLocal, setSortDirLocal] = useState("desc");
   const sortKey = onSortKeyChange ? sortKeyProp : sortKeyLocal;
@@ -84,6 +85,13 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
       return a.appearance_order - b.appearance_order;
     });
   }, [filtered, sortKey, sortDir]);
+
+  // FLIP animation for sort transitions
+  const getRowRef = useFlipAnimation(
+    sorted,
+    (row) => `${row.pitcher_id}-${row.game_pk || ''}`,
+    `${sortKey || ''}|${sortDir || ''}`
+  );
 
   // Compute max pitcher name width across ALL data for consistent team card sizing
   const maxPitcherWidth = useMemo(() => {
@@ -198,9 +206,14 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
               })}
             </tr>
           </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={i} className="clickable-row"
+          <tbody key={`${date || 'nodate'}-${selectedGame || 'all'}-${rows.length}`}>
+            {rows.map((r, i) => {
+              const rowKey = `${r.pitcher_id}-${r.game_pk || ''}`;
+              return (
+              <tr key={i}
+                  ref={getRowRef(rowKey)}
+                  className="clickable-row table-row-animated"
+                  style={{ animationDelay: `${i * 8}ms` }}
                   onClick={(e) => onPitcherClick && onPitcherClick(r.pitcher_id, r.game_pk, e)}
                   onMouseDown={(e) => { if (e.button === 1 && onPitcherClick) { e.preventDefault(); onPitcherClick(r.pitcher_id, r.game_pk, e); } }}>
                 {cols.map(c => {
@@ -216,7 +229,8 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
                   );
                 })}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
         </div>

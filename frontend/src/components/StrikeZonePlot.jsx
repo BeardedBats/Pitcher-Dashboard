@@ -163,10 +163,12 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
         color = PITCH_COLORS[p.pitch_name] || "#D9D9D9";
       }
       const isDimmed = isHighlighting && !isMatch;
+      const isHovered = hover?.pitch && pitchMatch(p, hover.pitch);
+      const r = isHovered ? DOT_R * 1.4 : DOT_R;
       ctx.globalAlpha = isDimmed ? 0.12 : 0.85;
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(x, y, DOT_R, arcStart, arcEnd);
+      ctx.arc(x, y, r, arcStart, arcEnd);
       if (!isOOB) ctx.closePath();
       ctx.fill();
       ctx.globalAlpha = isDimmed ? 0.08 : 0.3;
@@ -176,7 +178,7 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
     });
     ctx.globalAlpha = 1;
     pitchPositions.current = positions;
-  }, [pitches, szTop, szBot, stand, colorMode, isMobile, highlightPitch, highlightType]);
+  }, [pitches, szTop, szBot, stand, colorMode, isMobile, highlightPitch, highlightType, hover?.pitch?.at_bat_number, hover?.pitch?.pitch_number]);
 
   const findNearest = useCallback((mx, my) => {
     let closest = null;

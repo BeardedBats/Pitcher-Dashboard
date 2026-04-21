@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { displayAbbrev } from "../constants";
 
 const NOT_STARTED_STATUSES = ["Scheduled", "Pre-Game", "Delayed Start", "Cancelled", "Suspended"];
@@ -27,6 +27,29 @@ function ordinalInning(n) {
 
 export default function GameTabs({ games, selectedGame, onSelectGame }) {
   const [viewMode, setViewMode] = React.useState("all");
+  const tabRefs = useRef({});
+  const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0, opacity: 0 });
+
+  useEffect(() => {
+    if (selectedGame == null || viewMode !== "games") {
+      setIndicatorStyle(s => ({ ...s, opacity: 0 }));
+      return;
+    }
+    const el = tabRefs.current[selectedGame];
+    if (!el) {
+      setIndicatorStyle(s => ({ ...s, opacity: 0 }));
+      return;
+    }
+    const parent = el.parentElement;
+    if (!parent) return;
+    const parentRect = parent.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    setIndicatorStyle({
+      left: elRect.left - parentRect.left,
+      width: elRect.width,
+      opacity: 1,
+    });
+  }, [selectedGame, viewMode, games]);
 
   const handleAllGames = () => {
     setViewMode("all");
@@ -61,7 +84,21 @@ export default function GameTabs({ games, selectedGame, onSelectGame }) {
         </div>
       </div>
       {viewMode === "games" && (
-        <div className="game-tabs">
+        <div className="game-tabs" style={{ position: "relative" }}>
+          <span
+            style={{
+              position: "absolute",
+              bottom: 0,
+              height: 2,
+              background: "var(--accent)",
+              borderRadius: 2,
+              transition: "left 120ms cubic-bezier(0.2, 0, 0, 1), width 120ms cubic-bezier(0.2, 0, 0, 1), opacity 80ms ease",
+              pointerEvents: "none",
+              left: indicatorStyle.left,
+              width: indicatorStyle.width,
+              opacity: indicatorStyle.opacity,
+            }}
+          />
       {games.map(g => {
         const notStarted = isNotStarted(g.status);
         const warmup = isWarmup(g.status);
@@ -93,6 +130,7 @@ export default function GameTabs({ games, selectedGame, onSelectGame }) {
         return (
           <div
             key={g.game_pk}
+            ref={(el) => { tabRefs.current[g.game_pk] = el; }}
             className={`game-tab${selectedGame === g.game_pk ? " active" : ""}${noData ? " no-data" : ""}${(notStarted && !warmup) ? " not-started" : ""}`}
             onClick={() => clickable && onSelectGame(g.game_pk)}
             title={notStarted && !warmup ? `Game hasn't started (${g.status})` : noData ? "Pitch data not yet available" : ""}

@@ -4,6 +4,7 @@ import { PITCH_COLORS, PITCH_DATA_COLUMNS, TEAM_FULL_NAMES, displayAbbrev } from
 const TEAM_SPLIT_HIDE = ["team", "opponent"];
 import { getCellHighlight, fmt, fmtPct, fmtInt, getVeloEmphasis, getIHBEmphasis } from "../utils/formatting";
 import { isTop400 } from "../top400";
+import { useFlipAnimation } from "../hooks/useFlipAnimation";
 
 const DELTA_KEYS = ["velo", "usage", "usage_vs_r", "usage_vs_l", "ihb", "ext", "ivb"];
 const DELTA_THRESHOLDS = {
@@ -31,7 +32,7 @@ const IHB_ARM_SIDE_TYPES = ["Four-Seamer", "Sinker", "Changeup"];
 
 const MOBILE_HIDE_COLS = ["hand", "team", "opponent"];
 
-export default function PitchDataTable({ data, date, onPitcherClick, columns, splitByTeam, spOnly, pitcherHand, sortable = true, showChange, seasonAvgs, batterFilter, top400Names, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, selectedPitchType, onPitchTypeClick }) {
+export default function PitchDataTable({ data, date, selectedGame, onPitcherClick, columns, splitByTeam, spOnly, pitcherHand, sortable = true, showChange, seasonAvgs, batterFilter, top400Names, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, selectedPitchType, onPitchTypeClick }) {
   const [sortKeyLocal, setSortKeyLocal] = useState(null);
   const [sortDirLocal, setSortDirLocal] = useState("asc");
   const sortKey = onSortKeyChange ? sortKeyProp : sortKeyLocal;
@@ -79,6 +80,13 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
       return (a.pitch_name || "").localeCompare(b.pitch_name || "");
     });
   }, [filtered, sortKey, sortDir, sortable]);
+
+  // FLIP animation for sort transitions
+  const getRowRef = useFlipAnimation(
+    sorted,
+    (row) => `${row.pitcher_id}-${row.pitch_name}-${row.game_pk || ''}`,
+    `${sortKey || ''}|${sortDir || ''}`
+  );
 
   const pctKeys = ["usage", "usage_vs_r", "usage_vs_l", "strike_pct", "cs_pct", "swstr_pct", "csw_pct"];
   const gradientKeys = ["ivb", "ext"];
@@ -272,8 +280,11 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
     return getCellHighlight(key, value, pitchName);
   };
 
-  const renderCell = (row, col) => {
+  const renderCell = (row, col, rowIdx = 0) => {
     const v = row[col.key];
+    // Wrap highlighted span with pulse animation wrapper when a cell highlight fires
+    const pulseStyle = { animationDelay: `${rowIdx * 8 + 80}ms` };
+    const wrapPulse = (el) => <span className="cell-highlight-pulse" style={pulseStyle}>{el}</span>;
     if (col.key === "pitcher") {
       if (!v) return <span className="pitcher-name" style={{ color: "rgb(180, 185, 219)" }}>--</span>;
       const isTop = top400Names && isTop400(v);
@@ -304,7 +315,7 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
       const fmtVal = fmt(v);
       const hl = getVeloEmphasis(row.pitch_name, v);
       const delta = (v != null && !isNaN(v)) ? renderDelta(col.key, Number(v), row.pitch_name) : null;
-      if (hl) return cellDelta(<span className={`highlight-cell hl-${hl}`}>{fmtVal}</span>, delta, col.key);
+      if (hl) return cellDelta(wrapPulse(<span className={`highlight-cell hl-${hl}`}>{fmtVal}</span>), delta, col.key);
       return cellDelta(dim(fmtVal), delta, col.key);
     }
 
@@ -318,7 +329,7 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
         ? getEmphasisFrame(col.key, negated, row.pitch_name, hand)
         : null;
       const delta = (negated != null && !isNaN(negated)) ? renderDelta("ihb", negated, row.pitch_name, hand) : null;
-      if (hl) return cellDelta(<span className={`highlight-cell hl-${hl}`}>{fmtVal}</span>, delta, col.key);
+      if (hl) return cellDelta(wrapPulse(<span className={`highlight-cell hl-${hl}`}>{fmtVal}</span>), delta, col.key);
       return cellDelta(dim(fmtVal), delta, col.key);
     }
 
@@ -330,7 +341,7 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
         ? getCellHighlight(col.key, v, row.pitch_name)
         : null;
       const delta = (v != null && !isNaN(v)) ? renderDelta("ivb", Number(v), row.pitch_name) : null;
-      if (hl) return cellDelta(<span className={`highlight-cell hl-${hl}`}>{fmtVal}</span>, delta, col.key);
+      if (hl) return cellDelta(wrapPulse(<span className={`highlight-cell hl-${hl}`}>{fmtVal}</span>), delta, col.key);
       return cellDelta(dim(fmtVal), delta, col.key);
     }
 
@@ -348,7 +359,7 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
           ? getCellHighlight(col.key, v, row.pitch_name)
           : null;
         const delta = (v != null && !isNaN(v)) ? renderDelta(col.key, Number(v), row.pitch_name) : null;
-        if (hl) return cellDelta(<span className={`highlight-cell hl-${hl}`}>{fmtVal}</span>, delta, col.key);
+        if (hl) return cellDelta(wrapPulse(<span className={`highlight-cell hl-${hl}`}>{fmtVal}</span>), delta, col.key);
         return cellDelta(dim(fmtVal), delta, col.key);
       }
       const delta = (v != null && !isNaN(v)) ? renderDelta(col.key, Number(v), row.pitch_name) : null;
@@ -361,7 +372,7 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
       const hl = (v != null && !isNaN(v) && Math.abs(v) >= 1.0)
         ? getCellHighlight(col.key, v, row.pitch_name)
         : null;
-      if (hl) return <span className={`highlight-cell hl-${hl}`}>{fmtVal}</span>;
+      if (hl) return wrapPulse(<span className={`highlight-cell hl-${hl}`}>{fmtVal}</span>);
     }
     return dim(fmtVal);
   };
@@ -437,12 +448,19 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
               })}
             </tr>
           </thead>
-          <tbody>
+          <tbody key={`${date || 'nodate'}-${selectedGame || 'all'}-${rows.length}`}>
             {rows.map((r, i) => {
               const isDimmedRow = selectedPitchType && r.pitch_name !== selectedPitchType;
+              const rowKey = `${r.pitcher_id}-${r.pitch_name}-${r.game_pk || ''}`;
+              const rowStyle = {
+                ...(isDimmedRow ? { opacity: 0.4 } : {}),
+                animationDelay: `${i * 8}ms`,
+              };
               return (
-              <tr key={i} className={[onPitcherClick ? "clickable-row" : "", onPitchTypeClick ? "clickable-row" : ""].filter(Boolean).join(" ")}
-                  style={isDimmedRow ? { opacity: 0.4 } : undefined}
+              <tr key={i}
+                  ref={getRowRef(rowKey)}
+                  className={["table-row-animated", onPitcherClick ? "clickable-row" : "", onPitchTypeClick ? "clickable-row" : ""].filter(Boolean).join(" ")}
+                  style={rowStyle}
                   onClick={(e) => {
                     if (onPitchTypeClick && r.pitch_name) { onPitchTypeClick(r.pitch_name); }
                     else if (onPitcherClick) { onPitcherClick(r.pitcher_id, r.game_pk, e); }
@@ -451,7 +469,7 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
                 {activeCols.map(c => {
                   const isSticky = stickyKeys.includes(c.key);
                   const stickyStyle = isSticky ? { position: "sticky", left: stickyLeftMap[c.key], zIndex: 2, background: "var(--surface2)", minWidth: c.key === "pitcher" ? 110 : 80 } : {};
-                  return <td key={c.key} className={[c.dividerRight ? "col-divider-right" : "", isSticky ? "mobile-sticky-col" : ""].filter(Boolean).join(" ")} style={{ textAlign: c.align || "left", ...stickyStyle }}>{renderCell(r, c)}</td>;
+                  return <td key={c.key} className={[c.dividerRight ? "col-divider-right" : "", isSticky ? "mobile-sticky-col" : ""].filter(Boolean).join(" ")} style={{ textAlign: c.align || "left", ...stickyStyle }}>{renderCell(r, c, i)}</td>;
                 })}
               </tr>
               );
@@ -459,8 +477,9 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
             {(() => {
               const t = computeTotals(rows);
               if (!t) return null;
+              const lastRowDelay = Math.max(0, (rows.length - 1)) * 8;
               return (
-                <tr className="pp-total-row" style={{ ...(isMobile ? { position: "sticky", bottom: 0, zIndex: 2 } : {}), cursor: selectedPitchType && onPitchTypeClick ? "pointer" : undefined }} onClick={() => selectedPitchType && onPitchTypeClick && onPitchTypeClick(selectedPitchType)}>
+                <tr className="pp-total-row table-row-animated" style={{ ...(isMobile ? { position: "sticky", bottom: 0, zIndex: 2 } : {}), cursor: selectedPitchType && onPitchTypeClick ? "pointer" : undefined, animationDelay: `${lastRowDelay}ms` }} onClick={() => selectedPitchType && onPitchTypeClick && onPitchTypeClick(selectedPitchType)}>
                   {activeCols.map(c => {
                     let val;
                     if (c.key === "pitch_name") val = <span className="pp-total-label">Total</span>;
