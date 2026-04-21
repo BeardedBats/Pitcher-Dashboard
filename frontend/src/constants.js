@@ -90,41 +90,44 @@ export const CARD_RESULTS_COLUMNS = [
   { key: "hard_pct", label: "Hard%", align: "right" },
 ];
 
-// Usage tab columns: Type | (vs LHB: # 0-0 Early Behind Two-Strikes) | (vs RHB: # 0-0 Early Behind Two-Strikes) | PAR%
-// "Early" = 0-1, 1-0, 1-1; "Behind" = 2-0, 2-1, 3-0, 3-1; "Two-Strikes" = 0-2, 1-2, 2-2, 3-2.
-// Count-bucket columns show usage (% of pitches in that count that were this type, per batter hand).
-// PAR% is pitch-type level (combined across hands): Ks on this pitch / pitches of this type thrown in 2-strike counts.
+// Usage tab columns: Type | # | PAR% | (vs LHB: 0-0% Early% Behind% 2-Str% PAR%) | (vs RHB: 0-0% Early% Behind% 2-Str% PAR%)
+// "Early%" = 0-1, 1-0, 1-1; "Behind%" = 2-0, 2-1, 3-0, 3-1; "2-Str%" = 0-2, 1-2, 2-2, 3-2.
+// Bucket columns show usage (% of pitches in that count that were this type, per batter hand).
+// PAR% (combined) = Ks on this pitch / pitches of this type thrown in 2-strike counts.
+// PAR% per hand = same formula restricted to that batter hand.
 export const CARD_USAGE_COLUMNS = [
-  { key: "pitch_name", label: "Type", align: "left", dividerRight: true },
+  { key: "pitch_name", label: "Type", align: "left" },
+  { key: "count", label: "#", align: "right" },
+  { key: "par_pct", label: "PAR%", align: "right", dividerRight: true },
   // vs LHB
-  { key: "count_l", label: "#", align: "right", group: "lhb" },
-  { key: "firstpitch_pct_l", label: "0-0", align: "right", group: "lhb" },
-  { key: "early_pct_l", label: "Early", align: "right", group: "lhb" },
-  { key: "behind_pct_l", label: "Behind", align: "right", group: "lhb" },
-  { key: "two_str_use_pct_l", label: "Two-Strikes", align: "right", group: "lhb", dividerRight: true },
+  { key: "firstpitch_pct_l", label: "0-0%", align: "right", group: "lhb" },
+  { key: "early_pct_l", label: "Early%", align: "right", group: "lhb" },
+  { key: "behind_pct_l", label: "Behind%", align: "right", group: "lhb" },
+  { key: "two_str_use_pct_l", label: "2-Str%", align: "right", group: "lhb" },
+  { key: "par_pct_vs_l", label: "PAR%", align: "right", group: "lhb", dividerRight: true },
   // vs RHB
-  { key: "count_r", label: "#", align: "right", group: "rhb" },
-  { key: "firstpitch_pct_r", label: "0-0", align: "right", group: "rhb" },
-  { key: "early_pct_r", label: "Early", align: "right", group: "rhb" },
-  { key: "behind_pct_r", label: "Behind", align: "right", group: "rhb" },
-  { key: "two_str_use_pct_r", label: "Two-Strikes", align: "right", group: "rhb", dividerRight: true },
-  // Combined
-  { key: "par_pct", label: "PAR%", align: "right" },
+  { key: "firstpitch_pct_r", label: "0-0%", align: "right", group: "rhb" },
+  { key: "early_pct_r", label: "Early%", align: "right", group: "rhb" },
+  { key: "behind_pct_r", label: "Behind%", align: "right", group: "rhb" },
+  { key: "two_str_use_pct_r", label: "2-Str%", align: "right", group: "rhb" },
+  { key: "par_pct_vs_r", label: "PAR%", align: "right", group: "rhb" },
 ];
 
 export const PITCHER_RESULTS_COLUMNS = [
   { key: "pitcher", label: "Pitcher", align: "left" },
   { key: "team", label: "Team", align: "left" },
   { key: "hand", label: "Hand", align: "left" },
-  { key: "opponent", label: "Game", align: "left" },
+  { key: "opponent", label: "Game", align: "left", dividerRight: true },
   { key: "ip", label: "IP", align: "right" },
   { key: "runs", label: "R", align: "right" },
   { key: "er", label: "ER", align: "right" },
   { key: "hits", label: "H", align: "right" },
   { key: "bbs", label: "BB", align: "right" },
-  { key: "ks", label: "K", align: "right" },
-  { key: "csw_pct", label: "CSW%", align: "right" },
+  { key: "ks", label: "K", align: "right", dividerRight: true },
   { key: "whiffs", label: "Whfs", align: "right" },
+  { key: "csw_pct", label: "CSW%", align: "right" },
+  { key: "strike_pct", label: "STR%", align: "right" },
+  { key: "par_pct", label: "PAR%", align: "right", tooltip: "Strikeouts / Two-Strike Pitches" },
   { key: "pitches", label: "#", align: "right" },
   { key: "hrs", label: "HR", align: "right" },
 ];
@@ -301,18 +304,19 @@ const _OFFENSE_TIER_COLORS = {
 };
 // home lookup (opponent comes to you) — key without @
 const _OFFENSE_HOME = {
-  ATL: "top", DET: "top", LAD: "top", NYM: "top", NYY: "top", PHI: "top", TOR: "top",
-  HOU: "solid", KCR: "solid", MIL: "solid", SDP: "solid", SEA: "solid",
-  ATH: "average", BAL: "average", BOS: "average", CHC: "average", PIT: "average", TEX: "average", WSN: "average",
-  ARI: "weak", CIN: "weak", SFG: "weak", STL: "weak", TBR: "weak",
-  CHW: "poor", CLE: "poor", COL: "poor", LAA: "poor", MIA: "poor", MIN: "poor",
+  ATL: "top", DET: "top", HOU: "top", LAD: "top", NYY: "top",
+  MIL: "solid", PIT: "solid", SDP: "solid", SEA: "solid", STL: "solid", TEX: "solid", WSN: "solid",
+  ARI: "average", BAL: "average", CHW: "average", KCR: "average", MIA: "average", NYM: "average", PHI: "average", TOR: "average",
+  ATH: "weak", CHC: "weak", CIN: "weak", CLE: "weak", LAA: "weak", MIN: "weak",
+  BOS: "poor", COL: "poor", SFG: "poor", TBR: "poor",
 };
 // away lookup (you go to them) — maps from opponent abbrev when is_away=true
 const _OFFENSE_AWAY = {
-  ATH: "solid", BOS: "solid", CIN: "solid",
-  KCR: "average",
-  COL: "weak", SEA: "weak", TEX: "weak",
-  STL: "poor",
+  CIN: "top",
+  ATH: "solid", BOS: "solid",
+  COL: "average",
+  SEA: "weak", STL: "weak",
+  KCR: "poor", TEX: "poor",
 };
 /**
  * Get the color for an opponent team based on offense tier.
