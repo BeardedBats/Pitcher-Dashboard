@@ -20,6 +20,7 @@ from data import (
     warmup_range_data, fetch_date, compute_player_page,
     get_top400_pitcher_ids, warmup_player_pages,
     get_override_version, CARD_SCHEMA_VERSION,
+    is_custom_season_range,
 )
 from aggregation import (
     aggregate_pitch_data, aggregate_pitcher_results, get_pitcher_card,
@@ -224,7 +225,7 @@ def pitch_data(date: str = Query(...), game_pk: int = Query(None)):
 def pitcher_results(date: str = Query(...), game_pk: int = Query(None)):
     if game_pk is None:
         # Check agg cache for all-games daily aggregation
-        agg_key = f"daily_results_{date}"
+        agg_key = f"daily_results_s{CARD_SCHEMA_VERSION}_{date}"
         cached = get_agg_cache(agg_key)
         if cached is not None:
             return cached
@@ -241,7 +242,7 @@ def initial_load():
     games_list = get_games(date)
     # Use agg cache for daily aggregations
     pitch_key = f"daily_pitch_{date}"
-    results_key = f"daily_results_{date}"
+    results_key = f"daily_results_s{CARD_SCHEMA_VERSION}_{date}"
     cached_pitch = get_agg_cache(pitch_key)
     cached_results = get_agg_cache(results_key)
     pd_data = cached_pitch if cached_pitch is not None else aggregate_pitch_data(date, None)
@@ -259,7 +260,8 @@ def clear(date: str = Query(None)):
 
 def _compute_season_totals(pitcher_id, start_date, end_date):
     """Compute season totals for a pitcher. Returns dict or {} if no data."""
-    agg_key = f"season_totals_{pitcher_id}_{start_date}_{end_date}_s{CARD_SCHEMA_VERSION}"
+    suffix = "_custom" if is_custom_season_range(start_date, end_date) else ""
+    agg_key = f"season_totals_{pitcher_id}_s{CARD_SCHEMA_VERSION}{suffix}"
     cached = get_agg_cache(agg_key)
     if cached is not None:
         return cached
@@ -449,7 +451,8 @@ def team_pitchers(team: str = Query(...), start_date: str = Query("2026-03-25"),
 @app.get("/api/player-page")
 def player_page(pitcher_id: int = Query(...), start_date: str = Query("2026-03-25"), end_date: str = Query("")):
     end_date = _resolve_end_date(end_date)
-    agg_key = f"player_v2_{pitcher_id}_{start_date}_{end_date}_s{CARD_SCHEMA_VERSION}"
+    suffix = "_custom" if is_custom_season_range(start_date, end_date) else ""
+    agg_key = f"player_v2_{pitcher_id}_s{CARD_SCHEMA_VERSION}{suffix}"
     cached = get_agg_cache(agg_key)
     if cached is not None:
         return cached
@@ -569,8 +572,9 @@ def cron_warmup_daily(request: Request):
 # ── Daily 5:40 AM ET cron: re-compute player pages for yesterday's pitchers ──
 @app.get("/api/cron/warmup-daily-players")
 def cron_warmup_daily_players(request: Request):
-    """Daily cron (5:40 AM ET / 9:40 UTC): re-computes player pages
-    for Top 400 pitchers who pitched yesterday."""
+    """Daily cron (5:40 AM ET / 9:40 UTC): re-computes player pages for
+    every pitcher who pitched yesterday — not just Top 400. The stable
+    player_v2 key means each run overwrites the prior entry in Redis."""
     auth = request.headers.get("authorization")
     cron_secret = os.environ.get("CRON_SECRET")
     if _IS_SERVERLESS and cron_secret and auth != f"Bearer {cron_secret}":
@@ -582,12 +586,30 @@ def cron_warmup_daily_players(request: Request):
         if df.empty:
             return {"status": "no_data"}
         yesterday = get_default_date()
-        result = warmup_player_pages(df, start_date, end_date, only_date=yesterday)
+        if "game_date" not in df.columns:
+            return {"status": "no_game_date", "date_updated": yesterday}
+        day_df = df[df["game_date"] == yesterday]
+        target_ids = sorted({int(pid) for pid in day_df["pitcher"].dropna().unique()})
+        suffix = "_custom" if is_custom_season_range(start_date, end_date) else ""
+        computed = 0
+        skipped = 0
+        for pid in target_ids:
+            agg_key = f"player_v2_{pid}_s{CARD_SCHEMA_VERSION}{suffix}"
+            try:
+                result = compute_player_page(df, pid)
+                if result is not None:
+                    set_agg_cache(agg_key, result)
+                    computed += 1
+                else:
+                    skipped += 1
+            except Exception as e:
+                print(f"[DailyPlayers] Error computing player {pid}: {e}")
+                skipped += 1
         return {
             "status": "ok", "date_updated": yesterday,
-            "players_computed": result["computed"],
-            "players_skipped": result["skipped"],
-            "total_top400_in_data": result["total_top400_in_data"],
+            "players_computed": computed,
+            "players_skipped": skipped,
+            "total_pitchers_yesterday": len(target_ids),
         }
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -652,9 +674,10 @@ def cron_warmup_daily_cards(request: Request):
         totals_end = _resolve_end_date("")
         unique_pids = day_df["pitcher"].dropna().unique()
         totals_warmed = 0
+        st_suffix = "_custom" if is_custom_season_range(season_start, totals_end) else ""
         for pid in unique_pids:
             pid = int(pid)
-            st_key = f"season_totals_{pid}_{season_start}_{totals_end}_s{CARD_SCHEMA_VERSION}"
+            st_key = f"season_totals_{pid}_s{CARD_SCHEMA_VERSION}{st_suffix}"
             if get_agg_cache(st_key) is not None:
                 continue
             try:
@@ -846,7 +869,7 @@ def manual_refresh():
             pitch_agg = aggregate_pitch_data(today)
             results_agg = aggregate_pitcher_results(today)
             set_agg_cache(f"daily_pitch_{today}", pitch_agg)
-            set_agg_cache(f"daily_results_{today}", results_agg)
+            set_agg_cache(f"daily_results_s{CARD_SCHEMA_VERSION}_{today}", results_agg)
         now = _now_et().isoformat()
         redis_set("last_refresh", now)
         return {"status": "ok", "timestamp": now}

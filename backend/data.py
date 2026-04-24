@@ -28,7 +28,7 @@ _override_version = 0  # Incremented on every save/remove to bust agg caches
 # Cache-shape version. Bump whenever a cached payload (card, season totals,
 # player page) gains or changes fields so all old cache entries miss after
 # deploy. Included in every relevant cache key alongside _override_version.
-CARD_SCHEMA_VERSION = 4
+CARD_SCHEMA_VERSION = 6
 
 def _load_overrides():
     global _overrides, _override_version
@@ -1026,6 +1026,16 @@ def _get_default_end_date():
     return datetime.now(et).strftime("%Y-%m-%d")
 
 
+def is_custom_season_range(start_date, end_date):
+    """True if (start_date, end_date) is NOT the canonical season-to-date range
+    (current year's 03-25 through today ET). Custom ranges get a '_custom'
+    suffix on player_v2 / season_totals cache keys so historical lookups
+    don't collide with the stable, overwrite-in-place season key."""
+    today = _get_default_end_date()
+    current_year = today[:4]
+    return start_date != f"{current_year}-03-25" or end_date != today
+
+
 def warmup_range_data(start_date="2026-03-25", end_date=None):
     """Pre-fetch and warm all caches for the standard date range.
     Called on server startup in a background thread."""
@@ -1091,7 +1101,7 @@ def warmup_range_data(start_date="2026-03-25", end_date=None):
                 pd_result = aggregate_pitch_data(default_date, None)
                 set_agg_cache(f"daily_pitch_{default_date}", pd_result)
                 pr_result = aggregate_pitcher_results(default_date, None)
-                set_agg_cache(f"daily_results_{default_date}", pr_result)
+                set_agg_cache(f"daily_results_s{CARD_SCHEMA_VERSION}_{default_date}", pr_result)
                 print(f"[Warmup] Daily aggregations for {default_date} cached")
             except Exception as e2:
                 print(f"[Warmup] Default date warm failed: {e2}")
@@ -1250,8 +1260,9 @@ def warmup_player_pages(df, start_date, end_date, pitcher_ids=None, only_date=No
 
     computed = 0
     skipped = 0
+    suffix = "_custom" if is_custom_season_range(start_date, end_date) else ""
     for pid in target_ids:
-        agg_key = f"player_v2_{pid}_{start_date}_{end_date}_s{CARD_SCHEMA_VERSION}"
+        agg_key = f"player_v2_{pid}_s{CARD_SCHEMA_VERSION}{suffix}"
         try:
             result = compute_player_page(df, pid)
             if result is not None:

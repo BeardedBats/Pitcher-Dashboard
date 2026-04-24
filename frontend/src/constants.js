@@ -129,7 +129,8 @@ export const PITCHER_RESULTS_COLUMNS = [
   { key: "strike_pct", label: "STR%", align: "right" },
   { key: "par_pct", label: "PAR%", align: "right", tooltip: "Strikeouts / Two-Strike Pitches" },
   { key: "pitches", label: "#", align: "right" },
-  { key: "hrs", label: "HR", align: "right" },
+  { key: "hrs", label: "HR", align: "right", dividerRight: true },
+  { key: "velo", label: "VELO", align: "right", tooltip: "Avg velocity of most-thrown fastball (Four-Seamer or Sinker) with delta vs. 2026 season" },
 ];
 
 export const TEAM_FULL_NAMES = {

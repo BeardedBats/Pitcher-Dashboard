@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { PITCHER_RESULTS_COLUMNS, TEAM_FULL_NAMES, displayAbbrev } from "../constants";
+import { PITCHER_RESULTS_COLUMNS, PITCH_COLORS, TEAM_FULL_NAMES, displayAbbrev } from "../constants";
 import { fmtPct, fmtInt } from "../utils/formatting";
 
 const TEAM_SPLIT_HIDE = ["team", "opponent"];
@@ -99,6 +99,7 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
     if (key === "hand") return 52;
     if (key === "opponent") return 175;
     if (key === "csw_pct" || key === "strike_pct" || key === "par_pct") return 65;
+    if (key === "velo") return 96;
     return 50;
   };
 
@@ -127,6 +128,26 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
     );
   };
 
+  const renderVeloCell = (row) => {
+    const v = row.velo;
+    if (v == null) return <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
+    const pitch = row.velo_pitch;
+    const color = PITCH_COLORS[pitch] || "#D9D9D9";
+    const delta = row.velo_delta;
+    let deltaEl = null;
+    if (delta != null && !isNaN(delta)) {
+      const cls = delta >= 1.0 ? "delta-up" : delta <= -1.0 ? "delta-down" : "delta-neutral";
+      const text = `(${delta >= 0 ? "+" : ""}${delta.toFixed(1)})`;
+      deltaEl = <span className={`delta-value ${cls}`} style={{ marginLeft: 4 }}>{text}</span>;
+    }
+    return (
+      <span style={{ whiteSpace: "nowrap" }}>
+        <span style={{ color, fontWeight: 600 }}>{Number(v).toFixed(1)}</span>
+        {deltaEl}
+      </span>
+    );
+  };
+
   const renderCell = (row, col) => {
     const v = row[col.key];
     if (col.key === "pitcher") {
@@ -146,6 +167,7 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
     if (col.key === "opponent") return formatGameLine(row);
     if (col.key === "csw_pct" || col.key === "strike_pct" || col.key === "par_pct") return dim(fmtPct(v));
     if (col.key === "ip") return v != null ? v : <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
+    if (col.key === "velo") return renderVeloCell(row);
     return dim(fmtInt(v));
   };
 

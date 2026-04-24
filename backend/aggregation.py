@@ -292,6 +292,62 @@ def aggregate_pitch_data(date_str, game_pk=None):
     df = _prep_df(df)
     return _aggregate_pitch_df(df)
 
+_FASTBALL_TYPES = ("Four-Seamer", "Sinker")
+
+
+def _compute_game_fastball_velo(gdf):
+    """Find the most-thrown fastball (Four-Seamer or Sinker) in a game df and
+    return (pitch_name, mean_velo). Ties go to Four-Seamer."""
+    if gdf.empty or "pitch_name" not in gdf.columns:
+        return None, None
+    fb_df = gdf[gdf["pitch_name"].isin(_FASTBALL_TYPES)]
+    if fb_df.empty:
+        return None, None
+    counts = fb_df["pitch_name"].value_counts()
+    four_seam = int(counts.get("Four-Seamer", 0))
+    sinker = int(counts.get("Sinker", 0))
+    if four_seam == 0 and sinker == 0:
+        return None, None
+    pick = "Four-Seamer" if four_seam >= sinker else "Sinker"
+    pick_df = fb_df[fb_df["pitch_name"] == pick]
+    if "release_speed" not in pick_df.columns or pick_df["release_speed"].isna().all():
+        return pick, None
+    return pick, round(float(pick_df["release_speed"].mean()), 1)
+
+
+def _compute_season_fastball_velos(pitcher_ids, season_year, before_date=None):
+    """Batch-compute season-to-date fastball mean velos for a list of pitcher IDs.
+    Reuses the cached range DataFrame so we don't hit Savant per-pitcher.
+    Returns {pitcher_id: {"Four-Seamer": velo, "Sinker": velo}}."""
+    if not pitcher_ids or season_year is None:
+        return {}
+    try:
+        from data import fetch_date_range, _get_default_end_date
+        start_date = f"{season_year}-03-25"
+        end_date = _get_default_end_date()
+        df = fetch_date_range(start_date, end_date)
+    except Exception:
+        return {}
+    if df is None or df.empty:
+        return {}
+    if not all(c in df.columns for c in ("pitcher", "pitch_name", "release_speed")):
+        return {}
+    pid_set = {int(p) for p in pitcher_ids}
+    mask = df["pitcher"].isin(pid_set) & df["pitch_name"].isin(_FASTBALL_TYPES)
+    fb_df = df[mask]
+    # Exclude the current game date so the displayed velo doesn't skew its own delta.
+    if before_date is not None and "game_date" in fb_df.columns:
+        fb_df = fb_df[fb_df["game_date"].astype(str) < str(before_date)]
+    if fb_df.empty:
+        return {}
+    grouped = fb_df.groupby(["pitcher", "pitch_name"])["release_speed"].mean()
+    result = {}
+    for (pid, pn), velo in grouped.items():
+        if pd.notna(velo):
+            result.setdefault(int(pid), {})[pn] = round(float(velo), 1)
+    return result
+
+
 def aggregate_pitcher_results(date_str, game_pk=None):
     df = fetch_date(date_str)
     if df.empty: return []
@@ -327,6 +383,7 @@ def aggregate_pitcher_results(date_str, game_pk=None):
         fallback_ip = f"{outs // 3}.{outs % 3}"
         home_team, away_team = game_teams.get(gp, ("", ""))
         _, _, two_strike_pitches, strikeouts_for_par = _compute_two_strike_pa_stats(gdf)
+        velo_pitch, velo = _compute_game_fastball_velo(gdf)
         row = {
             "pitcher_id": int(pitcher_id), "game_pk": int(gp),
             "pitcher": name, "team": team, "hand": hand, "opponent": opp,
@@ -338,6 +395,7 @@ def aggregate_pitcher_results(date_str, game_pk=None):
             "pitches": total_pitches, "hrs": hrs,
             "appearance_order": appearance_order,
             "home_team": home_team, "away_team": away_team,
+            "velo": velo, "velo_pitch": velo_pitch,
         }
         results.append(row)
     # Fetch boxscore stats (ER, IP, Hits, BB, K, HR) from MLB API — in parallel
@@ -378,6 +436,18 @@ def aggregate_pitcher_results(date_str, game_pk=None):
         roles = classify_pitcher_roles(game_rows, season_year=season_year, before_date=date_str)
         for r in game_rows:
             r["role"] = roles.get(r["pitcher_id"], "RP")
+    # Attach season-to-date fastball velo + delta for each pitcher (batched)
+    season_velos = _compute_season_fastball_velos(
+        [r["pitcher_id"] for r in results], season_year, before_date=date_str,
+    )
+    for r in results:
+        pick = r.get("velo_pitch")
+        season_velo = season_velos.get(r["pitcher_id"], {}).get(pick) if pick else None
+        r["velo_season"] = season_velo
+        if r.get("velo") is not None and season_velo is not None:
+            r["velo_delta"] = round(r["velo"] - season_velo, 1)
+        else:
+            r["velo_delta"] = None
     results.sort(key=lambda r: (r["team"], r["appearance_order"]))
     return results
 
