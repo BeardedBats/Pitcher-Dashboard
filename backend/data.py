@@ -38,7 +38,10 @@ _override_version = 0  # Incremented on every save/remove to bust agg caches
 # v10: AAA player pages normalize player_name ("Last, First" → "First Last")
 #     and pitch_name (raw Savant "4-Seam Fastball" → "Four-Seamer") so MiLB
 #     pitch tables consolidate one row per type and names display correctly.
-CARD_SCHEMA_VERSION = 10
+# v11: per-pitch-type rate stats (strike_pct, cs_pct, swstr_pct, csw_pct) are
+#     sent unrounded so the frontend's single Math.round agrees with
+#     ResultsTable, fixing the X.45 → 45.5 → 46 double-rounding mismatch.
+CARD_SCHEMA_VERSION = 11
 
 # Allowed level values. New levels must be added here and exposed via the
 # frontend `level` state and any cron schedules.

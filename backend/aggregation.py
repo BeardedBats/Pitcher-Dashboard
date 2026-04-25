@@ -271,10 +271,16 @@ def _aggregate_pitch_df(df, full_df=None):
             "whiffs": whiffs,
             "zone_pct": round(in_zone / total * 100, 1) if total > 0 else 0,
             "o_swing_pct": round(o_swings / out_zone * 100, 1) if out_zone > 0 else 0,
-            "strike_pct": round(strikes / total * 100, 1) if total > 0 else 0,
-            "cs_pct": round(called_strikes / total * 100, 1) if total > 0 else 0,
-            "swstr_pct": round(whiffs / total * 100, 1) if total > 0 else 0,
-            "csw_pct": round((called_strikes + whiffs) / total * 100, 1) if total > 0 else 0,
+            # Rate stats are sent unrounded so the frontend's single Math.round
+            # at display time agrees with ResultsTable, which rounds the raw
+            # ratio in one step. Rounding here to 1 decimal first introduced a
+            # double-rounding bug — values like 45.4545% snapped to 45.5,
+            # which fmtPct then rounded UP to 46% (vs 45% from a one-step
+            # round of the raw ratio).
+            "strike_pct": (strikes / total * 100) if total > 0 else 0,
+            "cs_pct": (called_strikes / total * 100) if total > 0 else 0,
+            "swstr_pct": (whiffs / total * 100) if total > 0 else 0,
+            "csw_pct": ((called_strikes + whiffs) / total * 100) if total > 0 else 0,
             "appearance_order": appearance_order,
             "home_team": gdf["home_team"].iloc[0] if "home_team" in gdf.columns else "",
             "away_team": gdf["away_team"].iloc[0] if "away_team" in gdf.columns else "",
@@ -963,10 +969,11 @@ def aggregate_pitch_data_range(df, prepped=False):
             "whiffs": whiffs,
             "zone_pct": round(in_zone / total * 100, 1) if total > 0 else 0,
             "o_swing_pct": round(o_swings / out_zone * 100, 1) if out_zone > 0 else 0,
-            "strike_pct": round(strikes / total * 100, 1) if total > 0 else 0,
-            "cs_pct": round(called_strikes / total * 100, 1) if total > 0 else 0,
-            "swstr_pct": round(whiffs / total * 100, 1) if total > 0 else 0,
-            "csw_pct": round((called_strikes + whiffs) / total * 100, 1) if total > 0 else 0,
+            # See _aggregate_pitch_df: send unrounded so frontend rounds once.
+            "strike_pct": (strikes / total * 100) if total > 0 else 0,
+            "cs_pct": (called_strikes / total * 100) if total > 0 else 0,
+            "swstr_pct": (whiffs / total * 100) if total > 0 else 0,
+            "csw_pct": ((called_strikes + whiffs) / total * 100) if total > 0 else 0,
         }
         results.append(row)
     results.sort(key=lambda r: (r["pitcher"], r["pitch_name"]))
