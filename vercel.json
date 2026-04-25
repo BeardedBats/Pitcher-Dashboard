@@ -44,10 +44,5 @@
       "path": "/api/cron/warmup-live-cards?level=aaa",
       "schedule": "5,15,25,35,45,55 16-23,0-5 * * *"
     }
-  ],
-  "experimentalServices": {
-    "web": {
-      "routePrefix": "/"
-    }
-  }
+  ]
 }
