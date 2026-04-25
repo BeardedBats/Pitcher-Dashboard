@@ -21,6 +21,7 @@ from data import (
     warmup_player_pages,
     get_override_version, CARD_SCHEMA_VERSION,
     is_custom_season_range, LEVELS, DEFAULT_LEVEL,
+    fetch_pitcher_full_milb_season, get_milb_errors, _clear_milb_errors,
 )
 from aggregation import (
     aggregate_pitch_data, aggregate_pitcher_results, get_pitcher_card,
@@ -271,17 +272,11 @@ def clear(date: str = Query(None), level: str = Query(None)):
     clear_cache(date, level=lv)
     return {"status": "ok", "cleared": date or "all", "level": lv or "all"}
 
-def _compute_season_totals(pitcher_id, start_date, end_date, level=DEFAULT_LEVEL):
-    """Compute season totals for a pitcher. Returns dict or {} if no data."""
-    suffix = "_custom" if is_custom_season_range(start_date, end_date) else ""
-    agg_key = f"season_totals_{level}_{pitcher_id}_s{CARD_SCHEMA_VERSION}{suffix}"
-    cached = get_agg_cache(agg_key)
-    if cached is not None:
-        return cached
-    df = fetch_date_range(start_date, end_date, level=level)
-    if df.empty:
-        return {}
-    game_log = get_pitcher_game_log(df, pitcher_id)
+def _aggregate_game_log_to_totals(game_log):
+    """Aggregate a list of per-game stat dicts into a season-totals dict.
+    Pure function — no caching, no fetching. Used by both the legacy
+    single-level _compute_season_totals path and the new dual MLB/MiLB
+    computation. Returns {} for an empty/falsy log."""
     if not game_log:
         return {}
     total_pitches = sum(g.get("pitches", 0) for g in game_log)
@@ -289,8 +284,8 @@ def _compute_season_totals(pitcher_id, start_date, end_date, level=DEFAULT_LEVEL
     for g in game_log:
         ip_val = g.get("ip", "0.0")
         parts = str(ip_val).split(".")
-        full = int(parts[0])
-        thirds = int(parts[1]) if len(parts) > 1 else 0
+        full = int(parts[0]) if parts[0] else 0
+        thirds = int(parts[1]) if len(parts) > 1 and parts[1] else 0
         total_ip_thirds += full * 3 + thirds
     total_whiffs = sum(g.get("whiffs", 0) for g in game_log)
     total_strikes = sum(g.get("strikes", 0) for g in game_log)
@@ -301,7 +296,8 @@ def _compute_season_totals(pitcher_id, start_date, end_date, level=DEFAULT_LEVEL
     total_two_str_pas = sum(g.get("two_strike_pas", 0) for g in game_log)
     total_two_str_pitches = sum(g.get("two_strike_pitches", 0) for g in game_log)
     total_strikeouts_par = sum(g.get("strikeouts_for_par", 0) for g in game_log)
-    result = {
+    last_game_date = max((g.get("date") or "" for g in game_log), default="")
+    return {
         "games": len(game_log),
         "games_started": total_games_started,
         "ip": f"{total_ip_thirds // 3}.{total_ip_thirds % 3}",
@@ -323,9 +319,106 @@ def _compute_season_totals(pitcher_id, start_date, end_date, level=DEFAULT_LEVEL
         "pitches": total_pitches,
         "wins": sum(1 for g in game_log if g.get("decision") == "W"),
         "losses": sum(1 for g in game_log if g.get("decision") == "L"),
+        "last_game_date": last_game_date or None,
     }
-    set_agg_cache(agg_key, result)
+
+
+def _compute_season_totals(pitcher_id, start_date, end_date, level=DEFAULT_LEVEL):
+    """Compute season totals for a pitcher. Returns dict or {} if no data."""
+    suffix = "_custom" if is_custom_season_range(start_date, end_date) else ""
+    agg_key = f"season_totals_{level}_{pitcher_id}_s{CARD_SCHEMA_VERSION}{suffix}"
+    cached = get_agg_cache(agg_key)
+    if cached is not None:
+        return cached
+    df = fetch_date_range(start_date, end_date, level=level)
+    if df.empty:
+        return {}
+    game_log = get_pitcher_game_log(df, pitcher_id)
+    result = _aggregate_game_log_to_totals(game_log)
+    if result:
+        set_agg_cache(agg_key, result)
     return result
+
+
+def _compute_milb_full_season_totals(pitcher_id, season_year):
+    """Full-MiLB season totals (Statcast AAA+FSL ⊕ MLB Stats API PBP for AA-and-below).
+    Adds `had_lower_levels` and `incomplete` flags so the frontend can
+    optionally show an asterisk + tooltip when AA games failed to load."""
+    cache_key = f"season_totals_milb_full_{pitcher_id}_s{CARD_SCHEMA_VERSION}_{season_year}"
+    cached = get_agg_cache(cache_key)
+    if cached is not None:
+        return cached
+    df, info = fetch_pitcher_full_milb_season(pitcher_id, season_year)
+    if df.empty:
+        return {}
+    game_log = get_pitcher_game_log(df, pitcher_id)
+    result = _aggregate_game_log_to_totals(game_log)
+    if not result:
+        return {}
+    result["had_lower_levels"] = info.get("had_lower_levels", False)
+    result["incomplete"] = info.get("incomplete", False)
+    result["partial_fields"] = (
+        ["csw_pct", "two_str_pct", "par_pct"]
+        if info.get("incomplete") else []
+    )
+    set_agg_cache(cache_key, result)
+    return result
+
+
+def _compute_mlb_full_season_totals(pitcher_id, season_year):
+    """MLB-only season totals (existing Statcast-based path)."""
+    season_start = f"{season_year}-03-25"
+    end_date = _resolve_end_date("")
+    return _compute_season_totals(pitcher_id, season_start, end_date, level=DEFAULT_LEVEL)
+
+
+def _compute_dual_season_totals(pitcher_id, season_year):
+    """Compute MLB + MiLB season totals for a pitcher in one shot.
+    Returns:
+        {
+            "mlb": dict | None,
+            "milb": dict | None,
+            "primary": "mlb" | "milb" | None,  # most recent game's level
+            "errors": [list of {source, message, ...}]
+        }
+    """
+    # Clear any stale errors before re-attempting; new errors get recorded
+    # during the calls below.
+    _clear_milb_errors(pitcher_id, season_year)
+
+    mlb = None
+    try:
+        mlb_dict = _compute_mlb_full_season_totals(pitcher_id, season_year)
+        if mlb_dict and mlb_dict.get("games"):
+            mlb = mlb_dict
+    except Exception as e:
+        print(f"[dual_totals] MLB compute err pid={pitcher_id}: {e}")
+
+    milb = None
+    try:
+        milb_dict = _compute_milb_full_season_totals(pitcher_id, season_year)
+        if milb_dict and milb_dict.get("games"):
+            milb = milb_dict
+    except Exception as e:
+        print(f"[dual_totals] MiLB compute err pid={pitcher_id}: {e}")
+
+    # Most recent game determines the primary view (frontend default selection)
+    primary = None
+    if mlb and milb:
+        mlb_last = mlb.get("last_game_date") or ""
+        milb_last = milb.get("last_game_date") or ""
+        primary = "mlb" if mlb_last >= milb_last else "milb"
+    elif mlb:
+        primary = "mlb"
+    elif milb:
+        primary = "milb"
+
+    return {
+        "mlb": mlb,
+        "milb": milb,
+        "primary": primary,
+        "errors": get_milb_errors(pitcher_id, season_year),
+    }
 
 @app.get("/api/pitcher-card")
 def pitcher_card(date: str = Query(...), pitcher_id: int = Query(...), game_pk: int = Query(...), level: str = Query(DEFAULT_LEVEL)):
@@ -337,12 +430,22 @@ def pitcher_card(date: str = Query(...), pitcher_id: int = Query(...), game_pk: 
         return cached
     result = get_pitcher_card(date, pitcher_id, game_pk, level=lv)
     if result:
-        # Compute season totals and weather BEFORE caching so cache hits are complete
+        season_year = int(date[:4])
+        # Dual season totals (MLB + MiLB) — both rendered on the card when
+        # the pitcher has games at both levels. Each can be null.
+        dual = _compute_dual_season_totals(pitcher_id, season_year)
+        result["season_totals_mlb"] = dual["mlb"]
+        result["season_totals_milb"] = dual["milb"]
+        result["season_totals_primary"] = dual["primary"]
+        result["errors"] = dual["errors"]
+        # Backward-compat: `season_totals` keeps the level's "natural" data
+        # (MLB on MLB cards, MiLB on AAA cards) so older frontends don't
+        # break. New frontends should read the dual fields.
         if "season_totals" not in result:
-            current_year = date[:4]
-            season_start = f"{current_year}-03-25"
-            end_date = _resolve_end_date("")
-            result["season_totals"] = _compute_season_totals(pitcher_id, season_start, end_date, level=lv)
+            if lv == DEFAULT_LEVEL:
+                result["season_totals"] = dual["mlb"] or {}
+            else:
+                result["season_totals"] = dual["milb"] or {}
         if "game_weather" not in result:
             # Stadium coords / DOMED_STADIUMS only cover MLB. For AAA we leave
             # the field absent so the frontend can render without weather.
@@ -482,13 +585,28 @@ def player_page(pitcher_id: int = Query(...), start_date: str = Query("2026-03-2
     cached = get_agg_cache(agg_key)
     if cached is not None:
         return cached
-    df = fetch_date_range(start_date, end_date, level=lv)
     empty = {"info": {}, "pitch_summary": [], "pitch_summary_vs_l": [], "pitch_summary_vs_r": [], "results_summary": {}, "game_log": []}
+    if lv == "aaa":
+        # MiLB view: pull Statcast (AAA + FSL) and AA-and-below PBP into one
+        # DataFrame so per-pitch metrics span every Statcast-tracked level
+        # AND every level the MLB Stats API has play-by-play for.
+        season_year = int(start_date[:4])
+        df, _info = fetch_pitcher_full_milb_season(pitcher_id, season_year)
+    else:
+        df = fetch_date_range(start_date, end_date, level=lv)
     if df.empty:
-        return empty
-    result = compute_player_page(df, pitcher_id)
-    if result is None:
-        return empty
+        result = empty
+    else:
+        computed = compute_player_page(df, pitcher_id)
+        result = computed if computed is not None else empty
+    # Attach dual season totals + the MLB|Minors toggle's smart default,
+    # so the frontend can render the pill toggle without a separate fetch.
+    season_year = int(start_date[:4])
+    dual = _compute_dual_season_totals(pitcher_id, season_year)
+    result["season_totals_mlb"] = dual["mlb"]
+    result["season_totals_milb"] = dual["milb"]
+    result["season_totals_primary"] = dual["primary"]
+    result["errors"] = dual["errors"]
     set_agg_cache(agg_key, result)
     return result
 

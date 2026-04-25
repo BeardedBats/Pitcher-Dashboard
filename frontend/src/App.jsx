@@ -8,6 +8,7 @@ import Scoreboard from "./components/Scoreboard";
 import PlayByPlayModal from "./components/PlayByPlayModal";
 import ReclassifyModal from "./components/ReclassifyModal";
 import SearchBar from "./components/SearchBar";
+import ErrorPill from "./components/ErrorPill";
 // Lazy-load pages that aren't needed on initial render
 const TeamPage = lazy(() => import("./components/TeamPage"));
 const PlayerPage = lazy(() => import("./components/PlayerPage"));
@@ -267,6 +268,26 @@ export default function App() {
     setLevel("mlb");
     window.history.pushState({ view: "list", page: "games", selectedGame: null, level: "mlb" }, "", window.location.pathname);
   }, []);
+
+  // Light-touch level swap used by the player page's MLB | Minors pill toggle
+  // and any other in-page level switch. Updates the level state + URL but does
+  // NOT clobber other state — the active card/player/team page stays mounted
+  // and re-fetches via its own effect when the level prop changes.
+  const setLevelInPlace = useCallback((newLevel) => {
+    if (newLevel === level) return;
+    setLevel(newLevel);
+    let newHash = "";
+    if (page === "player" && playerPageId) {
+      newHash = newLevel === "aaa" ? `#aaa/player/${playerPageId}` : `#player/${playerPageId}`;
+    } else if (page === "team" && selectedTeamPage) {
+      newHash = newLevel === "aaa" ? `#aaa/team/${selectedTeamPage}` : `#team/${selectedTeamPage}`;
+    } else {
+      newHash = newLevel === "aaa" ? "#aaa" : "";
+    }
+    const url = newHash || window.location.pathname;
+    const newState = { ...(window.history.state || {}), level: newLevel };
+    window.history.pushState(newState, "", url);
+  }, [level, page, playerPageId, selectedTeamPage]);
 
   // Switch between MLB and AAA. Clears the current view (card/team/player) so
   // the level swap lands on the games list and re-fires data hooks via the
@@ -639,7 +660,7 @@ export default function App() {
       {/* === PLAYER PAGE === */}
       {page === "player" && playerPageId && !cardData && (
         <Suspense fallback={<div className="loading"><div className="loading-bars"><div className="loading-bar" /><div className="loading-bar" /><div className="loading-bar" /></div></div>}>
-          <PlayerPage pitcherId={playerPageId} level={level} onBack={navigateBackToGames} onGameClick={navigateToGameCard} />
+          <PlayerPage pitcherId={playerPageId} level={level} onBack={navigateBackToGames} onGameClick={navigateToGameCard} onChangeLevel={setLevelInPlace} />
         </Suspense>
       )}
 
@@ -758,6 +779,18 @@ export default function App() {
               {linescoreData && (
                 <Scoreboard data={linescoreData} level={level} pitcherId={cardData?.result?.pitcher_id} onInningClick={(inn, isTop) => setPbpModal({ inning: inn, isTop })} />
               )}
+              {/* Pulled to the far right of the row, after Scoreboard */}
+              <div className="card-top-row-spacer" />
+              <ErrorPill
+                errors={cardData?.errors}
+                context={{
+                  view: "pitcher_card",
+                  level,
+                  date,
+                  pitcher_id: cardData?.result?.pitcher_id,
+                  game_pk: cardData?.result?.game_pk || selectedGame,
+                }}
+              />
             </div>
             <PitcherCard cardData={cardData} date={date} linescoreData={linescoreData} isMobile={isMobile} level={level} onPlayerClick={(id, e) => navigateToPlayer(id, null, e)} onGameClick={(e) => {
               const gamePk = cardData?.result?.game_pk || selectedGame;

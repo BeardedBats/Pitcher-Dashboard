@@ -159,6 +159,13 @@ body {
   cursor: pointer; transition: all 0.15s; font-weight: 500;
 }
 
+/* MLB | Minors pill above the player name on the game-log player page.
+   Reuses .level-tab styling from the games-tab toolbar. */
+.player-level-pills {
+  display: flex; gap: 6px; align-items: center;
+  margin-bottom: 6px;
+}
+
 /* MLB | AAA level toggle — sits inline with All Games / View Games. */
 .level-tabs {
   display: flex; gap: 6px; align-items: center;
@@ -581,6 +588,118 @@ a.pitcher-name.pitcher-sp-highlight { color: #ffc277; }
 .delta-neutral { color: #9ba0c4; font-weight: 400; }
 .delta-new { color: #4ade80; font-weight: 600; font-style: italic; }
 
+/* Asterisk marker on stat values that are AAA-only (because the AA-and-below
+   PBP fetch failed for some games — see PitcherCard / PlayerPage MiLB totals).
+   Hover surfaces "Only Triple-A data available". */
+.partial-marker {
+  color: var(--accent); font-weight: 700;
+  margin-left: 2px; cursor: help;
+}
+
+/* ── Error pill + lightbox (surfaces backend MiLB fetch errors) ──
+   Pill mimics the "elite" red threshold styling: red gradient frame
+   + red text. Sits in the back-button row of the card / player page. */
+.error-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: linear-gradient(180deg, rgba(255, 56, 56, 0.18), rgba(255, 108, 108, 0.10));
+  border: 1px solid #FF3838; border-radius: 999px;
+  color: #FF6C6C; font-family: inherit; font-size: 12px;
+  font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase;
+  padding: 4px 12px; cursor: pointer;
+  transition: all 0.15s;
+}
+.error-pill:hover {
+  background: linear-gradient(180deg, rgba(255, 56, 56, 0.28), rgba(255, 108, 108, 0.16));
+  box-shadow: 0 0 8px rgba(255, 56, 56, 0.35);
+}
+.error-pill-dot {
+  color: #FF3838; font-size: 10px; line-height: 1;
+  animation: error-pulse 1.6s ease-in-out infinite;
+}
+@keyframes error-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+
+.error-lightbox-backdrop {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.error-lightbox {
+  width: min(640px, 92vw); max-height: 80vh;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); display: flex; flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+.error-lightbox-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+}
+.error-lightbox-title {
+  font-size: 14px; font-weight: 600; color: #FF6C6C;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.error-lightbox-close {
+  background: transparent; border: none; cursor: pointer;
+  font-size: 22px; line-height: 1; color: var(--text-muted);
+  padding: 0 4px;
+}
+.error-lightbox-close:hover { color: var(--text-bright); }
+.error-lightbox-body {
+  padding: 14px 18px; overflow-y: auto;
+}
+.error-lightbox-summary {
+  font-size: 13px; color: var(--text-muted); margin-bottom: 10px;
+}
+.error-list {
+  list-style: decimal; padding-left: 22px; margin: 0;
+}
+.error-list-item {
+  margin-bottom: 14px; padding-bottom: 14px;
+  border-bottom: 1px solid var(--row-border);
+}
+.error-list-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.error-source { font-size: 12px; color: var(--text-muted); }
+.error-source code {
+  background: var(--surface2); padding: 1px 6px; border-radius: 4px;
+  color: var(--text); font-size: 11px;
+}
+.error-status, .error-ts { color: var(--text-dim); }
+.error-msg {
+  margin-top: 6px; font-size: 13px; color: var(--text);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  word-break: break-word;
+}
+.error-url {
+  margin-top: 4px; font-size: 11px; color: var(--text-dim);
+  word-break: break-all;
+}
+.error-lightbox-footer {
+  padding: 12px 18px; border-top: 1px solid var(--border);
+  display: flex; justify-content: flex-end;
+}
+.copy-error-btn {
+  background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text); font-family: inherit; font-size: 13px; font-weight: 500;
+  padding: 7px 16px; cursor: pointer; transition: all 0.18s;
+}
+.copy-error-btn:hover {
+  border-color: var(--accent); color: var(--accent-hover);
+  background: var(--hover-tint);
+}
+.copy-error-btn.copied {
+  background: linear-gradient(135deg, rgba(109, 233, 93, 0.22), rgba(109, 233, 93, 0.08));
+  border-color: #6DE95D; color: #6DE95D;
+  animation: copy-flash 0.36s ease-out;
+}
+@keyframes copy-flash {
+  0%   { transform: scale(0.97); }
+  60%  { transform: scale(1.05); }
+  100% { transform: scale(1.0); }
+}
+
 /* ======== VISUALS ROW ======== */
 .card-visuals-section { margin-top: 14px; }
 .sz-mode-select-row { display: flex; justify-content: flex-start; margin-bottom: 8px; }
@@ -621,6 +740,17 @@ canvas { display: block; border: none; border-radius: var(--radius-sm); }
   gap: 16px; margin-bottom: 10px; position: relative;
 }
 .card-top-row .back-btn { margin-bottom: 0; position: absolute; left: 0; bottom: 0; }
+/* Spacer pushes the ErrorPill to the far right of the row when present. */
+.card-top-row-spacer { flex: 1 1 auto; }
+.card-top-row .error-pill { position: absolute; right: 0; bottom: 0; }
+
+/* Player-page back row: back button left, ErrorPill right (above the card). */
+.pp-back-row {
+  display: flex; align-items: center; justify-content: space-between;
+  max-width: var(--content-width); margin: 0 auto 8px auto;
+  gap: 12px;
+}
+.pp-back-row .back-btn { margin-bottom: 0; }
 
 /* ── Scoreboard ── */
 .scoreboard-wrap {

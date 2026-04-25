@@ -9,6 +9,7 @@ import MovementPlot from "./MovementPlot";
 import PitchFilterDropdown from "./PitchFilterDropdown";
 import ResultsTable from "./ResultsTable";
 import UsageTable from "./UsageTable";
+import ErrorPill from "./ErrorPill";
 import { classifyPitchResult, isRunScored, isStrikeoutPitch, isBallInPlay, classifyBIPQuality, RESULT_FILTER_OPTIONS, RESULT_QUICK_ACTIONS } from "../utils/pitchFilters";
 import VelocityTrend from "./VelocityTrend";
 
@@ -16,10 +17,14 @@ const API = window.__BACKEND_PORT__
   ? `http://localhost:${window.__BACKEND_PORT__}`
   : process.env.NODE_ENV === "development" ? "http://localhost:8000" : "";
 
-export default function PlayerPage({ pitcherId, onBack, onGameClick, level = "mlb" }) {
+export default function PlayerPage({ pitcherId, onBack, onGameClick, onChangeLevel, level = "mlb" }) {
   const isMobile = useIsMobile();
   // Local alias to avoid touching every existing displayAbbrev call site.
   const displayAbbrev = (abbr) => displayTeamAbbrev(abbr, level);
+  // Track whether we've already attempted the smart redirect for this pitcher
+  // so we don't bounce back and forth between MLB / Minors views on every
+  // re-render (the redirect changes `level`, which would re-trigger).
+  const smartRedirectedRef = React.useRef(null);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadMsg, setLoadMsg] = useState("Loading player data...");
@@ -124,6 +129,31 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick, level = "ml
     }
     return log;
   }, [data, level]);
+
+  // Smart redirect: after data loads, examine which levels the pitcher has
+  // and switch to the right one if the URL didn't already match.
+  // - MLB-only via #aaa → switch to #player (hide pill, show MLB)
+  // - MiLB-only via #player → switch to #aaa/player (hide pill, show Minors)
+  // - Both available → first load defaults to season_totals_primary
+  // Subsequent toggle clicks (handled by user) bypass this since
+  // `smartRedirectedRef.current === pitcherId` after the first attempt.
+  useEffect(() => {
+    if (!data) return;
+    if (smartRedirectedRef.current === pitcherId) return;
+    const hasMlb = !!(data.season_totals_mlb && data.season_totals_mlb.games);
+    const hasMilb = !!(data.season_totals_milb && data.season_totals_milb.games);
+    let target = null;
+    if (hasMlb && !hasMilb && level !== "mlb") target = "mlb";
+    else if (!hasMlb && hasMilb && level !== "aaa") target = "aaa";
+    else if (hasMlb && hasMilb && data.season_totals_primary && data.season_totals_primary !== level) {
+      target = data.season_totals_primary === "mlb" ? "mlb" : "aaa";
+    }
+    smartRedirectedRef.current = pitcherId;
+    if (target && onChangeLevel) onChangeLevel(target);
+  }, [data, pitcherId, level, onChangeLevel]);
+
+  // Reset the smart-redirect guard when navigating to a different pitcher
+  useEffect(() => { smartRedirectedRef.current = null; }, [pitcherId]);
 
   // Fetch next scheduled starts (must be after sortedLog definition).
   // Skip for AAA — the schedule sheet is MLB-only.
@@ -257,16 +287,61 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick, level = "ml
   }
 
   const info = data.info;
-  const rs = data.results_summary || {};
+  // Pick the level-appropriate season totals when v9 dual fields are present.
+  // For MLB view: prefer season_totals_mlb. For Minors view: prefer
+  // season_totals_milb (which spans Statcast AAA+FSL ⊕ MLB Stats API AA-below
+  // PBP). Fall back to legacy results_summary for older cached payloads.
+  const rs = (
+    (level === "aaa" && data.season_totals_milb) ||
+    (level === "mlb" && data.season_totals_mlb) ||
+    data.results_summary || {}
+  );
+  // Asterisk on the 3 pitch-level columns when MiLB row is incomplete (some
+  // AA games' PBP failed to load, so those stats are AAA-only).
+  const partialFields = new Set(rs.partial_fields || []);
+  const ast = (col) => partialFields.has(col)
+    ? <span className="partial-marker" title="Only Triple-A data available">*</span>
+    : null;
   const hasData = data.game_log && data.game_log.length > 0;
 
   return (
     <div className="pp-outer-centered">
-      <a className="back-btn" href={window.location.pathname} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); onBack(); } }} style={{ textDecoration: "none" }}>← Back</a>
+      <div className="pp-back-row">
+        <a className="back-btn" href={window.location.pathname} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); onBack(); } }} style={{ textDecoration: "none" }}>← Back</a>
+        <ErrorPill
+          errors={data?.errors}
+          context={{
+            view: "player_page",
+            level,
+            pitcher_id: pitcherId,
+            name: data?.info?.name,
+          }}
+        />
+      </div>
       <div className="card">
         {/* ===== Header ===== */}
         <div className="card-top">
           <div className="card-info">
+            {(() => {
+              // MLB | Minors pill toggle — only when pitcher has games at both levels
+              const hasMlb = !!(data?.season_totals_mlb && data.season_totals_mlb.games);
+              const hasMilb = !!(data?.season_totals_milb && data.season_totals_milb.games);
+              if (!hasMlb || !hasMilb || !onChangeLevel) return null;
+              return (
+                <div className="player-level-pills">
+                  <button
+                    type="button"
+                    className={`level-tab${level === "mlb" ? " active" : ""}`}
+                    onClick={() => onChangeLevel("mlb")}
+                  >MLB</button>
+                  <button
+                    type="button"
+                    className={`level-tab${level === "aaa" ? " active" : ""}`}
+                    onClick={() => onChangeLevel("aaa")}
+                  >Minors</button>
+                </div>
+              );
+            })()}
             <div className="card-name">{info.name}</div>
             <div className="card-meta">
               {info.teams?.map(t => displayAbbrev(t)).join("/") || ""} · {info.hand === "R" ? "RHP" : "LHP"}
@@ -364,9 +439,9 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick, level = "ml
                         <td className="gameline-divider-right"><span className="rate-label">K%</span>{kPct}</td>
                         <td><span className="rate-label">Whf/G</span>{whfg}</td>
                         <td><span className="rate-label">SwStr%</span>{rs.swstr_pct != null ? Math.round(rs.swstr_pct) + "%" : "—"}</td>
-                        <td><span className="rate-label">CSW%</span>{rs.csw_pct != null ? rs.csw_pct.toFixed(1) + "%" : "—"}</td>
-                        <td><span className="rate-label">2Str%</span>{rs.two_str_pct != null ? Math.round(rs.two_str_pct) + "%" : "—"}</td>
-                        <td><span className="rate-label">PAR%</span>{rs.par_pct != null ? Math.round(rs.par_pct) + "%" : "—"}</td>
+                        <td><span className="rate-label">CSW%</span>{rs.csw_pct != null ? rs.csw_pct.toFixed(1) + "%" : "—"}{ast("csw_pct")}</td>
+                        <td><span className="rate-label">2Str%</span>{rs.two_str_pct != null ? Math.round(rs.two_str_pct) + "%" : "—"}{ast("two_str_pct")}</td>
+                        <td><span className="rate-label">PAR%</span>{rs.par_pct != null ? Math.round(rs.par_pct) + "%" : "—"}{ast("par_pct")}</td>
                         <td><span className="rate-label">PPG</span>{ppg}</td>
                         <td><span className="rate-label">HR/9</span>{hr9}</td>
                       </tr>

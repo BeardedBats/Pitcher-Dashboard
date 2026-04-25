@@ -175,8 +175,17 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
   // The season averages object passed to PitchDataTable for delta rendering
   const seasonAvgs = compareTo === "current" ? currentSeasonAvgs : prevSeasonAvgs;
 
-  // Use inline season totals from card response (no separate fetch needed)
-  const seasonTotals = inlineSeasonTotals && inlineSeasonTotals.games ? inlineSeasonTotals : null;
+  // Dual season totals (MLB + MiLB) wired in v9. Fall back to legacy
+  // single `season_totals` field for older cached payloads.
+  const seasonTotalsMlb = (cardData.season_totals_mlb && cardData.season_totals_mlb.games)
+    ? cardData.season_totals_mlb : null;
+  const seasonTotalsMilb = (cardData.season_totals_milb && cardData.season_totals_milb.games)
+    ? cardData.season_totals_milb : null;
+  // Backward-compat: if neither dual field is present, treat the legacy
+  // `season_totals` as belonging to the card's level.
+  const legacySeasonTotals = (!seasonTotalsMlb && !seasonTotalsMilb && inlineSeasonTotals && inlineSeasonTotals.games)
+    ? inlineSeasonTotals : null;
+  const showBothLevels = !!seasonTotalsMlb && !!seasonTotalsMilb;
 
   // Fetch next scheduled starts. The schedule sheet is MLB-only (Probables
   // tab on the staff Google Sheet) — skip the fetch entirely for AAA so
@@ -368,44 +377,63 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                   <td>{result.pitches}</td>
                   <td>{result.hrs}</td>
                 </tr>
-                {seasonTotals && seasonTotals.games >= 1 && (() => {
-                  const g = seasonTotals.games;
-                  const gs = seasonTotals.games_started || 0;
-                  const ipThirds = seasonTotals.ip_thirds || 0;
-                  const ip = ipThirds / 3;
-                  const bf = seasonTotals.batters_faced || 0;
-                  const wins = seasonTotals.wins || 0;
-                  const losses = seasonTotals.losses || 0;
-                  const ipg = ip > 0 ? (ip / g).toFixed(1) : "-";
-                  const era = ip > 0 ? ((seasonTotals.er / ip) * 9).toFixed(2) : "-";
-                  const whip = ip > 0 ? ((seasonTotals.hits + seasonTotals.bbs) / ip).toFixed(2) : "-";
-                  const h9 = ip > 0 ? ((seasonTotals.hits / ip) * 9).toFixed(1) : "-";
-                  const bbPct = bf > 0 ? (seasonTotals.bbs / bf * 100).toFixed(1) + "%" : "-";
-                  const kPct = bf > 0 ? (seasonTotals.ks / bf * 100).toFixed(1) + "%" : "-";
-                  const whfg = g > 0 ? (seasonTotals.whiffs / g).toFixed(1) : "-";
-                  const ppg = g > 0 ? Math.round(seasonTotals.pitches / g) : "-";
-                  const hr9 = ip > 0 ? ((seasonTotals.hrs / ip) * 9).toFixed(2) : "-";
-                  const gamesLabel = gs > 0 && gs !== g ? `${g} Games (${gs} GS)` : `${g} Games`;
-                  return (
-                    <tr className="pp-total-row">
-                      <td className="card-pitcher-name pp-total-label"><span className="rate-label">Season Total</span>{gamesLabel}</td>
-                      <td><span className="rate-label">W-L</span>{wins}-{losses}</td>
-                      <td><span className="rate-label">IP/G</span>{ipg}</td>
-                      <td><span className="rate-label">ERA</span>{era}</td>
-                      <td><span className="rate-label">WHIP</span>{whip}</td>
-                      <td><span className="rate-label">H/9</span>{h9}</td>
-                      <td><span className="rate-label">BB%</span>{bbPct}</td>
-                      <td className="gameline-divider-right"><span className="rate-label">K%</span>{kPct}</td>
-                      <td><span className="rate-label">Whf/G</span>{whfg}</td>
-                      <td><span className="rate-label">SwStr%</span>{seasonTotals.swstr_pct != null ? Math.round(seasonTotals.swstr_pct) + "%" : "-"}</td>
-                      <td><span className="rate-label">CSW%</span>{seasonTotals.csw_pct != null ? Math.round(seasonTotals.csw_pct) + "%" : "-"}</td>
-                      <td><span className="rate-label">Str%</span>{seasonTotals.strike_pct != null ? Math.round(seasonTotals.strike_pct) + "%" : "-"}</td>
-                      <td><span className="rate-label">2Str%</span>{seasonTotals.two_str_pct != null ? Math.round(seasonTotals.two_str_pct) + "%" : "-"}</td>
-                      <td><span className="rate-label">PAR%</span>{seasonTotals.par_pct != null ? Math.round(seasonTotals.par_pct) + "%" : "-"}</td>
-                      <td><span className="rate-label">PPG</span>{ppg}</td>
-                      <td><span className="rate-label">HR/9</span>{hr9}</td>
-                    </tr>
-                  );
+                {(() => {
+                  // Build the totals rows: MLB + MiLB if both, else single row.
+                  const renderTotalsRow = (st, label, key) => {
+                    if (!st || !(st.games >= 1)) return null;
+                    const g = st.games;
+                    const gs = st.games_started || 0;
+                    const ipThirds = st.ip_thirds || 0;
+                    const ip = ipThirds / 3;
+                    const bf = st.batters_faced || 0;
+                    const wins = st.wins || 0;
+                    const losses = st.losses || 0;
+                    const ipg = ip > 0 ? (ip / g).toFixed(1) : "-";
+                    const era = ip > 0 ? ((st.er / ip) * 9).toFixed(2) : "-";
+                    const whip = ip > 0 ? ((st.hits + st.bbs) / ip).toFixed(2) : "-";
+                    const h9 = ip > 0 ? ((st.hits / ip) * 9).toFixed(1) : "-";
+                    const bbPct = bf > 0 ? (st.bbs / bf * 100).toFixed(1) + "%" : "-";
+                    const kPct = bf > 0 ? (st.ks / bf * 100).toFixed(1) + "%" : "-";
+                    const whfg = g > 0 ? (st.whiffs / g).toFixed(1) : "-";
+                    const ppg = g > 0 ? Math.round(st.pitches / g) : "-";
+                    const hr9 = ip > 0 ? ((st.hrs / ip) * 9).toFixed(2) : "-";
+                    const gamesLabel = gs > 0 && gs !== g ? `${g} Games (${gs} GS)` : `${g} Games`;
+                    // Asterisk on the 3 pitch-level columns when MiLB row had
+                    // AA games whose PBP failed to load (data is then AAA-only).
+                    const partial = new Set(st.partial_fields || []);
+                    const ast = (col) => partial.has(col)
+                      ? <span className="partial-marker" title="Only Triple-A data available">*</span>
+                      : null;
+                    return (
+                      <tr className="pp-total-row" key={key}>
+                        <td className="card-pitcher-name pp-total-label"><span className="rate-label">{label}</span>{gamesLabel}</td>
+                        <td><span className="rate-label">W-L</span>{wins}-{losses}</td>
+                        <td><span className="rate-label">IP/G</span>{ipg}</td>
+                        <td><span className="rate-label">ERA</span>{era}</td>
+                        <td><span className="rate-label">WHIP</span>{whip}</td>
+                        <td><span className="rate-label">H/9</span>{h9}</td>
+                        <td><span className="rate-label">BB%</span>{bbPct}</td>
+                        <td className="gameline-divider-right"><span className="rate-label">K%</span>{kPct}</td>
+                        <td><span className="rate-label">Whf/G</span>{whfg}</td>
+                        <td><span className="rate-label">SwStr%</span>{st.swstr_pct != null ? Math.round(st.swstr_pct) + "%" : "-"}</td>
+                        <td><span className="rate-label">CSW%</span>{st.csw_pct != null ? Math.round(st.csw_pct) + "%" : "-"}{ast("csw_pct")}</td>
+                        <td><span className="rate-label">Str%</span>{st.strike_pct != null ? Math.round(st.strike_pct) + "%" : "-"}</td>
+                        <td><span className="rate-label">2Str%</span>{st.two_str_pct != null ? Math.round(st.two_str_pct) + "%" : "-"}{ast("two_str_pct")}</td>
+                        <td><span className="rate-label">PAR%</span>{st.par_pct != null ? Math.round(st.par_pct) + "%" : "-"}{ast("par_pct")}</td>
+                        <td><span className="rate-label">PPG</span>{ppg}</td>
+                        <td><span className="rate-label">HR/9</span>{hr9}</td>
+                      </tr>
+                    );
+                  };
+                  if (showBothLevels) {
+                    return [
+                      renderTotalsRow(seasonTotalsMlb, "MLB Total", "row-mlb"),
+                      renderTotalsRow(seasonTotalsMilb, "MiLB Total", "row-milb"),
+                    ];
+                  }
+                  // Single-level: show whichever has data, labeled "Season Total"
+                  const single = seasonTotalsMlb || seasonTotalsMilb || legacySeasonTotals;
+                  return renderTotalsRow(single, "Season Total", "row-single");
                 })()}
               </tbody>
             </table>

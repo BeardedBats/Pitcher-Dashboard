@@ -32,7 +32,10 @@ _override_version = 0  # Incremented on every save/remove to bust agg caches
 # v8: pitcher result rows gain `velo_ext` + `velo_ext_season` + `velo_ext_delta`;
 #     AAA season aggregations now span all Statcast-tracked minor leagues
 #     (AAA + Single-A FSL), not AAA-only.
-CARD_SCHEMA_VERSION = 8
+# v9: pitcher card + player page responses gain `season_totals_mlb` /
+#     `season_totals_milb` / `season_totals_primary` / `errors`; MiLB totals
+#     fold in AA-and-below stats via per-game MLB Stats API PBP fetches.
+CARD_SCHEMA_VERSION = 9
 
 # Allowed level values. New levels must be added here and exposed via the
 # frontend `level` state and any cron schedules.
@@ -562,17 +565,25 @@ def _enrich_pa_description(desc, runners, include_plain=False, play_events=None)
 
 def _fetch_game_from_mlb_api(game_pk, date_str):
     """Fetch pitch-by-pitch data from MLB Stats API for a single game.
-    Returns a DataFrame in the same column format as Savant data."""
+    Returns a DataFrame in the same column format as Savant data.
+    Uses _get_game_feed for caching (final games cached forever in Redis)."""
     try:
-        url = MLB_GAME_FEED_URL.format(game_pk=game_pk)
-        resp = requests.get(url, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
+        # Reuse the cached feed/live response — _get_game_feed handles
+        # both in-memory and Redis caching, with permanent caching for
+        # final games. This is critical for AA-and-below PBP fetches
+        # where the same games may be queried for many pitchers.
+        data = _get_game_feed(game_pk)
+        if not data:
+            return pd.DataFrame()
 
         game_data = data.get("gameData", {})
         teams = game_data.get("teams", {})
         home_abbrev = teams.get("home", {}).get("abbreviation", "")
         away_abbrev = teams.get("away", {}).get("abbreviation", "")
+        # `gameData.game.type` carries the actual game type (R, S, P, A...).
+        # Defaults to R for unknown so non-MLB games (AA, etc.) don't get
+        # mis-tagged as Spring Training.
+        game_type_code = (game_data.get("game", {}) or {}).get("type", "R")
         players = game_data.get("players", {})
 
         rows = []
@@ -685,7 +696,7 @@ def _fetch_game_from_mlb_api(game_pk, date_str):
                     "inning_topbot": inning_topbot,
                     "events": ab_result if is_last_pitch else "",
                     "des": ab_desc if is_last_pitch else "",
-                    "game_type": "S",
+                    "game_type": game_type_code,
                     # Hit data (only meaningful on last pitch of PA)
                     "launch_speed": pa_launch_speed if is_last_pitch else None,
                     "launch_angle": pa_launch_angle if is_last_pitch else None,
@@ -735,6 +746,165 @@ def _fetch_game_from_mlb_api(game_pk, date_str):
     except Exception as e:
         print(f"MLB API game feed error for {game_pk}: {e}")
         return pd.DataFrame()
+
+# ── MiLB pitcher full-season PBP (used for AA-and-below stats) ────────
+# Statcast tracks AAA + Single-A FSL only. For AA, High-A non-FSL, Low-A,
+# and Rookie-level games, we fall back to the MLB Stats API per-game
+# play-by-play feed (which we already parse for the MLB fallback path).
+# This gives us pitch-by-pitch data → CSW%, 2Str%, PAR%, fouls, called
+# strikes, etc. all derivable.
+MILB_AFFILIATED_SPORT_IDS = "11,12,13,14,16"   # AAA, AA, High-A, Low-A, Rookie
+MILB_NON_STATCAST_SPORT_IDS = "12,13,14,16"    # everything below AAA + FSL
+
+# Per-pitcher errors from the MLB Stats API stats endpoint, surfaced to
+# the frontend as an error pill. Keyed by (pitcher_id, season). Accumulates
+# across requests; the frontend clears on next successful fetch.
+_milb_stats_errors = {}
+
+def _record_milb_error(pitcher_id, season_year, source, message, url=None, status=None):
+    key = (int(pitcher_id), int(season_year))
+    from datetime import datetime as _dt
+    _milb_stats_errors.setdefault(key, []).append({
+        "source": source,
+        "message": str(message)[:500],
+        "url": url,
+        "status": status,
+        "timestamp": _dt.utcnow().isoformat() + "Z",
+    })
+
+def _clear_milb_errors(pitcher_id, season_year):
+    _milb_stats_errors.pop((int(pitcher_id), int(season_year)), None)
+
+def get_milb_errors(pitcher_id, season_year):
+    return list(_milb_stats_errors.get((int(pitcher_id), int(season_year)), []))
+
+
+def fetch_pitcher_milb_game_log(pitcher_id, season_year, sport_ids=MILB_NON_STATCAST_SPORT_IDS):
+    """Return [{game_pk, game_date}] for a pitcher's appearances at the given
+    sport IDs. Uses the MLB Stats API gameLog stats endpoint. Cached briefly
+    (12h) so a recently-promoted pitcher's new games appear without manual
+    cache clears, but we don't re-hit per request."""
+    cache_key = f"milb_game_log:{pitcher_id}:{season_year}:{sport_ids}"
+    redis_val = redis_get(cache_key)
+    if redis_val is not None:
+        return redis_val
+    url = (
+        "https://statsapi.mlb.com/api/v1/people/"
+        f"{pitcher_id}/stats?stats=gameLog&group=pitching"
+        f"&season={season_year}&sportIds={sport_ids}"
+    )
+    try:
+        r = requests.get(url, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        games = []
+        for stats_block in data.get("stats", []):
+            for split in stats_block.get("splits", []):
+                gpk = split.get("game", {}).get("gamePk")
+                if gpk is None:
+                    continue
+                games.append({
+                    "game_pk": int(gpk),
+                    "game_date": split.get("date"),
+                    "sport_id": split.get("sport", {}).get("id"),
+                })
+        # Dedupe in case of doubleheader splits returning the same game_pk twice
+        seen, unique = set(), []
+        for g in games:
+            if g["game_pk"] in seen:
+                continue
+            seen.add(g["game_pk"])
+            unique.append(g)
+        redis_set(cache_key, unique, ttl=43200)  # 12h
+        return unique
+    except Exception as e:
+        _record_milb_error(pitcher_id, season_year, "milb_game_log", e, url=url,
+                           status=getattr(getattr(e, "response", None), "status_code", None))
+        return []
+
+
+def fetch_pitcher_aa_below_pbp(pitcher_id, season_year):
+    """Concatenated PBP DataFrame for a pitcher's AA-and-below games this
+    season. Returns rows in the same Savant-shaped column format as
+    `_fetch_game_from_mlb_api`, filtered to this pitcher's pitches.
+    Returns (df, fetched_games, failed_games) so callers can flag partial data.
+    """
+    games = fetch_pitcher_milb_game_log(pitcher_id, season_year, MILB_NON_STATCAST_SPORT_IDS)
+    if not games:
+        return pd.DataFrame(), 0, 0
+    fetched, failed = 0, 0
+
+    def _one(g):
+        try:
+            df = _fetch_game_from_mlb_api(g["game_pk"], g.get("game_date") or "")
+            if df is None or df.empty:
+                return None, False
+            if "pitcher" not in df.columns:
+                return None, False
+            df = df[df["pitcher"] == int(pitcher_id)]
+            if df.empty:
+                return None, False
+            return df, True
+        except Exception as e:
+            print(f"[aa_pbp] game {g['game_pk']} pid={pitcher_id} err: {e}")
+            return None, False
+
+    frames = []
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for sub_df, ok in pool.map(_one, games):
+            if ok:
+                fetched += 1
+                if sub_df is not None and not sub_df.empty:
+                    frames.append(sub_df)
+            else:
+                failed += 1
+    if not frames:
+        return pd.DataFrame(), fetched, failed
+    combined = pd.concat(frames, ignore_index=True)
+    # Apply same normalization Statcast data gets — keeps downstream
+    # aggregation paths agnostic to data origin.
+    if "pitch_type" in combined.columns:
+        combined["pitch_name"] = combined["pitch_type"].map(PITCH_TYPE_MAP)
+        combined["pitch_name"] = combined["pitch_name"].fillna("Unclassified")
+    combined = _assign_teams_vectorized(combined)
+    combined = _apply_overrides(combined, level="aaa")
+    return combined, fetched, failed
+
+
+def fetch_pitcher_full_milb_season(pitcher_id, season_year):
+    """Full minor-league season DataFrame for a pitcher: Statcast AAA+FSL
+    (via fetch_pitcher_season(level="aaa")) PLUS AA-and-below PBP from
+    MLB Stats API. Returns (df, info) where info contains:
+        {
+            "fetched_games_aa": int,
+            "failed_games_aa": int,
+            "had_lower_levels": bool,
+            "incomplete": bool,  # any AA games failed to fetch
+        }
+    """
+    statcast_df = fetch_pitcher_season(pitcher_id, season_year, level="aaa")
+    aa_df, fetched_aa, failed_aa = fetch_pitcher_aa_below_pbp(pitcher_id, season_year)
+
+    info = {
+        "fetched_games_aa": fetched_aa,
+        "failed_games_aa": failed_aa,
+        "had_lower_levels": (fetched_aa + failed_aa) > 0,
+        "incomplete": failed_aa > 0,
+    }
+
+    if statcast_df.empty and aa_df.empty:
+        return pd.DataFrame(), info
+    if statcast_df.empty:
+        return aa_df, info
+    if aa_df.empty:
+        return statcast_df, info
+    shared = list(set(statcast_df.columns) | set(aa_df.columns))
+    combined = pd.concat(
+        [statcast_df.reindex(columns=shared), aa_df.reindex(columns=shared)],
+        ignore_index=True,
+    )
+    return combined, info
+
 
 def _fetch_missing_from_mlb_api(date_str, savant_pks):
     """Fetch pitch data from MLB Stats API for games missing from Savant."""
