@@ -143,6 +143,7 @@ export default function App() {
         setGames(data.games);
         setPitchData(data.pitchData);
         setResultsData(data.resultsData);
+        setLastRefresh(data.statLinesUpdatedAt || null);
         setLoading(false);
       })
       .catch(() => {
@@ -154,12 +155,13 @@ export default function App() {
       });
   }, []); // eslint-disable-line
 
-  // Fetch last refresh timestamp on mount; fall back to "now" so button always shows a time
+  // Keep the refresh label tied to the selected slate's pitcher stat lines.
   useEffect(() => {
-    fetchLastRefresh()
-      .then(data => { setLastRefresh(data.timestamp || new Date().toISOString()); })
-      .catch(() => { setLastRefresh(new Date().toISOString()); });
-  }, []);
+    if (!date) return;
+    fetchLastRefresh(date, level)
+      .then(data => { setLastRefresh(data.timestamp || null); })
+      .catch(() => {});
+  }, [date, level]);
 
   // Auto-dismiss toast after 3 seconds
   useEffect(() => {
@@ -204,7 +206,7 @@ export default function App() {
     setRefreshing(true);
     try {
       const data = await fetchRefresh(level);
-      setLastRefresh(data.timestamp);
+      setLastRefresh(data.statLinesUpdatedAt || data.timestamp);
       setToast({ message: "Data refreshed", type: "success" });
       // Re-fetch current page data including linescore
       if (date) {
@@ -358,6 +360,7 @@ export default function App() {
         setGames(data.games);
         setPitchData(data.pitchData);
         setResultsData(data.resultsData);
+        setLastRefresh(data.statLinesUpdatedAt || null);
         setLoading(false);
       })
       .catch(() => {
@@ -488,8 +491,11 @@ export default function App() {
     Promise.all([
       fetchPitchData(date, selectedGame, level),
       fetchPitcherResults(date, selectedGame, level),
-    ]).then(([pd, pr]) => {
-      setPitchData(pd); setResultsData(pr); setLoading(false);
+      fetchLastRefresh(date, level),
+    ]).then(([pd, pr, refreshMeta]) => {
+      setPitchData(pd); setResultsData(pr);
+      setLastRefresh(refreshMeta?.timestamp || null);
+      setLoading(false);
     }).catch(e => { setError(e.message); setLoading(false); });
   }, [selectedGame, date, games.length, level]); // eslint-disable-line
 

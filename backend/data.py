@@ -47,6 +47,28 @@ CARD_SCHEMA_VERSION = 11
 # frontend `level` state and any cron schedules.
 LEVELS = ("mlb", "aaa")
 DEFAULT_LEVEL = "mlb"
+STAT_LINES_REFRESH_PREFIX = "stat_lines_refresh"
+
+
+def _stat_lines_refresh_key(date_str, level=DEFAULT_LEVEL):
+    return f"{STAT_LINES_REFRESH_PREFIX}:{level}_{date_str}"
+
+
+def get_stat_lines_refresh(date_str, level=DEFAULT_LEVEL):
+    """Return the last time the daily pitcher-line caches were rebuilt for a
+    specific date + level, or None if we have never recorded one."""
+    if not date_str:
+        return None
+    return redis_get(_stat_lines_refresh_key(date_str, level=level))
+
+
+def record_stat_lines_refresh(date_str, level=DEFAULT_LEVEL, timestamp=None):
+    """Record the rebuild timestamp for the daily pitcher-line caches."""
+    if not date_str:
+        return None
+    ts = timestamp or datetime.now(timezone.utc).isoformat()
+    redis_set(_stat_lines_refresh_key(date_str, level=level), ts)
+    return ts
 
 def _load_overrides():
     global _overrides, _override_version
@@ -1516,6 +1538,7 @@ def warmup_range_data(start_date="2026-03-25", end_date=None, level=DEFAULT_LEVE
                 set_agg_cache(f"daily_pitch_{level}_{default_date}", pd_result)
                 pr_result = aggregate_pitcher_results(default_date, None, level=level)
                 set_agg_cache(f"daily_results_{level}_s{CARD_SCHEMA_VERSION}_{default_date}", pr_result)
+                record_stat_lines_refresh(default_date, level=level)
                 print(f"[Warmup] Daily aggregations for {default_date} ({level}) cached")
             except Exception as e2:
                 print(f"[Warmup] Default date warm failed: {e2}")
@@ -1743,6 +1766,7 @@ def clear_cache(date_str=None, level=None, pitcher_ids=None):
             redis_delete_pattern(f"pitchers:{target_level}_*")
             redis_delete_pattern(f"agg:leaderboard_{target_level}_*")
             redis_delete_pattern(f"agg:team_{target_level}_*")
+            redis_delete(_stat_lines_refresh_key(date_str, level=target_level))
         if affected_pitchers:
             invalidate_pitcher_related_caches(affected_pitchers, affected_level=level)
     elif level is not None:
@@ -1769,6 +1793,7 @@ def clear_cache(date_str=None, level=None, pitcher_ids=None):
         redis_delete_pattern(f"pitchers:{level}_*")
         redis_delete_pattern(f"agg:leaderboard_{level}_*")
         redis_delete_pattern(f"agg:team_{level}_*")
+        redis_delete_pattern(f"{STAT_LINES_REFRESH_PREFIX}:{level}_*")
     else:
         _cache.clear()
         _season_cache.clear()
@@ -1779,6 +1804,7 @@ def clear_cache(date_str=None, level=None, pitcher_ids=None):
         redis_delete_pattern("agg:*")
         redis_delete_pattern("schedule:*")
         redis_delete_pattern("pitchers:*")
+        redis_delete_pattern(f"{STAT_LINES_REFRESH_PREFIX}:*")
 
 def _last_name(full_name):
     """Extract last name from full name (e.g. 'Gerrit Cole' → 'Cole')."""

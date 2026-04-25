@@ -22,6 +22,7 @@ from data import (
     get_override_version, CARD_SCHEMA_VERSION,
     is_custom_season_range, LEVELS, DEFAULT_LEVEL,
     fetch_pitcher_full_milb_season, get_milb_errors, _clear_milb_errors,
+    get_stat_lines_refresh, record_stat_lines_refresh,
 )
 from aggregation import (
     aggregate_pitch_data, aggregate_pitcher_results, get_pitcher_card,
@@ -207,6 +208,20 @@ def _resolve_level(level: str) -> str:
     return lv if lv in LEVELS else DEFAULT_LEVEL
 
 
+def _resolve_stat_lines_updated_at(date_str: str, level: str):
+    ts = get_stat_lines_refresh(date_str, level=level)
+    if ts is not None:
+        return ts
+    # Transitional fallback so the label stays useful for the current slate
+    # until every environment has recorded the new per-date timestamp.
+    try:
+        if date_str == get_default_date(level=level):
+            return redis_get("last_refresh")
+    except Exception:
+        pass
+    return None
+
+
 @app.get("/api/default-date")
 def default_date(level: str = Query(DEFAULT_LEVEL)):
     return {"date": get_default_date(level=_resolve_level(level))}
@@ -229,6 +244,7 @@ def pitch_data(date: str = Query(...), game_pk: int = Query(None), level: str = 
             return cached
         result = aggregate_pitch_data(date, game_pk, level=lv)
         set_agg_cache(agg_key, result)
+        record_stat_lines_refresh(date, level=lv)
         return result
     return aggregate_pitch_data(date, game_pk, level=lv)
 
@@ -243,6 +259,7 @@ def pitcher_results(date: str = Query(...), game_pk: int = Query(None), level: s
             return cached
         result = aggregate_pitcher_results(date, game_pk, level=lv)
         set_agg_cache(agg_key, result)
+        record_stat_lines_refresh(date, level=lv)
         return result
     return aggregate_pitcher_results(date, game_pk, level=lv)
 
@@ -260,11 +277,21 @@ def initial_load(level: str = Query(DEFAULT_LEVEL)):
     cached_results = get_agg_cache(results_key)
     pd_data = cached_pitch if cached_pitch is not None else aggregate_pitch_data(date, None, level=lv)
     pr_data = cached_results if cached_results is not None else aggregate_pitcher_results(date, None, level=lv)
+    stat_lines_updated_at = _resolve_stat_lines_updated_at(date, lv)
     if cached_pitch is None:
         set_agg_cache(pitch_key, pd_data)
+        stat_lines_updated_at = record_stat_lines_refresh(date, level=lv)
     if cached_results is None:
         set_agg_cache(results_key, pr_data)
-    return {"date": date, "games": games_list, "pitchData": pd_data, "resultsData": pr_data, "level": lv}
+        stat_lines_updated_at = record_stat_lines_refresh(date, level=lv)
+    return {
+        "date": date,
+        "games": games_list,
+        "pitchData": pd_data,
+        "resultsData": pr_data,
+        "level": lv,
+        "statLinesUpdatedAt": stat_lines_updated_at,
+    }
 
 @app.post("/api/clear-cache")
 def clear(date: str = Query(None), level: str = Query(None)):
@@ -1009,8 +1036,9 @@ def manual_refresh(level: str = Query(DEFAULT_LEVEL)):
             set_agg_cache(f"daily_pitch_{lv}_{today}", pitch_agg)
             set_agg_cache(f"daily_results_{lv}_s{CARD_SCHEMA_VERSION}_{today}", results_agg)
         now = _now_et().isoformat()
+        stat_lines_updated_at = record_stat_lines_refresh(today, level=lv, timestamp=now)
         redis_set("last_refresh", now)
-        return {"status": "ok", "timestamp": now, "level": lv}
+        return {"status": "ok", "timestamp": now, "level": lv, "statLinesUpdatedAt": stat_lines_updated_at}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
@@ -1127,8 +1155,12 @@ def pitcher_schedule(name: str = Query(...), game_date: str = Query("")):
 
 # ── Last refresh timestamp ──
 @app.get("/api/last-refresh")
-def last_refresh():
-    """Return the timestamp of the last data refresh."""
+def last_refresh(date: str = Query(None), level: str = Query(DEFAULT_LEVEL)):
+    """Return either the daily pitcher-lines refresh timestamp for the selected
+    slate, or the legacy global refresh timestamp when no date is provided."""
+    if date:
+        lv = _resolve_level(level)
+        return {"timestamp": _resolve_stat_lines_updated_at(date, lv), "date": date, "level": lv}
     ts = redis_get("last_refresh")
     return {"timestamp": ts}
 

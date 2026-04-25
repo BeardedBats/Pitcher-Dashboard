@@ -116,8 +116,12 @@ export async function fetchPitcherSchedule(name, gameDate = "") {
   return res.json();
 }
 
-export async function fetchLastRefresh() {
-  const res = await fetch(`${BASE}/api/last-refresh`);
+export async function fetchLastRefresh(date = "", level = "mlb") {
+  const params = new URLSearchParams();
+  if (date) params.set("date", date);
+  if (level && level !== "mlb") params.set("level", level);
+  const qs = params.toString();
+  const res = await fetch(`${BASE}/api/last-refresh${qs ? `?${qs}` : ""}`);
   if (!res.ok) throw new Error("Failed to fetch last refresh");
   return res.json();
 }
