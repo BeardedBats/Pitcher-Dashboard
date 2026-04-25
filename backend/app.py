@@ -18,7 +18,7 @@ from data import (
     fetch_date_range, fetch_all_pitchers_list, prefetch_boxscores,
     start_warmup, get_warmup_status, get_agg_cache, set_agg_cache,
     warmup_range_data, fetch_date, compute_player_page,
-    warmup_player_pages,
+    warmup_player_pages, invalidate_pitcher_related_caches,
     get_override_version, CARD_SCHEMA_VERSION,
     is_custom_season_range, LEVELS, DEFAULT_LEVEL,
     fetch_pitcher_full_milb_season, get_milb_errors, _clear_milb_errors,
@@ -420,6 +420,75 @@ def _compute_dual_season_totals(pitcher_id, season_year):
         "errors": get_milb_errors(pitcher_id, season_year),
     }
 
+
+def _build_pitcher_card_payload(date_str, pitcher_id, game_pk, level=DEFAULT_LEVEL):
+    """Return the fully-enriched pitcher-card payload used by both the endpoint
+    and the warmup cron paths."""
+    result = get_pitcher_card(date_str, pitcher_id, game_pk, level=level)
+    if not result:
+        return result
+
+    season_year = int(date_str[:4])
+    dual = _compute_dual_season_totals(pitcher_id, season_year)
+    result["season_totals_mlb"] = dual["mlb"]
+    result["season_totals_milb"] = dual["milb"]
+    result["season_totals_primary"] = dual["primary"]
+    result["errors"] = dual["errors"]
+
+    # Backward-compat: preserve the legacy single `season_totals` field.
+    if "season_totals" not in result:
+        if level == DEFAULT_LEVEL:
+            result["season_totals"] = dual["mlb"] or {}
+        else:
+            result["season_totals"] = dual["milb"] or {}
+
+    if "game_weather" not in result:
+        if level == DEFAULT_LEVEL:
+            home_team = result.get("result", {}).get("home_team", "")
+            result["game_weather"] = _get_game_weather(game_pk, home_team, date_str)
+        else:
+            result["game_weather"] = None
+    return result
+
+
+def _build_player_page_payload(
+    pitcher_id,
+    start_date,
+    end_date,
+    level=DEFAULT_LEVEL,
+    preloaded_df=None,
+):
+    """Return the fully-enriched player-page payload used by both the endpoint
+    and the warmup cron paths."""
+    empty = {
+        "info": {},
+        "pitch_summary": [],
+        "pitch_summary_vs_l": [],
+        "pitch_summary_vs_r": [],
+        "results_summary": {},
+        "game_log": [],
+    }
+    season_year = int(start_date[:4])
+    if level == "aaa":
+        # AAA pages use the full-MiLB compose path so AA-and-below PBP is
+        # included in the cached payload just like the live endpoint.
+        df, _info = fetch_pitcher_full_milb_season(pitcher_id, season_year)
+    else:
+        df = preloaded_df if preloaded_df is not None else fetch_date_range(start_date, end_date, level=level)
+
+    if df.empty:
+        result = dict(empty)
+    else:
+        computed = compute_player_page(df, pitcher_id)
+        result = computed if computed is not None else dict(empty)
+
+    dual = _compute_dual_season_totals(pitcher_id, season_year)
+    result["season_totals_mlb"] = dual["mlb"]
+    result["season_totals_milb"] = dual["milb"]
+    result["season_totals_primary"] = dual["primary"]
+    result["errors"] = dual["errors"]
+    return result
+
 @app.get("/api/pitcher-card")
 def pitcher_card(date: str = Query(...), pitcher_id: int = Query(...), game_pk: int = Query(...), level: str = Query(DEFAULT_LEVEL)):
     lv = _resolve_level(level)
@@ -428,32 +497,8 @@ def pitcher_card(date: str = Query(...), pitcher_id: int = Query(...), game_pk: 
     cached = get_agg_cache(agg_key)
     if cached is not None:
         return cached
-    result = get_pitcher_card(date, pitcher_id, game_pk, level=lv)
+    result = _build_pitcher_card_payload(date, pitcher_id, game_pk, level=lv)
     if result:
-        season_year = int(date[:4])
-        # Dual season totals (MLB + MiLB) — both rendered on the card when
-        # the pitcher has games at both levels. Each can be null.
-        dual = _compute_dual_season_totals(pitcher_id, season_year)
-        result["season_totals_mlb"] = dual["mlb"]
-        result["season_totals_milb"] = dual["milb"]
-        result["season_totals_primary"] = dual["primary"]
-        result["errors"] = dual["errors"]
-        # Backward-compat: `season_totals` keeps the level's "natural" data
-        # (MLB on MLB cards, MiLB on AAA cards) so older frontends don't
-        # break. New frontends should read the dual fields.
-        if "season_totals" not in result:
-            if lv == DEFAULT_LEVEL:
-                result["season_totals"] = dual["mlb"] or {}
-            else:
-                result["season_totals"] = dual["milb"] or {}
-        if "game_weather" not in result:
-            # Stadium coords / DOMED_STADIUMS only cover MLB. For AAA we leave
-            # the field absent so the frontend can render without weather.
-            if lv == DEFAULT_LEVEL:
-                home_team = result.get("result", {}).get("home_team", "")
-                result["game_weather"] = _get_game_weather(game_pk, home_team, date)
-            else:
-                result["game_weather"] = None
         set_agg_cache(agg_key, result)
     return result
 
@@ -585,28 +630,7 @@ def player_page(pitcher_id: int = Query(...), start_date: str = Query("2026-03-2
     cached = get_agg_cache(agg_key)
     if cached is not None:
         return cached
-    empty = {"info": {}, "pitch_summary": [], "pitch_summary_vs_l": [], "pitch_summary_vs_r": [], "results_summary": {}, "game_log": []}
-    if lv == "aaa":
-        # MiLB view: pull Statcast (AAA + FSL) and AA-and-below PBP into one
-        # DataFrame so per-pitch metrics span every Statcast-tracked level
-        # AND every level the MLB Stats API has play-by-play for.
-        season_year = int(start_date[:4])
-        df, _info = fetch_pitcher_full_milb_season(pitcher_id, season_year)
-    else:
-        df = fetch_date_range(start_date, end_date, level=lv)
-    if df.empty:
-        result = empty
-    else:
-        computed = compute_player_page(df, pitcher_id)
-        result = computed if computed is not None else empty
-    # Attach dual season totals + the MLB|Minors toggle's smart default,
-    # so the frontend can render the pill toggle without a separate fetch.
-    season_year = int(start_date[:4])
-    dual = _compute_dual_season_totals(pitcher_id, season_year)
-    result["season_totals_mlb"] = dual["mlb"]
-    result["season_totals_milb"] = dual["milb"]
-    result["season_totals_primary"] = dual["primary"]
-    result["errors"] = dual["errors"]
+    result = _build_player_page_payload(pitcher_id, start_date, end_date, level=lv)
     set_agg_cache(agg_key, result)
     return result
 
@@ -624,7 +648,7 @@ def reclassify_pitch(req: ReclassifyRequest):
     lv = _resolve_level(req.level)
     key = save_pitch_override(req.game_pk, req.pitcher_id, req.at_bat_number, req.pitch_number, req.new_pitch_type, level=lv)
     if req.date:
-        clear_cache(req.date, level=lv)
+        clear_cache(req.date, level=lv, pitcher_ids=[req.pitcher_id])
     return {"status": "ok", "key": key}
 
 @app.delete("/api/pitch-reclassify")
@@ -632,7 +656,7 @@ def undo_reclassify(game_pk: int = Query(...), pitcher_id: int = Query(...), at_
     lv = _resolve_level(level)
     removed = remove_pitch_override(game_pk, pitcher_id, at_bat_number, pitch_number, level=lv)
     if date:
-        clear_cache(date, level=lv)
+        clear_cache(date, level=lv, pitcher_ids=[pitcher_id])
     return {"status": "ok" if removed else "not_found"}
 
 @app.get("/api/pitch-overrides")
@@ -708,7 +732,13 @@ def cron_warmup_daily_players(request: Request, level: str = Query(DEFAULT_LEVEL
         for pid in target_ids:
             agg_key = f"player_v2_{lv}_{pid}_s{CARD_SCHEMA_VERSION}{suffix}"
             try:
-                result = compute_player_page(df, pid)
+                result = _build_player_page_payload(
+                    pid,
+                    start_date,
+                    end_date,
+                    level=lv,
+                    preloaded_df=df if lv == DEFAULT_LEVEL else None,
+                )
                 if result is not None:
                     set_agg_cache(agg_key, result)
                     computed += 1
@@ -807,17 +837,8 @@ def cron_warmup_daily_cards(request: Request, level: str = Query(DEFAULT_LEVEL))
             if get_agg_cache(agg_key) is not None:
                 continue
             try:
-                card = get_pitcher_card(yesterday, pid, gpk, level=lv)
+                card = _build_pitcher_card_payload(yesterday, pid, gpk, level=lv)
                 if card:
-                    # Bake in season totals and weather so the endpoint has nothing left to compute
-                    if "season_totals" not in card:
-                        card["season_totals"] = _compute_season_totals(pid, season_start, totals_end, level=lv)
-                    if "game_weather" not in card:
-                        if lv == DEFAULT_LEVEL:
-                            home_team = card.get("result", {}).get("home_team", "")
-                            card["game_weather"] = _get_game_weather(gpk, home_team, yesterday)
-                        else:
-                            card["game_weather"] = None
                     set_agg_cache(agg_key, card)
                     cards_computed += 1
             except Exception as e:
@@ -936,16 +957,8 @@ def cron_warmup_live_cards(request: Request, level: str = Query(DEFAULT_LEVEL)):
                 continue
             agg_key = f"card_{lv}_{today}_{pid}_{gpk}_v{get_override_version()}_s{CARD_SCHEMA_VERSION}"
             try:
-                card = get_pitcher_card(today, pid, gpk, level=lv)
+                card = _build_pitcher_card_payload(today, pid, gpk, level=lv)
                 if card:
-                    if "season_totals" not in card:
-                        card["season_totals"] = _compute_season_totals(pid, season_start, totals_end, level=lv)
-                    if "game_weather" not in card:
-                        if lv == DEFAULT_LEVEL:
-                            home_team = card.get("result", {}).get("home_team", "")
-                            card["game_weather"] = _get_game_weather(gpk, home_team, today)
-                        else:
-                            card["game_weather"] = None
                     set_agg_cache(agg_key, card)
                     if pid in active_pids:
                         cards_live += 1
@@ -984,6 +997,8 @@ def manual_refresh(level: str = Query(DEFAULT_LEVEL)):
         clear_cache(today, level=lv)
         # Re-fetch today's pitch data (triggers Savant CSV download + warms cache)
         df = fetch_date(today, level=lv)
+        if not df.empty and "pitcher" in df.columns:
+            invalidate_pitcher_related_caches(df["pitcher"].dropna().unique(), affected_level=lv)
         # Re-compute today's daily aggregations.
         # aggregate_pitch_data / aggregate_pitcher_results take a date_str
         # (NOT a DataFrame) and re-fetch internally — but they hit the warm

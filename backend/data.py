@@ -1066,6 +1066,12 @@ RANGE_CACHE_TTL = 3600  # 1 hour
 # so repeated leaderboard/team/player requests skip re-aggregation.
 _agg_cache = {}  # { "agg_key": (timestamp, result_list) }
 AGG_CACHE_TTL = 3600  # matches range cache TTL
+LIVE_CARD_CACHE_TTL = 60  # today's live game cards should track live feeds closely
+_CARD_CACHE_KEY_RE = re.compile(r"^card_(mlb|aaa)_\d{4}-\d{2}-\d{2}_(\d+)_")
+_PLAYER_CACHE_KEY_RE = re.compile(r"^player_v2_(mlb|aaa)_(\d+)_")
+_SEASON_TOTALS_KEY_RE = re.compile(r"^season_totals_(mlb|aaa)_(\d+)_")
+_MILB_FULL_TOTALS_KEY_RE = re.compile(r"^season_totals_milb_full_(\d+)_")
+_SEASON_AVG_KEY_RE = re.compile(r"^season_avg(?:_fb)?_(mlb|aaa)_(\d+)_")
 
 SAVANT_RANGE_URL = (
     "https://baseballsavant.mlb.com/statcast_search/csv"
@@ -1243,16 +1249,35 @@ def _agg_key_is_live(key):
     """Check if an agg cache key references today's date (needs TTL-based refresh)."""
     return _get_today_str() in key
 
+
+def _agg_key_ttl(key):
+    """Return the effective TTL for an aggregation cache key."""
+    if not _agg_key_is_live(key):
+        return None
+    if key.startswith("card_"):
+        return LIVE_CARD_CACHE_TTL
+    return AGG_CACHE_TTL
+
+
+def _agg_key_uses_redis_l2(key):
+    """Past-date keys always use Redis; live cards also use Redis because their
+    TTL is short enough to keep cold-start reads reasonably fresh."""
+    return (not _agg_key_is_live(key)) or key.startswith("card_")
+
+
 def get_agg_cache(key):
     """Get a cached aggregation result. Checks L1 (dict) then L2 (Redis).
-    Past-date keys never expire; keys referencing today use AGG_CACHE_TTL."""
+    Past-date keys never expire; today's live cards use LIVE_CARD_CACHE_TTL;
+    other live keys use AGG_CACHE_TTL."""
+    ttl = _agg_key_ttl(key)
     if key in _agg_cache:
         ts, result = _agg_cache[key]
-        if not _agg_key_is_live(key) or (time.time() - ts) < AGG_CACHE_TTL:
+        if ttl is None or (time.time() - ts) < ttl:
             return result
-    # L2: Redis — only trust for past-date keys; live keys may be stale
-    # (Redis entries have no TTL, so serverless cold starts would serve stale live data)
-    if not _agg_key_is_live(key):
+    # L2: Redis — trust past-date keys indefinitely and live cards only while
+    # their short Redis TTL is active. Other live keys continue to avoid Redis
+    # so cold starts don't resurrect stale hourly table aggregations.
+    if _agg_key_uses_redis_l2(key):
         val = redis_get(f"agg:{key}")
         if val is not None:
             _agg_cache[key] = (time.time(), val)
@@ -1263,8 +1288,77 @@ def set_agg_cache(key, result):
     """Store an aggregation result in L1 (dict) and L2 (Redis).
     Live keys get a TTL in Redis matching the in-memory TTL."""
     _agg_cache[key] = (time.time(), result)
-    ttl = AGG_CACHE_TTL if _agg_key_is_live(key) else None
+    ttl = _agg_key_ttl(key)
     redis_set(f"agg:{key}", result, ttl=ttl)
+
+
+def invalidate_pitcher_related_caches(pitcher_ids, affected_level=None):
+    """Clear stable caches for specific pitchers after data changes.
+
+    `affected_level` describes which source data changed (mlb|aaa). Season-level
+    caches for that source level are cleared, while card/player payload caches
+    are cleared across both display levels because they embed dual MLB/MiLB
+    season totals in one response object.
+    """
+    pid_set = {int(pid) for pid in (pitcher_ids or []) if pid is not None}
+    if not pid_set:
+        return {"season_rows": 0, "season_aggs": 0, "agg_keys": 0}
+
+    season_rows = 0
+    for cache_key in list(_season_cache.keys()):
+        if not (isinstance(cache_key, tuple) and len(cache_key) == 3):
+            continue
+        cache_level, cache_pid, _ = cache_key
+        if int(cache_pid) in pid_set and (affected_level is None or cache_level == affected_level):
+            _season_cache.pop(cache_key, None)
+            season_rows += 1
+
+    season_aggs = 0
+    try:
+        from aggregation import _season_game_agg_cache
+    except Exception:
+        _season_game_agg_cache = None
+    if _season_game_agg_cache is not None:
+        for cache_key in list(_season_game_agg_cache.keys()):
+            if not (isinstance(cache_key, tuple) and len(cache_key) == 4):
+                continue
+            cache_level, cache_pid, _, _ = cache_key
+            if int(cache_pid) in pid_set and (affected_level is None or cache_level == affected_level):
+                _season_game_agg_cache.pop(cache_key, None)
+                season_aggs += 1
+
+    agg_keys = 0
+    for key in list(_agg_cache.keys()):
+        clear = False
+        match = _CARD_CACHE_KEY_RE.match(key)
+        if match:
+            clear = int(match.group(2)) in pid_set
+        else:
+            match = _PLAYER_CACHE_KEY_RE.match(key)
+            if match:
+                clear = int(match.group(2)) in pid_set
+            else:
+                match = _SEASON_TOTALS_KEY_RE.match(key)
+                if match:
+                    clear = int(match.group(2)) in pid_set and (
+                        affected_level is None or match.group(1) == affected_level
+                    )
+                else:
+                    match = _MILB_FULL_TOTALS_KEY_RE.match(key)
+                    if match:
+                        clear = int(match.group(1)) in pid_set and affected_level in (None, "aaa")
+                    else:
+                        match = _SEASON_AVG_KEY_RE.match(key)
+                        if match:
+                            clear = int(match.group(2)) in pid_set and (
+                                affected_level is None or match.group(1) == affected_level
+                            )
+        if clear:
+            _agg_cache.pop(key, None)
+            redis_delete(f"agg:{key}")
+            agg_keys += 1
+
+    return {"season_rows": season_rows, "season_aggs": season_aggs, "agg_keys": agg_keys}
 
 
 _pitchers_list_cache = {}  # { "start_end": (timestamp, list) }
@@ -1389,6 +1483,12 @@ def warmup_range_data(start_date="2026-03-25", end_date=None, level=DEFAULT_LEVE
                 default_date = get_default_date(level=level)
                 fetch_date(default_date, level=level)
                 print(f"[Warmup] Default date {default_date} warmed ({level})")
+
+                # Warm the final games payload too, so a cold serverless
+                # instance can serve yesterday's slate from Redis without
+                # re-pulling Savant just to derive has_data flags.
+                get_games(default_date, level=level)
+                print(f"[Warmup] Games list for {default_date} ({level}) cached")
 
                 # Pre-compute daily aggregations for the initial-load endpoint
                 with _warmup_lock:
@@ -1566,7 +1666,7 @@ def get_warmup_status():
         return dict(_warmup_status)
 
 
-def clear_cache(date_str=None, level=None):
+def clear_cache(date_str=None, level=None, pitcher_ids=None):
     """Clear caches for a specific date and/or level.
 
     - `date_str=None`, `level=None` → clear everything
@@ -1575,6 +1675,17 @@ def clear_cache(date_str=None, level=None):
     - `date_str=None`, `level=L` → clear all entries for level L
     """
     if date_str:
+        affected_pitchers = {int(pid) for pid in (pitcher_ids or []) if pid is not None}
+        for k, cached in list(_cache.items()):
+            if not (isinstance(k, tuple) and len(k) == 2):
+                continue
+            k_level, k_date = k
+            if k_date != date_str or (level is not None and k_level != level):
+                continue
+            day_df = cached[1] if isinstance(cached, tuple) else cached
+            if day_df is not None and not day_df.empty and "pitcher" in day_df.columns:
+                affected_pitchers.update(int(pid) for pid in day_df["pitcher"].dropna().unique())
+
         # Drop matching daily caches (filter by level if provided)
         for k in list(_cache.keys()):
             if isinstance(k, tuple) and len(k) == 2:
@@ -1605,6 +1716,17 @@ def clear_cache(date_str=None, level=None):
                         continue
                     if start <= date_str <= end:
                         range_dict.pop(k, None)
+        target_levels = LEVELS if level is None else (level,)
+        for target_level in target_levels:
+            for k in list(_agg_cache.keys()):
+                if k.startswith(f"leaderboard_{target_level}_") or k.startswith(f"team_{target_level}_"):
+                    _agg_cache.pop(k, None)
+                    redis_delete(f"agg:{k}")
+            redis_delete_pattern(f"pitchers:{target_level}_*")
+            redis_delete_pattern(f"agg:leaderboard_{target_level}_*")
+            redis_delete_pattern(f"agg:team_{target_level}_*")
+        if affected_pitchers:
+            invalidate_pitcher_related_caches(affected_pitchers, affected_level=level)
     elif level is not None:
         # Clear everything for one level
         for k in list(_cache.keys()):
@@ -1626,6 +1748,9 @@ def clear_cache(date_str=None, level=None):
             if f"_{level}_" in k:
                 _agg_cache.pop(k, None)
                 redis_delete(f"agg:{k}")
+        redis_delete_pattern(f"pitchers:{level}_*")
+        redis_delete_pattern(f"agg:leaderboard_{level}_*")
+        redis_delete_pattern(f"agg:team_{level}_*")
     else:
         _cache.clear()
         _season_cache.clear()
@@ -1635,6 +1760,7 @@ def clear_cache(date_str=None, level=None):
         # Clear Redis aggregation and schedule keys
         redis_delete_pattern("agg:*")
         redis_delete_pattern("schedule:*")
+        redis_delete_pattern("pitchers:*")
 
 def _last_name(full_name):
     """Extract last name from full name (e.g. 'Gerrit Cole' → 'Cole')."""
@@ -1803,6 +1929,13 @@ def get_default_date(level=DEFAULT_LEVEL):
     return yesterday_str
 
 def get_games(date_str, level=DEFAULT_LEVEL):
+    cache_key = f"games_{level}_{date_str}"
+    cacheable = not _is_today(date_str)
+    if cacheable:
+        cached = get_agg_cache(cache_key)
+        if cached is not None:
+            return cached
+
     df = fetch_date(date_str, level=level)  # This now includes MLB API fallback data
     data_pks = set(df["game_pk"].unique()) if not df.empty else set()
 
@@ -1812,10 +1945,14 @@ def get_games(date_str, level=DEFAULT_LEVEL):
         for g in mlb_games:
             g["has_data"] = g["game_pk"] in data_pks
         # Sort by game start time (UTC ISO string sorts correctly)
-        return sorted(mlb_games, key=lambda g: g.get("game_date_utc", "") or "9999")
+        result = sorted(mlb_games, key=lambda g: g.get("game_date_utc", "") or "9999")
+        if cacheable:
+            set_agg_cache(cache_key, result)
+        return result
 
     # Fallback to Savant-only if MLB API fails
-    if df.empty: return []
+    if df.empty:
+        return []
     games = []
     for game_pk, gdf in df.groupby("game_pk"):
         home = gdf["home_team"].iloc[0]
@@ -1824,7 +1961,10 @@ def get_games(date_str, level=DEFAULT_LEVEL):
                        "status": "", "abstract_state": "", "game_time_et": "", "game_date_utc": "",
                        "away_sp": "", "home_sp": "", "home_score": None, "away_score": None,
                        "current_inning": 0, "inning_half": ""})
-    return sorted(games, key=lambda g: g.get("game_date_utc", "") or "9999")
+    result = sorted(games, key=lambda g: g.get("game_date_utc", "") or "9999")
+    if cacheable:
+        set_agg_cache(cache_key, result)
+    return result
 
 _boxscore_cache = {}  # { game_pk: (timestamp, stats_map) }
 _game_state_cache = {}  # { game_pk: { home_score, away_score, inning, inning_half, status } }
