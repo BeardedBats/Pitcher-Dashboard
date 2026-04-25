@@ -38,6 +38,13 @@ export async function fetchPitcherResults(date, gamePk, level = "mlb") {
   return res.json();
 }
 
+export async function fetchGameView(date, gamePk, level = "mlb") {
+  const url = `${BASE}/api/game-view?date=${date}&game_pk=${gamePk}`;
+  const res = await fetch(withLevel(url, level));
+  if (!res.ok) throw new Error("Failed to fetch game view");
+  return res.json();
+}
+
 export async function fetchPitcherCard(date, pitcherId, gamePk, level = "mlb") {
   const url = `${BASE}/api/pitcher-card?date=${date}&pitcher_id=${pitcherId}&game_pk=${gamePk}`;
   const res = await fetch(withLevel(url, level));

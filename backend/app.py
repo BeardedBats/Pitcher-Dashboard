@@ -222,6 +222,17 @@ def _resolve_stat_lines_updated_at(date_str: str, level: str):
     return None
 
 
+def _build_selected_game_payload(date_str: str, game_pk: int, level: str):
+    df = fetch_date(date_str, level=level)
+    pitch_data = aggregate_pitch_data(date_str, game_pk, level=level, df=df)
+    results_data = aggregate_pitcher_results(date_str, game_pk, level=level, df=df)
+    return {
+        "pitchData": pitch_data,
+        "resultsData": results_data,
+        "updatedAt": datetime.utcnow().isoformat() + "Z",
+    }
+
+
 @app.get("/api/default-date")
 def default_date(level: str = Query(DEFAULT_LEVEL)):
     return {"date": get_default_date(level=_resolve_level(level))}
@@ -262,6 +273,21 @@ def pitcher_results(date: str = Query(...), game_pk: int = Query(None), level: s
         record_stat_lines_refresh(date, level=lv)
         return result
     return aggregate_pitcher_results(date, game_pk, level=lv)
+
+
+@app.get("/api/game-view")
+def game_view(date: str = Query(...), game_pk: int = Query(...), level: str = Query(DEFAULT_LEVEL)):
+    lv = _resolve_level(level)
+    agg_key = (
+        f"game_view_{lv}_{date}_{int(game_pk)}"
+        f"_v{get_override_version()}_s{CARD_SCHEMA_VERSION}"
+    )
+    cached = get_agg_cache(agg_key)
+    if cached is not None:
+        return cached
+    payload = _build_selected_game_payload(date, int(game_pk), lv)
+    set_agg_cache(agg_key, payload)
+    return payload
 
 @app.get("/api/initial-load")
 def initial_load(level: str = Query(DEFAULT_LEVEL)):

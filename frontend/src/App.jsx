@@ -12,7 +12,7 @@ import ErrorPill from "./components/ErrorPill";
 // Lazy-load pages that aren't needed on initial render
 const TeamPage = lazy(() => import("./components/TeamPage"));
 const PlayerPage = lazy(() => import("./components/PlayerPage"));
-import { fetchGames, fetchPitchData, fetchPitcherResults, fetchPitcherCard, fetchDefaultDate, fetchGameLinescore, reclassifyPitch, fetchInitialLoad, fetchRefresh, fetchLastRefresh } from "./utils/api";
+import { fetchGames, fetchPitchData, fetchPitcherResults, fetchPitcherCard, fetchDefaultDate, fetchGameLinescore, fetchGameView, reclassifyPitch, fetchInitialLoad, fetchRefresh, fetchLastRefresh } from "./utils/api";
 import { PITCH_TYPE_FILTERS, PITCH_COLORS, TEAMS_LIST, PITCHER_RESULTS_COLUMNS } from "./constants";
 
 // Hash routing helpers — `#aaa[/...]` selects the AAA level, anything else is MLB.
@@ -58,6 +58,11 @@ function getBaseballDateEST() {
   const m = String(now.getMonth() + 1).padStart(2, "0");
   const d = String(now.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+function isLiveGame(game) {
+  if (!game) return false;
+  return game.abstract_state === "Live" || ["In Progress", "Manager challenge"].includes(game.status);
 }
 
 // Helper: check if Ctrl (or Cmd on Mac) or middle-click was held during click event
@@ -127,6 +132,24 @@ export default function App() {
   const skipDateFetchForCard = React.useRef(false);
   // Ref to skip the pitch/results data fetch (e.g. after initial load already provided it)
   const skipNextDataFetch = React.useRef(false);
+  const selectedGameMeta = useMemo(
+    () => games.find(g => g.game_pk === selectedGame) || null,
+    [games, selectedGame],
+  );
+  const selectedGameIsLive = isLiveGame(selectedGameMeta);
+
+  const applyGameViewData = useCallback((data) => {
+    setPitchData(data?.pitchData || []);
+    setResultsData(data?.resultsData || []);
+    if (data?.updatedAt) setLastRefresh(data.updatedAt);
+  }, []);
+
+  const loadSelectedGameView = useCallback(async (gamePk) => {
+    if (!date || gamePk == null) return null;
+    const data = await fetchGameView(date, gamePk, level);
+    applyGameViewData(data);
+    return data;
+  }, [applyGameViewData, date, level]);
 
   // Fetch everything on mount in a single API call.
   // `#aaa` (no further parts) is treated as a level toggle, NOT a deep link —
@@ -210,17 +233,26 @@ export default function App() {
       setToast({ message: "Data refreshed", type: "success" });
       // Re-fetch current page data including linescore
       if (date) {
-        const fetches = [
-          fetchGames(date, level),
-          fetchPitchData(date, selectedGame, level),
-          fetchPitcherResults(date, selectedGame, level),
-        ];
         const gpk = cardData?.result?.game_pk || selectedGame;
-        if (gpk) fetches.push(fetchGameLinescore(gpk));
-        const [newGames, newPitch, newResults, newLinescore] = await Promise.all(fetches);
+        const newGamesPromise = fetchGames(date, level);
+        const selectedGamePromise = gpk != null ? fetchGameView(date, gpk, level) : null;
+        const dailyPromise = gpk == null
+          ? Promise.all([fetchPitchData(date, null, level), fetchPitcherResults(date, null, level)])
+          : null;
+        const linescorePromise = gpk ? fetchGameLinescore(gpk) : null;
+        const [newGames, selectedGameData, dailyData, newLinescore] = await Promise.all([
+          newGamesPromise,
+          selectedGamePromise,
+          dailyPromise,
+          linescorePromise,
+        ]);
         setGames(newGames);
-        setPitchData(newPitch);
-        setResultsData(newResults);
+        if (gpk != null) {
+          applyGameViewData(selectedGameData);
+        } else {
+          setPitchData(dailyData?.[0] || []);
+          setResultsData(dailyData?.[1] || []);
+        }
         if (newLinescore) setLinescoreData(newLinescore);
       }
     } catch (e) {
@@ -488,16 +520,49 @@ export default function App() {
     // Don't nuke an open card or fetch table data while viewing a card
     if (cardData) return;
     setLoading(true); setError(null);
-    Promise.all([
-      fetchPitchData(date, selectedGame, level),
-      fetchPitcherResults(date, selectedGame, level),
-      fetchLastRefresh(date, level),
-    ]).then(([pd, pr, refreshMeta]) => {
-      setPitchData(pd); setResultsData(pr);
-      setLastRefresh(refreshMeta?.timestamp || null);
-      setLoading(false);
-    }).catch(e => { setError(e.message); setLoading(false); });
-  }, [selectedGame, date, games.length, level]); // eslint-disable-line
+    const request = selectedGame != null
+      ? loadSelectedGameView(selectedGame)
+      : Promise.all([
+          fetchPitchData(date, null, level),
+          fetchPitcherResults(date, null, level),
+          fetchLastRefresh(date, level),
+        ]).then(([pd, pr, refreshMeta]) => {
+          setPitchData(pd);
+          setResultsData(pr);
+          setLastRefresh(refreshMeta?.timestamp || null);
+        });
+    request
+      .then(() => { setLoading(false); })
+      .catch(e => { setError(e.message); setLoading(false); });
+  }, [selectedGame, date, games.length, level, cardData, loadSelectedGameView]); // eslint-disable-line
+
+  useEffect(() => {
+    if (page !== "games" || cardData || selectedGame == null || !selectedGameIsLive) return;
+    let cancelled = false;
+    let timer = null;
+
+    const pollSelectedGame = async () => {
+      if (document.hidden) {
+        timer = setTimeout(pollSelectedGame, 60000);
+        return;
+      }
+      try {
+        const data = await fetchGameView(date, selectedGame, level);
+        if (!cancelled) applyGameViewData(data);
+      } catch {
+        // Keep the current game table data and try again on the next interval.
+      }
+      if (!cancelled) {
+        timer = setTimeout(pollSelectedGame, 60000);
+      }
+    };
+
+    timer = setTimeout(pollSelectedGame, 60000);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [applyGameViewData, cardData, date, level, page, selectedGame, selectedGameIsLive]);
 
   // Fetch linescore when a specific game is selected or card opens.
   // Poll every 60s during live games so scoreboard stays current.
@@ -856,12 +921,9 @@ export default function App() {
                 pushState({ view: "game", selectedGame: gamePk }, "");
                 // Force data re-fetch even if selectedGame hasn't changed
                 setLoading(true); setError(null);
-                Promise.all([
-                  fetchPitchData(date, gamePk, level),
-                  fetchPitcherResults(date, gamePk, level),
-                ]).then(([pd, pr]) => {
-                  setPitchData(pd); setResultsData(pr); setLoading(false);
-                }).catch(e => { setError(e.message); setLoading(false); });
+                loadSelectedGameView(gamePk)
+                  .then(() => { setLoading(false); })
+                  .catch(e => { setError(e.message); setLoading(false); });
               }
             }} onReclassify={(pitch) => setReclassifyPitch(pitch)} />
           </div>

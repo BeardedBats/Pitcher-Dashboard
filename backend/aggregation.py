@@ -289,8 +289,9 @@ def _aggregate_pitch_df(df, full_df=None):
     results.sort(key=lambda r: (r["pitcher"], r["pitch_name"]))
     return results
 
-def aggregate_pitch_data(date_str, game_pk=None, level="mlb"):
-    df = fetch_date(date_str, level=level)
+def aggregate_pitch_data(date_str, game_pk=None, level="mlb", df=None):
+    if df is None:
+        df = fetch_date(date_str, level=level)
     if df.empty: return []
     if game_pk is not None:
         df = df[df["game_pk"] == game_pk]
@@ -370,8 +371,9 @@ def _compute_season_fastball_velos(pitcher_ids, season_year, before_date=None, l
     return result
 
 
-def aggregate_pitcher_results(date_str, game_pk=None, level="mlb"):
-    df = fetch_date(date_str, level=level)
+def aggregate_pitcher_results(date_str, game_pk=None, level="mlb", df=None):
+    if df is None:
+        df = fetch_date(date_str, level=level)
     if df.empty: return []
     if game_pk is not None:
         df = df[df["game_pk"] == game_pk]

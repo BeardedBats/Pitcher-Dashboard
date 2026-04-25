@@ -1107,6 +1107,7 @@ RANGE_CACHE_TTL = 3600  # 1 hour
 _agg_cache = {}  # { "agg_key": (timestamp, result_list) }
 AGG_CACHE_TTL = 3600  # matches range cache TTL
 LIVE_CARD_CACHE_TTL = 60  # today's live game cards should track live feeds closely
+LIVE_GAME_VIEW_CACHE_TTL = 60  # selected live-game tables should stay close to the card view
 _CARD_CACHE_KEY_RE = re.compile(r"^card_(mlb|aaa)_\d{4}-\d{2}-\d{2}_(\d+)_")
 _PLAYER_CACHE_KEY_RE = re.compile(r"^player_v2_(mlb|aaa)_(\d+)_")
 _SEASON_TOTALS_KEY_RE = re.compile(r"^season_totals_(mlb|aaa)_(\d+)_")
@@ -1296,13 +1297,15 @@ def _agg_key_ttl(key):
         return None
     if key.startswith("card_"):
         return LIVE_CARD_CACHE_TTL
+    if key.startswith("game_view_"):
+        return LIVE_GAME_VIEW_CACHE_TTL
     return AGG_CACHE_TTL
 
 
 def _agg_key_uses_redis_l2(key):
-    """Past-date keys always use Redis; live cards also use Redis because their
-    TTL is short enough to keep cold-start reads reasonably fresh."""
-    return (not _agg_key_is_live(key)) or key.startswith("card_")
+    """Past-date keys always use Redis; live cards and selected game views
+    also use Redis because their short TTLs keep cold-start reads fresh."""
+    return (not _agg_key_is_live(key)) or key.startswith("card_") or key.startswith("game_view_")
 
 
 def get_agg_cache(key):
