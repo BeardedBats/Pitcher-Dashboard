@@ -72,14 +72,24 @@ body {
   border-bottom: 1px solid var(--border);
 }
 .game-tabs-switcher {
-  display: flex; gap: 6px; margin-bottom: 10px;
+  display: flex; gap: 6px;
+}
+/* Toolbar row holding [MLB][AAA] | [All Games][View Games]. */
+.games-tabs-toolbar {
+  display: flex; align-items: center; margin-bottom: 10px;
+}
+.games-tabs-divider {
+  color: var(--accent-soft); padding: 0 24px;
+  font-size: 28px; line-height: 28px; font-weight: 300;
+  user-select: none;
 }
 .game-tab-switch {
   display: flex; align-items: center; justify-content: center;
   padding: 4px 14px; height: 28px; box-sizing: border-box;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
   color: var(--text); font-family: inherit; font-size: 13px;
-  font-weight: 500; cursor: pointer; transition: all 0.15s;
+  font-weight: 500; text-transform: none; letter-spacing: 0;
+  cursor: pointer; transition: all 0.15s;
   user-select: none;
 }
 .game-tab-switch:hover {
@@ -149,16 +159,17 @@ body {
   cursor: pointer; transition: all 0.15s; font-weight: 500;
 }
 
-/* MLB | Triple-A level toggle — sits above the game tabs row. */
+/* MLB | AAA level toggle — sits inline with All Games / View Games. */
 .level-tabs {
-  display: flex; gap: 6px; margin: 6px 0 10px 0;
-  align-items: center;
+  display: flex; gap: 6px; align-items: center;
 }
 .level-tab {
+  display: flex; align-items: center; justify-content: center;
+  padding: 4px 14px; height: 28px; box-sizing: border-box;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  color: var(--text-muted); padding: 6px 16px; font-family: inherit; font-size: 13px;
+  color: var(--text-muted); font-family: inherit; font-size: 13px;
   font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
-  cursor: pointer; transition: all 0.15s;
+  cursor: pointer; transition: all 0.15s; user-select: none;
 }
 .level-tab:hover {
   color: var(--text-bright); border-color: var(--accent);

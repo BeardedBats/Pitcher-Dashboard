@@ -297,28 +297,34 @@ _FASTBALL_TYPES = ("Four-Seamer", "Sinker")
 
 def _compute_game_fastball_velo(gdf):
     """Find the most-thrown fastball (Four-Seamer or Sinker) in a game df and
-    return (pitch_name, mean_velo). Ties go to Four-Seamer."""
+    return (pitch_name, mean_velo, mean_extension). Ties go to Four-Seamer.
+    Either velo or ext can be None independently if their column is missing/all-NaN."""
     if gdf.empty or "pitch_name" not in gdf.columns:
-        return None, None
+        return None, None, None
     fb_df = gdf[gdf["pitch_name"].isin(_FASTBALL_TYPES)]
     if fb_df.empty:
-        return None, None
+        return None, None, None
     counts = fb_df["pitch_name"].value_counts()
     four_seam = int(counts.get("Four-Seamer", 0))
     sinker = int(counts.get("Sinker", 0))
     if four_seam == 0 and sinker == 0:
-        return None, None
+        return None, None, None
     pick = "Four-Seamer" if four_seam >= sinker else "Sinker"
     pick_df = fb_df[fb_df["pitch_name"] == pick]
-    if "release_speed" not in pick_df.columns or pick_df["release_speed"].isna().all():
-        return pick, None
-    return pick, round(float(pick_df["release_speed"].mean()), 1)
+    velo = None
+    if "release_speed" in pick_df.columns and not pick_df["release_speed"].isna().all():
+        velo = round(float(pick_df["release_speed"].mean()), 1)
+    ext = None
+    if "release_extension" in pick_df.columns and not pick_df["release_extension"].isna().all():
+        ext = round(float(pick_df["release_extension"].mean()), 1)
+    return pick, velo, ext
 
 
 def _compute_season_fastball_velos(pitcher_ids, season_year, before_date=None, level="mlb"):
-    """Batch-compute season-to-date fastball mean velos for a list of pitcher IDs.
-    Reuses the cached range DataFrame so we don't hit Savant per-pitcher.
-    Returns {pitcher_id: {"Four-Seamer": velo, "Sinker": velo}}."""
+    """Batch-compute season-to-date fastball mean velos AND mean extensions
+    for a list of pitcher IDs. Reuses the cached range DataFrame so we don't
+    hit Savant per-pitcher.
+    Returns {pitcher_id: {"Four-Seamer": {"velo": x, "ext": y}, "Sinker": ...}}."""
     if not pitcher_ids or season_year is None:
         return {}
     try:
@@ -340,11 +346,21 @@ def _compute_season_fastball_velos(pitcher_ids, season_year, before_date=None, l
         fb_df = fb_df[fb_df["game_date"].astype(str) < str(before_date)]
     if fb_df.empty:
         return {}
-    grouped = fb_df.groupby(["pitcher", "pitch_name"])["release_speed"].mean()
+    agg_cols = {"release_speed": "mean"}
+    if "release_extension" in fb_df.columns:
+        agg_cols["release_extension"] = "mean"
+    grouped = fb_df.groupby(["pitcher", "pitch_name"]).agg(agg_cols)
     result = {}
-    for (pid, pn), velo in grouped.items():
+    for (pid, pn), row in grouped.iterrows():
+        velo = row.get("release_speed")
+        ext = row.get("release_extension") if "release_extension" in agg_cols else None
+        entry = {}
         if pd.notna(velo):
-            result.setdefault(int(pid), {})[pn] = round(float(velo), 1)
+            entry["velo"] = round(float(velo), 1)
+        if ext is not None and pd.notna(ext):
+            entry["ext"] = round(float(ext), 1)
+        if entry:
+            result.setdefault(int(pid), {})[pn] = entry
     return result
 
 
@@ -383,7 +399,7 @@ def aggregate_pitcher_results(date_str, game_pk=None, level="mlb"):
         fallback_ip = f"{outs // 3}.{outs % 3}"
         home_team, away_team = game_teams.get(gp, ("", ""))
         _, _, two_strike_pitches, strikeouts_for_par = _compute_two_strike_pa_stats(gdf)
-        velo_pitch, velo = _compute_game_fastball_velo(gdf)
+        velo_pitch, velo, velo_ext = _compute_game_fastball_velo(gdf)
         row = {
             "pitcher_id": int(pitcher_id), "game_pk": int(gp),
             "pitcher": name, "team": team, "hand": hand, "opponent": opp,
@@ -395,7 +411,7 @@ def aggregate_pitcher_results(date_str, game_pk=None, level="mlb"):
             "pitches": total_pitches, "hrs": hrs,
             "appearance_order": appearance_order,
             "home_team": home_team, "away_team": away_team,
-            "velo": velo, "velo_pitch": velo_pitch,
+            "velo": velo, "velo_pitch": velo_pitch, "velo_ext": velo_ext,
         }
         results.append(row)
     # Fetch boxscore stats (ER, IP, Hits, BB, K, HR) from MLB API — in parallel
@@ -436,18 +452,25 @@ def aggregate_pitcher_results(date_str, game_pk=None, level="mlb"):
         roles = classify_pitcher_roles(game_rows, season_year=season_year, before_date=date_str, level=level)
         for r in game_rows:
             r["role"] = roles.get(r["pitcher_id"], "RP")
-    # Attach season-to-date fastball velo + delta for each pitcher (batched)
+    # Attach season-to-date fastball velo + ext + deltas for each pitcher (batched)
     season_velos = _compute_season_fastball_velos(
         [r["pitcher_id"] for r in results], season_year, before_date=date_str, level=level,
     )
     for r in results:
         pick = r.get("velo_pitch")
-        season_velo = season_velos.get(r["pitcher_id"], {}).get(pick) if pick else None
+        season_entry = season_velos.get(r["pitcher_id"], {}).get(pick) if pick else None
+        season_velo = season_entry.get("velo") if season_entry else None
+        season_ext = season_entry.get("ext") if season_entry else None
         r["velo_season"] = season_velo
+        r["velo_ext_season"] = season_ext
         if r.get("velo") is not None and season_velo is not None:
             r["velo_delta"] = round(r["velo"] - season_velo, 1)
         else:
             r["velo_delta"] = None
+        if r.get("velo_ext") is not None and season_ext is not None:
+            r["velo_ext_delta"] = round(r["velo_ext"] - season_ext, 1)
+        else:
+            r["velo_ext_delta"] = None
     results.sort(key=lambda r: (r["team"], r["appearance_order"]))
     return results
 

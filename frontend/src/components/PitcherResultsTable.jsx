@@ -100,6 +100,7 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
     if (key === "opponent") return 175;
     if (key === "csw_pct" || key === "strike_pct" || key === "par_pct") return 65;
     if (key === "velo") return 96;
+    if (key === "velo_ext") return 80;
     return 50;
   };
 
@@ -128,21 +129,51 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
     );
   };
 
+  // No-comparison-data placeholder. Always rendered when there's a value but
+  // no delta, so cells with deltas line up vertically with cells without.
+  const noDeltaEl = (
+    <span className="delta-value delta-neutral" style={{ marginLeft: 4 }}>(----)</span>
+  );
+
   const renderVeloCell = (row) => {
     const v = row.velo;
     if (v == null) return <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
     const pitch = row.velo_pitch;
     const color = PITCH_COLORS[pitch] || "#D9D9D9";
     const delta = row.velo_delta;
-    let deltaEl = null;
+    let deltaEl;
     if (delta != null && !isNaN(delta)) {
       const cls = delta >= 1.0 ? "delta-up" : delta <= -1.0 ? "delta-down" : "delta-neutral";
       const text = `(${delta >= 0 ? "+" : ""}${delta.toFixed(1)})`;
       deltaEl = <span className={`delta-value ${cls}`} style={{ marginLeft: 4 }}>{text}</span>;
+    } else {
+      deltaEl = noDeltaEl;
     }
     return (
       <span style={{ whiteSpace: "nowrap" }}>
         <span style={{ color, fontWeight: 600 }}>{Number(v).toFixed(1)}</span>
+        {deltaEl}
+      </span>
+    );
+  };
+
+  // Extension on the same featured fastball used by FB MPH.
+  const renderExtCell = (row) => {
+    const v = row.velo_ext;
+    if (v == null) return <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
+    const delta = row.velo_ext_delta;
+    let deltaEl;
+    if (delta != null && !isNaN(delta)) {
+      // 0.2 ft (~2.4 inches) is a meaningful release-extension change.
+      const cls = delta >= 0.2 ? "delta-up" : delta <= -0.2 ? "delta-down" : "delta-neutral";
+      const text = `(${delta >= 0 ? "+" : ""}${delta.toFixed(1)})`;
+      deltaEl = <span className={`delta-value ${cls}`} style={{ marginLeft: 4 }}>{text}</span>;
+    } else {
+      deltaEl = noDeltaEl;
+    }
+    return (
+      <span style={{ whiteSpace: "nowrap" }}>
+        <span style={{ fontWeight: 500 }}>{Number(v).toFixed(1)}</span>
         {deltaEl}
       </span>
     );
@@ -168,6 +199,7 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
     if (col.key === "csw_pct" || col.key === "strike_pct" || col.key === "par_pct") return dim(fmtPct(v));
     if (col.key === "ip") return v != null ? v : <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
     if (col.key === "velo") return renderVeloCell(row);
+    if (col.key === "velo_ext") return renderExtCell(row);
     return dim(fmtInt(v));
   };
 
@@ -212,7 +244,7 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
                   <th key={c.key}
                     className={classes.join(" ")}
                     title={c.tooltip || undefined}
-                    style={{ textAlign: c.align || "left", ...(isMobile && c.key === "pitcher" ? { left: 0, minWidth: 130 } : {}) }}
+                    style={{ textAlign: c.headerAlign || c.align || "left", ...(isMobile && c.key === "pitcher" ? { left: 0, minWidth: 130 } : {}) }}
                     onClick={() => handleSort(c.key)}>
                     <span className={sortKey === c.key ? "sort-active" : ""}>{c.label}</span>
                   </th>

@@ -29,7 +29,10 @@ _override_version = 0  # Incremented on every save/remove to bust agg caches
 # player page) gains or changes fields so all old cache entries miss after
 # deploy. Included in every relevant cache key alongside _override_version.
 # v7: cache keys carry a {level} prefix (mlb|aaa) for the Triple-A tab.
-CARD_SCHEMA_VERSION = 7
+# v8: pitcher result rows gain `velo_ext` + `velo_ext_season` + `velo_ext_delta`;
+#     AAA season aggregations now span all Statcast-tracked minor leagues
+#     (AAA + Single-A FSL), not AAA-only.
+CARD_SCHEMA_VERSION = 8
 
 # Allowed level values. New levels must be added here and exposed via the
 # frontend `level` state and any cron schedules.
@@ -856,9 +859,12 @@ SAVANT_PITCHER_SEASON_URL = (
 def fetch_pitcher_season(pitcher_id, season_year, level=DEFAULT_LEVEL):
     """Fetch all pitches for a pitcher in a given season. Cached.
 
-    For `level=aaa` we hit Savant with `&minors=true` and post-filter to the
-    AAA game_pk set for the season window, since Savant returns AAA + FSL
-    together.
+    For `level=aaa` we hit Savant with `&minors=true` and DO NOT post-filter
+    by AAA game_pks — we want every Statcast-tracked minor-league level the
+    pitcher appeared at (AAA + Single-A FSL today). This matches the
+    "season totals = total minor league stats" semantics for AAA pitcher
+    cards. Levels that Statcast doesn't track (AA, High-A non-FSL, lower)
+    are not available through this pipeline.
     """
     cache_key = (level, pitcher_id, season_year)
     if cache_key in _season_cache:
@@ -875,16 +881,6 @@ def fetch_pitcher_season(pitcher_id, season_year, level=DEFAULT_LEVEL):
             _season_cache[cache_key] = pd.DataFrame()
             return _season_cache[cache_key]
         df = pd.read_csv(io.StringIO(content), low_memory=False)
-        if df.empty:
-            _season_cache[cache_key] = pd.DataFrame()
-            return _season_cache[cache_key]
-        if level == "aaa":
-            # Filter to AAA-only game_pks for the full season window
-            aaa_pks = _get_aaa_game_pks(f"{season_year}-03-20", f"{season_year}-11-01")
-            if "game_pk" in df.columns and aaa_pks:
-                df = df[df["game_pk"].isin(aaa_pks)]
-            else:
-                df = pd.DataFrame()
         _season_cache[cache_key] = df if not df.empty else pd.DataFrame()
         return _season_cache[cache_key]
     except Exception as e:
@@ -928,7 +924,13 @@ def _transform_range_df(df, level=DEFAULT_LEVEL):
 
 def _fetch_savant_range_chunk(start_date, end_date, level=DEFAULT_LEVEL):
     """Fetch a single chunk of CSV from Savant. Returns raw DataFrame.
-    For AAA, appends `&minors=true` and filters to AAA game_pks."""
+
+    For AAA range fetches we DO NOT filter to AAA game_pks — we want the
+    full set of Statcast-tracked minor league rows (currently AAA + Single-A
+    FSL) so per-pitcher season aggregations include every level a pitcher
+    appeared at. Daily AAA games (`fetch_date(level=aaa)`) still filter to
+    AAA only because the games tab lists only AAA games.
+    """
     url = SAVANT_RANGE_URL.format(start=start_date, end=end_date)
     if level == "aaa":
         url += SAVANT_AAA_FLAG
@@ -942,12 +944,6 @@ def _fetch_savant_range_chunk(start_date, end_date, level=DEFAULT_LEVEL):
         df = pd.read_csv(io.StringIO(content), low_memory=False)
         if df.empty:
             return pd.DataFrame()
-        if level == "aaa":
-            aaa_pks = _get_aaa_game_pks(start_date, end_date)
-            if "game_pk" in df.columns and aaa_pks:
-                df = df[df["game_pk"].isin(aaa_pks)]
-            else:
-                return pd.DataFrame()
         return df
     except Exception as e:
         print(f"Error fetching date range {start_date} to {end_date} ({level}): {e}")

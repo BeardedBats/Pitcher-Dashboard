@@ -178,14 +178,17 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
   // Use inline season totals from card response (no separate fetch needed)
   const seasonTotals = inlineSeasonTotals && inlineSeasonTotals.games ? inlineSeasonTotals : null;
 
-  // Fetch next scheduled starts
+  // Fetch next scheduled starts. The schedule sheet is MLB-only (Probables
+  // tab on the staff Google Sheet) — skip the fetch entirely for AAA so
+  // we don't render a stale/empty "Next Three Starts" section.
   useEffect(() => {
+    if (level === "aaa") { setSchedule(null); return; }
     if (name && date) {
       fetchPitcherSchedule(name, date)
         .then(data => setSchedule(data?.starts || []))
         .catch(() => setSchedule(null));
     }
-  }, [name, date]);
+  }, [name, date, level]);
 
   // Select correct pitch table based on batter filter
   const activePitchTable = useMemo(() => {

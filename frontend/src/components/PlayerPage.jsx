@@ -117,15 +117,17 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick, level = "ml
     return [...data.game_log].sort((a, b) => a.date.localeCompare(b.date));
   }, [data]);
 
-  // Fetch next scheduled starts (must be after sortedLog definition)
+  // Fetch next scheduled starts (must be after sortedLog definition).
+  // Skip for AAA — the schedule sheet is MLB-only.
   useEffect(() => {
+    if (level === "aaa") { setSchedule(null); return; }
     if (data?.info?.name) {
       const lastGame = sortedLog.length > 0 ? sortedLog[sortedLog.length - 1].date : "";
       fetchPitcherSchedule(data.info.name, lastGame)
         .then(d => setSchedule(d?.starts || []))
         .catch(() => setSchedule(null));
     }
-  }, [data?.info?.name, sortedLog]);
+  }, [data?.info?.name, sortedLog, level]);
 
   // Game options for dropdown: numbered by date order
   const gameOptions = useMemo(() => {

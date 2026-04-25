@@ -25,7 +25,7 @@ function ordinalInning(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-export default function GameTabs({ games, selectedGame, onSelectGame, level = "mlb" }) {
+export default function GameTabs({ games, selectedGame, onSelectGame, level = "mlb", onSelectLevel }) {
   const [viewMode, setViewMode] = React.useState("all");
 
   const handleAllGames = () => {
@@ -44,20 +44,39 @@ export default function GameTabs({ games, selectedGame, onSelectGame, level = "m
 
   return (
     <div className="game-tabs-container">
-      <div className="game-tabs-switcher">
-        <div
-          className={`game-tab-switch${viewMode === "all" ? " active" : ""}`}
-          onClick={handleAllGames}
-          role="button" tabIndex={0}
-        >
-          All Games
-        </div>
-        <div
-          className={`game-tab-switch${viewMode === "games" ? " active" : ""}`}
-          onClick={handleViewGames}
-          role="button" tabIndex={0}
-        >
-          View Games
+      <div className="games-tabs-toolbar">
+        {onSelectLevel && (
+          <>
+            <div className="level-tabs">
+              <button
+                type="button"
+                className={`level-tab${level === "mlb" ? " active" : ""}`}
+                onClick={() => onSelectLevel("mlb")}
+              >MLB</button>
+              <button
+                type="button"
+                className={`level-tab${level === "aaa" ? " active" : ""}`}
+                onClick={() => onSelectLevel("aaa")}
+              >AAA</button>
+            </div>
+            <span className="games-tabs-divider" aria-hidden="true">|</span>
+          </>
+        )}
+        <div className="game-tabs-switcher">
+          <div
+            className={`game-tab-switch${viewMode === "all" ? " active" : ""}`}
+            onClick={handleAllGames}
+            role="button" tabIndex={0}
+          >
+            All Games
+          </div>
+          <div
+            className={`game-tab-switch${viewMode === "games" ? " active" : ""}`}
+            onClick={handleViewGames}
+            role="button" tabIndex={0}
+          >
+            View Games
+          </div>
         </div>
       </div>
       {viewMode === "games" && (

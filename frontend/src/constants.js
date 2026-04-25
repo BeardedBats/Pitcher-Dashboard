@@ -130,7 +130,8 @@ export const PITCHER_RESULTS_COLUMNS = [
   { key: "par_pct", label: "PAR%", align: "right", tooltip: "Strikeouts / Two-Strike Pitches" },
   { key: "pitches", label: "#", align: "right" },
   { key: "hrs", label: "HR", align: "right", dividerRight: true },
-  { key: "velo", label: "VELO", align: "right", tooltip: "Avg velocity of most-thrown fastball (Four-Seamer or Sinker) with delta vs. 2026 season" },
+  { key: "velo", label: "FB MPH", align: "right", headerAlign: "center", tooltip: "Avg velocity of most-thrown fastball (Four-Seamer or Sinker) with delta vs. season-to-date" },
+  { key: "velo_ext", label: "Ext", align: "right", headerAlign: "center", tooltip: "Avg release extension (ft) on the FB MPH fastball, with delta vs. season-to-date" },
 ];
 
 export const TEAM_FULL_NAMES = {
@@ -172,14 +173,19 @@ export function displayAbbrev(abbr) {
   return TEAM_ABBREV_DISPLAY[abbr] || abbr;
 }
 
-// Triple-A team abbrev → MLB parent club abbrev (2026).
-// Keys MUST match what Savant returns in `home_team`/`away_team` for AAA games.
-// Verified against Savant's CSV on 2026-04-23 — the only deviation from common
-// usage is `SL` (Salt Lake Bees), which Savant uses instead of `SLC`.
-// Always renders the parent abbrev for AAA games — even when both teams in a
-// matchup map to the same parent (e.g. an intra-org spring exhibition).
-export const AAA_AFFILIATION = {
-  // International League (IL)
+// Statcast-tracked minor league team abbrev → MLB parent club abbrev (2026).
+// Statcast covers Triple-A (IL + PCL) and the Single-A Florida State League
+// (used as Statcast's testing ground). Keys MUST match what Savant returns
+// in `home_team` / `away_team`. Verified against Savant's CSV on 2026-04-23.
+// One deviation from common usage: `SL` for Salt Lake Bees (not `SLC`).
+//
+// `displayTeamAbbrev(abbr, "aaa")` always renders the parent abbrev for any
+// minor-league row — even when both teams in a matchup map to the same parent.
+// Backward-compat: AAA_AFFILIATION (the original AAA-only map) is exported as
+// an alias of MILB_AFFILIATION since callers were already passing FSL abbrevs
+// through after the all-MiLB scope change.
+export const MILB_AFFILIATION = {
+  // International League (IL — AAA)
   BUF: "TOR",  // Buffalo Bisons
   CLT: "CWS",  // Charlotte Knights → display CHW
   COL: "CLE",  // Columbus Clippers (collides with Colorado MLB code; safe because lookup is level-gated)
@@ -201,7 +207,7 @@ export const AAA_AFFILIATION = {
   TOL: "DET",  // Toledo Mud Hens
   WOR: "BOS",  // Worcester Red Sox
 
-  // Pacific Coast League (PCL)
+  // Pacific Coast League (PCL — AAA)
   ABQ: "COL",  // Albuquerque Isotopes
   ELP: "SD",   // El Paso Chihuahuas → display SDP
   LV:  "ATH",  // Las Vegas Aviators
@@ -212,19 +218,34 @@ export const AAA_AFFILIATION = {
   SL:  "LAA",  // Salt Lake Bees (Savant uses "SL", not "SLC")
   SUG: "HOU",  // Sugar Land Space Cowboys
   TAC: "SEA",  // Tacoma Rainiers
+
+  // Florida State League (FSL — Single-A; Statcast testing ground)
+  BRD: "PIT",  // Bradenton Marauders
+  CLR: "PHI",  // Clearwater Threshers
+  DAY: "CIN",  // Daytona Tortugas
+  DUN: "TOR",  // Dunedin Blue Jays
+  FTM: "MIN",  // Fort Myers Mighty Mussels
+  JUP: "MIA",  // Jupiter Hammerheads
+  LAK: "DET",  // Lakeland Flying Tigers
+  PMB: "STL",  // Palm Beach Cardinals
+  SLU: "NYM",  // St. Lucie Mets
+  TPA: "NYY",  // Tampa Tarpons
 };
 
+// Backward-compat alias.
+export const AAA_AFFILIATION = MILB_AFFILIATION;
+
 // Resolves a team abbrev for display.
-// - At level="aaa": map AAA → parent MLB abbrev, then apply MLB display overrides.
+// - At level="aaa": map MiLB → parent MLB abbrev, then apply MLB display overrides.
 //   Always returns the parent abbrev (even on intra-org matchups), per spec.
 // - At level="mlb" (default): just apply MLB display overrides.
 export function displayTeamAbbrev(abbr, level = "mlb") {
   if (!abbr) return abbr;
   if (level === "aaa") {
-    const parent = AAA_AFFILIATION[abbr];
+    const parent = MILB_AFFILIATION[abbr];
     if (parent) return displayAbbrev(parent);
-    // Unmapped AAA team — fall through to raw abbrev (e.g. an exhibition vs.
-    // a non-affiliate). Better than dropping the label entirely.
+    // Unmapped minor-league team — fall through to raw abbrev (better than
+    // dropping the label).
   }
   return displayAbbrev(abbr);
 }

@@ -646,26 +646,12 @@ export default function App() {
       {/* === GAMES PAGE (original daily view) === */}
       {page === "games" && !cardData && (
         <>
-          <div className="level-tabs">
-            <button
-              type="button"
-              className={`level-tab${level === "mlb" ? " active" : ""}`}
-              onClick={() => selectLevel("mlb")}
-            >MLB</button>
-            <button
-              type="button"
-              className={`level-tab${level === "aaa" ? " active" : ""}`}
-              onClick={() => selectLevel("aaa")}
-            >Triple-A</button>
-          </div>
-          {games.length > 0 && (
-            <GameTabs games={games} selectedGame={selectedGame} level={level} onSelectGame={gp => {
-              if (gp !== selectedGame && !isPopState.current) {
-                pushState({ view: "game", selectedGame: gp }, "");
-              }
-              setSelectedGame(gp); setCardData(null);
-            }} />
-          )}
+          <GameTabs games={games} selectedGame={selectedGame} level={level} onSelectLevel={selectLevel} onSelectGame={gp => {
+            if (gp !== selectedGame && !isPopState.current) {
+              pushState({ view: "game", selectedGame: gp }, "");
+            }
+            setSelectedGame(gp); setCardData(null);
+          }} />
 
           {games.length > 0 && selectedGame && linescoreData && (
             <Scoreboard data={linescoreData} level={level} onInningClick={(inn, isTop) => setPbpModal({ inning: inn, isTop })} />
@@ -757,7 +743,7 @@ export default function App() {
             {headerNav}
           </div>
           {games.length > 0 && (
-            <GameTabs games={games} selectedGame={selectedGame} level={level} onSelectGame={gp => {
+            <GameTabs games={games} selectedGame={selectedGame} level={level} onSelectLevel={selectLevel} onSelectGame={gp => {
               if (gp !== selectedGame && !isPopState.current) {
                 pushState({ view: "game", selectedGame: gp }, "");
               }

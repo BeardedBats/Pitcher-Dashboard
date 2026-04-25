@@ -141,19 +141,21 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
     return Math.max(170, Math.ceil(maxLen * 7.5) + 20);
   }, [data, splitByTeam]);
 
-  // Placeholder span keeps column width stable when some rows lack delta data
-  const deltaPlaceholder = <span className="delta-placeholder" />;
+  // (----) placeholder shown whenever there's no comparison data for a cell
+  // (no prior season, new pitch type with no velo baseline, etc.). Keeps
+  // column widths consistent so cells with deltas line up with cells without.
+  const noDeltaEl = <span className="delta-value delta-neutral">(----)</span>;
   const deltaNew = <span className="delta-value delta-new">(NEW)</span>;
 
   const renderDelta = (key, currentVal, pitchName, hand) => {
     if (!shouldShowDelta(key)) return null;
-    if (!hasAnySeasonData) return null;
-    if (!seasonAvgs || !pitchName) return deltaPlaceholder;
+    // No season averages loaded yet, or this pitch type has no name
+    if (!seasonAvgs || !pitchName) return noDeltaEl;
     const avg = seasonAvgs[pitchName];
-    // Pitch not in previous season — show (NEW) on velo column only, placeholder on others
+    // Pitch type not in previous season — (NEW) on velo, (----) on others
     if (!avg) {
       if (key === "velo") return deltaNew;
-      return deltaPlaceholder;
+      return noDeltaEl;
     }
     // Resolve season value for this delta key.
     // For usage_vs_l / usage_vs_r, prefer the hand-split value from the
@@ -168,7 +170,7 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
     } else {
       seasonVal = avg[key];
     }
-    if (seasonVal == null) return deltaPlaceholder;
+    if (seasonVal == null) return noDeltaEl;
     if (key === "ihb") seasonVal = -seasonVal;
     const delta = currentVal - seasonVal;
     const usageKeys = ["usage", "usage_vs_r", "usage_vs_l"];
@@ -254,10 +256,10 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
   // Value + delta inline: td's text-align:right aligns the whole group.
   // cell-delta is a fixed-width inline-block so its ) aligns with the header.
   const cellDelta = (valEl, deltaEl, colKey) => {
-    if (!showChange || !hasAnySeasonData || deltaEl === null) return valEl;
+    if (!showChange || deltaEl === null) return valEl;
     if (isMobile) return valEl; // Hide deltas on mobile
     const cls = NARROW_DELTA_KEYS.has(colKey) ? "cell-delta cell-delta-narrow" : "cell-delta";
-    return <span className="cell-with-delta">{valEl}<span className={cls}>{deltaEl || deltaPlaceholder}</span></span>;
+    return <span className="cell-with-delta">{valEl}<span className={cls}>{deltaEl || noDeltaEl}</span></span>;
   };
 
   // Helper to get emphasis frame for velo and ihb columns
