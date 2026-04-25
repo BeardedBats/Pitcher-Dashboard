@@ -1813,7 +1813,48 @@ _TEAM_ABBREV = {
 }
 
 _schedule_cache = {}  # { date_str: (timestamp, games_list) }
-SCHEDULE_CACHE_TTL = 120  # 2 minutes
+SCHEDULE_CACHE_TTL = 120  # past/future dates can sit a little longer
+LIVE_SCHEDULE_CACHE_TTL = 60  # today's game tabs should feel near-live
+
+_NOT_STARTED_GAME_STATES = frozenset({
+    "Scheduled", "Pre-Game", "Warmup", "Delayed Start", "Cancelled", "Suspended",
+})
+
+
+def _schedule_cache_ttl(date_str):
+    return LIVE_SCHEDULE_CACHE_TTL if _is_today(date_str) else SCHEDULE_CACHE_TTL
+
+
+def _cached_live_day_game_pks(date_str, level=DEFAULT_LEVEL):
+    """Return today's cached game_pks when a fresh daily DataFrame is already in
+    memory. This lets the games list reuse recent pitch-data work without
+    re-pulling Savant just to compute `has_data`.
+    """
+    if not _is_today(date_str):
+        return None
+    cache_key = (level, date_str)
+    cached = _cache.get(cache_key)
+    if cached is None:
+        return None
+    if isinstance(cached, tuple):
+        ts, df = cached
+        if (time.time() - ts) > LIVE_CACHE_TTL:
+            return None
+    else:
+        # Old-style cache entries have no timestamp; avoid trusting them for live
+        # `has_data` decisions where false negatives are worse than omitting it.
+        return None
+    if df is None or df.empty or "game_pk" not in df.columns:
+        return set()
+    return {int(gpk) for gpk in df["game_pk"].dropna().unique()}
+
+
+def _game_has_started(game):
+    status = (game.get("status") or "").strip()
+    abstract_state = (game.get("abstract_state") or "").strip()
+    if abstract_state in {"Live", "Final"}:
+        return True
+    return status not in _NOT_STARTED_GAME_STATES and status != ""
 
 def _get_mlb_schedule(date_str, force_refresh=False, level=DEFAULT_LEVEL):
     """Get full game list from MLB Stats API (includes all game types). Cached.
@@ -1821,10 +1862,11 @@ def _get_mlb_schedule(date_str, force_refresh=False, level=DEFAULT_LEVEL):
     level=mlb hits sportId=1+51, level=aaa hits sportId=11."""
     cache_key = (level, date_str)
     redis_key = f"schedule:{level}_{date_str}"
+    ttl = _schedule_cache_ttl(date_str)
     if not force_refresh:
         if cache_key in _schedule_cache:
             ts, games = _schedule_cache[cache_key]
-            if time.time() - ts < SCHEDULE_CACHE_TTL:
+            if time.time() - ts < ttl:
                 return games
         # L2: Redis
         redis_val = redis_get(redis_key)
@@ -1892,7 +1934,7 @@ def _get_mlb_schedule(date_str, force_refresh=False, level=DEFAULT_LEVEL):
                     "inning_half": inning_half,
                 })
         _schedule_cache[cache_key] = (time.time(), games)
-        redis_set(redis_key, games, ttl=SCHEDULE_CACHE_TTL)
+        redis_set(redis_key, games, ttl=ttl)
         return games
     except Exception as e:
         print(f"MLB Schedule API error ({level}): {e}")
@@ -1954,21 +1996,45 @@ def get_games(date_str, level=DEFAULT_LEVEL):
         if cached is not None:
             return cached
 
-    df = fetch_date(date_str, level=level)  # This now includes MLB API fallback data
-    data_pks = set(df["game_pk"].unique()) if not df.empty else set()
-
     # Try MLB Stats API for full game list
     mlb_games = _get_mlb_schedule(date_str, level=level)
     if mlb_games:
+        # Today: keep the games list lightweight by reusing only fresh in-memory
+        # day data when it already exists. Otherwise return schedule/status info
+        # without forcing a new Savant pull just to derive `has_data`.
+        if not cacheable:
+            data_pks = _cached_live_day_game_pks(date_str, level=level)
+            result = []
+            for g in mlb_games:
+                row = dict(g)
+                if data_pks is not None:
+                    row["has_data"] = row["game_pk"] in data_pks
+                elif _game_has_started(row):
+                    # We know the game is underway/final, but we intentionally
+                    # skip the heavy day-data fetch here. Leave `has_data`
+                    # unknown so the UI stays clickable without painting a false
+                    # "no data" state.
+                    row["has_data"] = None
+                else:
+                    row["has_data"] = False
+                result.append(row)
+            return sorted(result, key=lambda g: g.get("game_date_utc", "") or "9999")
+
+        df = fetch_date(date_str, level=level)  # This includes MLB API fallback data
+        data_pks = set(df["game_pk"].unique()) if not df.empty else set()
+        result = []
         for g in mlb_games:
-            g["has_data"] = g["game_pk"] in data_pks
+            row = dict(g)
+            row["has_data"] = row["game_pk"] in data_pks
+            result.append(row)
         # Sort by game start time (UTC ISO string sorts correctly)
-        result = sorted(mlb_games, key=lambda g: g.get("game_date_utc", "") or "9999")
+        result = sorted(result, key=lambda g: g.get("game_date_utc", "") or "9999")
         if cacheable:
             set_agg_cache(cache_key, result)
         return result
 
     # Fallback to Savant-only if MLB API fails
+    df = fetch_date(date_str, level=level)  # This now includes MLB API fallback data
     if df.empty:
         return []
     games = []

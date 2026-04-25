@@ -47,6 +47,19 @@ function getYesterdayEST() {
   return `${y}-${m}-${d}`;
 }
 
+function getBaseballDateEST() {
+  // Match the backend's "baseball day" rollover: before 5 AM ET, treat the
+  // current slate as yesterday's date.
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+  if (now.getHours() < 5) {
+    now.setDate(now.getDate() - 1);
+  }
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 // Helper: check if Ctrl (or Cmd on Mac) or middle-click was held during click event
 function isNewWindowClick(e) {
   return e && (e.ctrlKey || e.metaKey || e.button === 1);
@@ -154,6 +167,38 @@ export default function App() {
     const t = setTimeout(() => setToast(null), 3000);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // Poll only today's games list so scores/statuses stay fresh without
+  // reloading the heavier pitch-data tables every minute.
+  useEffect(() => {
+    if (!date || page !== "games" || date !== getBaseballDateEST()) return;
+    let cancelled = false;
+    let timer = null;
+
+    const pollGames = async () => {
+      if (document.hidden) {
+        timer = setTimeout(pollGames, 60000);
+        return;
+      }
+      try {
+        const nextGames = await fetchGames(date, level);
+        if (!cancelled) {
+          setGames(nextGames);
+        }
+      } catch {
+        // Keep the current list and try again on the next interval.
+      }
+      if (!cancelled) {
+        timer = setTimeout(pollGames, 60000);
+      }
+    };
+
+    timer = setTimeout(pollGames, 60000);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [date, level, page]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
