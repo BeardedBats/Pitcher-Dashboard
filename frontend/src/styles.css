@@ -740,8 +740,6 @@ canvas { display: block; border: none; border-radius: var(--radius-sm); }
   gap: 16px; margin-bottom: 10px; position: relative;
 }
 .card-top-row .back-btn { margin-bottom: 0; position: absolute; left: 0; bottom: 0; }
-/* Spacer pushes the ErrorPill to the far right of the row when present. */
-.card-top-row-spacer { flex: 1 1 auto; }
 .card-top-row .error-pill { position: absolute; right: 0; bottom: 0; }
 
 /* Player-page back row: back button left, ErrorPill right (above the card). */

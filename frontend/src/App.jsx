@@ -779,8 +779,6 @@ export default function App() {
               {linescoreData && (
                 <Scoreboard data={linescoreData} level={level} pitcherId={cardData?.result?.pitcher_id} onInningClick={(inn, isTop) => setPbpModal({ inning: inn, isTop })} />
               )}
-              {/* Pulled to the far right of the row, after Scoreboard */}
-              <div className="card-top-row-spacer" />
               <ErrorPill
                 errors={cardData?.errors}
                 context={{
