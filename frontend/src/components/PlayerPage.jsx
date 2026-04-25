@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { PITCH_COLORS, CARD_PITCH_DATA_COLUMNS, displayTeamAbbrev } from "../constants";
+import { PITCH_COLORS, CARD_PITCH_DATA_COLUMNS, displayTeamAbbrev, isAAATeam } from "../constants";
 import { fetchSeasonAverages, fetchPitcherSchedule } from "../utils/api";
 import { getOpponentTierColor } from "../constants";
 import useIsMobile from "../hooks/useIsMobile";
@@ -111,11 +111,19 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick, level = "ml
     return [];
   }, [data, batterFilter, gameFilter]);
 
-  // Sorted game log (by date ascending for numbering, descending for display)
+  // Sorted game log (by date ascending for numbering, descending for display).
+  // For AAA: drop FSL/non-AAA rows from the displayed log so the "Across X
+  // Triple-A Games" header matches the table contents 1:1. The data scope
+  // is limited to Statcast-tracked levels (AAA + FSL); non-Statcast minors
+  // (AA, High-A non-FSL, Low-A, Rookie) never appear in this pipeline.
   const sortedLog = useMemo(() => {
     if (!data?.game_log) return [];
-    return [...data.game_log].sort((a, b) => a.date.localeCompare(b.date));
-  }, [data]);
+    let log = [...data.game_log].sort((a, b) => a.date.localeCompare(b.date));
+    if (level === "aaa") {
+      log = log.filter(g => isAAATeam(g.team));
+    }
+    return log;
+  }, [data, level]);
 
   // Fetch next scheduled starts (must be after sortedLog definition).
   // Skip for AAA — the schedule sheet is MLB-only.
@@ -281,7 +289,11 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick, level = "ml
           </div>
           {hasData && (
             <div className="card-gameline-box">
-              <div className="card-gameline-header">Regular Season</div>
+              <div className="card-gameline-header">
+                {level === "aaa"
+                  ? `Across ${sortedLog.length} Triple-A Game${sortedLog.length === 1 ? "" : "s"}`
+                  : "Regular Season"}
+              </div>
               <table className="card-gameline-table">
                 <thead>
                   <tr>

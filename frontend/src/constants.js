@@ -179,13 +179,11 @@ export function displayAbbrev(abbr) {
 // in `home_team` / `away_team`. Verified against Savant's CSV on 2026-04-23.
 // One deviation from common usage: `SL` for Salt Lake Bees (not `SLC`).
 //
-// `displayTeamAbbrev(abbr, "aaa")` always renders the parent abbrev for any
-// minor-league row — even when both teams in a matchup map to the same parent.
-// Backward-compat: AAA_AFFILIATION (the original AAA-only map) is exported as
-// an alias of MILB_AFFILIATION since callers were already passing FSL abbrevs
-// through after the all-MiLB scope change.
-export const MILB_AFFILIATION = {
-  // International League (IL — AAA)
+// AAA and FSL are split into separate maps so callers can distinguish levels
+// (e.g. PlayerPage filters game log to AAA-only). MILB_AFFILIATION is the
+// composed map used by `displayTeamAbbrev(abbr, "aaa")`.
+export const AAA_AFFILIATION = {
+  // International League (IL)
   BUF: "TOR",  // Buffalo Bisons
   CLT: "CWS",  // Charlotte Knights → display CHW
   COL: "CLE",  // Columbus Clippers (collides with Colorado MLB code; safe because lookup is level-gated)
@@ -207,7 +205,7 @@ export const MILB_AFFILIATION = {
   TOL: "DET",  // Toledo Mud Hens
   WOR: "BOS",  // Worcester Red Sox
 
-  // Pacific Coast League (PCL — AAA)
+  // Pacific Coast League (PCL)
   ABQ: "COL",  // Albuquerque Isotopes
   ELP: "SD",   // El Paso Chihuahuas → display SDP
   LV:  "ATH",  // Las Vegas Aviators
@@ -218,7 +216,9 @@ export const MILB_AFFILIATION = {
   SL:  "LAA",  // Salt Lake Bees (Savant uses "SL", not "SLC")
   SUG: "HOU",  // Sugar Land Space Cowboys
   TAC: "SEA",  // Tacoma Rainiers
+};
 
+export const FSL_AFFILIATION = {
   // Florida State League (FSL — Single-A; Statcast testing ground)
   BRD: "PIT",  // Bradenton Marauders
   CLR: "PHI",  // Clearwater Threshers
@@ -232,8 +232,13 @@ export const MILB_AFFILIATION = {
   TPA: "NYY",  // Tampa Tarpons
 };
 
-// Backward-compat alias.
-export const AAA_AFFILIATION = MILB_AFFILIATION;
+export const MILB_AFFILIATION = { ...AAA_AFFILIATION, ...FSL_AFFILIATION };
+
+// Membership tests for filtering MiLB game rows by level.
+export const AAA_TEAMS = new Set(Object.keys(AAA_AFFILIATION));
+export const FSL_TEAMS = new Set(Object.keys(FSL_AFFILIATION));
+export const isAAATeam = (abbr) => AAA_TEAMS.has(abbr);
+export const isFSLTeam = (abbr) => FSL_TEAMS.has(abbr);
 
 // Resolves a team abbrev for display.
 // - At level="aaa": map MiLB → parent MLB abbrev, then apply MLB display overrides.
