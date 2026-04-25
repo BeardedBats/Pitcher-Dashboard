@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { PITCH_COLORS, CARD_PITCH_DATA_COLUMNS, displayTeamAbbrev, isAAATeam } from "../constants";
-import { fetchSeasonAverages, fetchPitcherSchedule } from "../utils/api";
+import { PITCH_COLORS, CARD_PITCH_DATA_COLUMNS, displayTeamAbbrev, displayAbbrev as displayMlbAbbrev, isAAATeam } from "../constants";
+import { fetchSeasonAverages, fetchPitcherSchedule, fetchGameLinescore } from "../utils/api";
 import { getOpponentTierColor } from "../constants";
 import useIsMobile from "../hooks/useIsMobile";
 import PitchDataTable from "./PitchDataTable";
@@ -19,8 +19,13 @@ const API = window.__BACKEND_PORT__
 
 export default function PlayerPage({ pitcherId, onBack, onGameClick, onChangeLevel, level = "mlb" }) {
   const isMobile = useIsMobile();
-  // Local alias to avoid touching every existing displayAbbrev call site.
-  const displayAbbrev = (abbr) => displayTeamAbbrev(abbr, level);
+  // For MiLB views we want the raw minor-league abbreviation (BUF, OKC, …)
+  // in the game log and header — not the parent MLB org. Parent abbrev is
+  // used only as the org suffix after the player name (e.g., "Jackson
+  // Ferris (LAD)"). At MLB level this collapses to the standard MLB display
+  // abbrev mapping, so MLB views are unchanged.
+  const displayAbbrev = (abbr) => level === "aaa" ? displayMlbAbbrev(abbr) : displayTeamAbbrev(abbr, level);
+  const parentOrg = (abbr) => level === "aaa" ? displayTeamAbbrev(abbr, level) : null;
   // Track whether we've already attempted the smart redirect for this pitcher
   // so we don't bounce back and forth between MLB / Minors views on every
   // re-render (the redirect changes `level`, which would re-trigger).
@@ -49,6 +54,12 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick, onChangeLev
   // players returning from injury / first-year starters / etc.)
   const [prevSeason, setPrevSeason] = useState(null);
   const currentYear = new Date().getFullYear();
+
+  // Live-game tracking for the regular season table. If the most recent
+  // game in the log is currently in progress (linescore.is_final === false)
+  // we project a W/L/ND from the current score and append "*" in the Dec
+  // column to flag it as not yet final.
+  const [liveGame, setLiveGame] = useState(null); // { game_pk, projectedDecision }
 
   useEffect(() => {
     setLoading(true);
@@ -166,6 +177,40 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick, onChangeLev
         .catch(() => setSchedule(null));
     }
   }, [data?.info?.name, sortedLog, level]);
+
+  // Detect a live game on the latest entry in the regular season log. We
+  // poll every 60s while it stays live so the projected decision tracks
+  // the current score. is_final === false from the linescore endpoint is
+  // the source of truth — game_log boxscores can lag mid-game.
+  useEffect(() => {
+    if (sortedLog.length === 0) { setLiveGame(null); return; }
+    const last = sortedLog[sortedLog.length - 1];
+    if (!last?.game_pk) { setLiveGame(null); return; }
+    let cancelled = false;
+    const compute = (ls) => {
+      if (!ls || ls.is_final !== false || !ls.totals) return null;
+      const homeRuns = ls.totals.home?.runs || 0;
+      const awayRuns = ls.totals.away?.runs || 0;
+      const isHome = last.home_team && last.team === last.home_team;
+      const teamRuns = isHome ? homeRuns : awayRuns;
+      const oppRuns = isHome ? awayRuns : homeRuns;
+      let dec = "ND";
+      if (teamRuns > oppRuns) dec = "W";
+      else if (teamRuns < oppRuns) dec = "L";
+      return { game_pk: last.game_pk, projectedDecision: dec };
+    };
+    const doFetch = () => {
+      fetchGameLinescore(last.game_pk)
+        .then(ls => { if (!cancelled) setLiveGame(compute(ls)); })
+        .catch(() => { if (!cancelled) setLiveGame(null); });
+    };
+    doFetch();
+    const interval = setInterval(() => {
+      // Stop polling once it's no longer live.
+      setLiveGame(prev => { if (prev) doFetch(); return prev; });
+    }, 60000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [sortedLog]);
 
   // Game options for dropdown: numbered by date order
   const gameOptions = useMemo(() => {
@@ -323,26 +368,41 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick, onChangeLev
         <div className="card-top">
           <div className="card-info">
             {(() => {
-              // MLB | Minors pill toggle — only when pitcher has games at both levels
+              // MLB | Minors pill toggle — only when pitcher has games at both
+              // levels. When both pills render, they share the top row with
+                // the player name and are right-aligned via flexbox so their
+              // top edge lines up with the "Regular Season" table header.
               const hasMlb = !!(data?.season_totals_mlb && data.season_totals_mlb.games);
               const hasMilb = !!(data?.season_totals_milb && data.season_totals_milb.games);
-              if (!hasMlb || !hasMilb || !onChangeLevel) return null;
+              const showPills = hasMlb && hasMilb && !!onChangeLevel;
+              const nameNode = (
+                <div className="card-name">{(() => {
+                  if (level !== "aaa" || !info.teams || info.teams.length === 0) return info.name;
+                  const parents = info.teams.map(t => parentOrg(t)).filter(Boolean);
+                  if (parents.length === 0) return info.name;
+                  const org = parents[parents.length - 1];
+                  return `${info.name} (${org})`;
+                })()}</div>
+              );
+              if (!showPills) return nameNode;
               return (
-                <div className="player-level-pills">
-                  <button
-                    type="button"
-                    className={`level-tab${level === "mlb" ? " active" : ""}`}
-                    onClick={() => onChangeLevel("mlb")}
-                  >MLB</button>
-                  <button
-                    type="button"
-                    className={`level-tab${level === "aaa" ? " active" : ""}`}
-                    onClick={() => onChangeLevel("aaa")}
-                  >Minors</button>
+                <div className="player-name-row" style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
+                  {nameNode}
+                  <div className="player-level-pills">
+                    <button
+                      type="button"
+                      className={`level-tab${level === "mlb" ? " active" : ""}`}
+                      onClick={() => onChangeLevel("mlb")}
+                    >MLB</button>
+                    <button
+                      type="button"
+                      className={`level-tab${level === "aaa" ? " active" : ""}`}
+                      onClick={() => onChangeLevel("aaa")}
+                    >Minors</button>
+                  </div>
                 </div>
               );
             })()}
-            <div className="card-name">{info.name}</div>
             <div className="card-meta">
               {info.teams?.map(t => displayAbbrev(t)).join("/") || ""} · {info.hand === "R" ? "RHP" : "LHP"}
             </div>
@@ -365,22 +425,28 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick, onChangeLev
           {hasData && (
             <div className="card-gameline-box">
               <div className="card-gameline-header">
-                {level === "aaa"
+                <span>{level === "aaa"
                   ? `Across ${sortedLog.length} Triple-A Game${sortedLog.length === 1 ? "" : "s"}`
-                  : "Regular Season"}
+                  : "Regular Season"}</span>
+                {liveGame && <span style={{ fontSize: 10, color: "var(--text-dim)", fontWeight: 400, marginLeft: "auto" }}>* = Decision if the game ended now</span>}
               </div>
               <table className="card-gameline-table">
                 <thead>
                   <tr>
-                    <th>Date</th><th>Opp</th><th>Dec.</th><th>IP</th><th>R</th><th>ER</th><th>Hits</th><th>BB</th>
+                    <th>Date</th><th>Opp</th><th>Dec</th><th>IP</th><th>R</th><th>ER</th><th>Hits</th><th>BB</th>
                     <th className="gameline-divider-right">K</th>
                     <th>Whiffs</th><th>SwStr%</th><th>CSW%</th><th>2Str%</th><th>PAR%</th><th>#</th><th>HR</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sortedLog.map((row, i) => {
-                    const dec = row.decision || "ND";
-                    const decColor = dec === "W" ? "#6DE95D" : dec === "L" ? "#FF839B" : "#8a8eb0";
+                    const isLive = liveGame && liveGame.game_pk === row.game_pk;
+                    // For a live row with no logged decision yet, project from
+                    // the current score and tag with "*". A real decision
+                    // already set on the boxscore (rare mid-game) wins.
+                    const baseDec = row.decision || (isLive ? liveGame.projectedDecision : "ND");
+                    const dec = isLive && !row.decision ? `${baseDec}*` : baseDec;
+                    const decColor = baseDec === "W" ? "#6DE95D" : baseDec === "L" ? "#FF839B" : "#8a8eb0";
                     const dateParts = row.date ? row.date.replace(/^\d{4}-/, "").split("-") : [];
                     const dateShort = dateParts.length === 2 ? `${parseInt(dateParts[0], 10)}-${dateParts[1]}` : row.date;
                     return (
@@ -391,7 +457,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick, onChangeLev
                       >
                         <td><a href={`#card/${row.date}/${pitcherId}/${row.game_pk}`} rel="nofollow" onClick={(e) => e.preventDefault()} onMouseDown={(e) => { if (e.button === 1) e.stopPropagation(); }} style={{ color: "inherit", textDecoration: "none" }}>{dateShort}</a></td>
                         <td>{row.team && row.home_team && row.team !== row.home_team ? "@ " : ""}{displayAbbrev(row.opponent)}</td>
-                        <td style={{ color: decColor, fontWeight: dec !== "ND" ? 700 : 500 }}>{dec}</td>
+                        <td style={{ color: decColor, fontWeight: baseDec !== "ND" ? 700 : 500 }}>{dec}</td>
                         <td>{row.ip}</td>
                         <td>{row.runs != null ? row.runs : "—"}</td>
                         <td>{row.er}</td>

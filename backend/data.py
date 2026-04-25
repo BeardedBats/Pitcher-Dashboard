@@ -35,7 +35,10 @@ _override_version = 0  # Incremented on every save/remove to bust agg caches
 # v9: pitcher card + player page responses gain `season_totals_mlb` /
 #     `season_totals_milb` / `season_totals_primary` / `errors`; MiLB totals
 #     fold in AA-and-below stats via per-game MLB Stats API PBP fetches.
-CARD_SCHEMA_VERSION = 9
+# v10: AAA player pages normalize player_name ("Last, First" → "First Last")
+#     and pitch_name (raw Savant "4-Seam Fastball" → "Four-Seamer") so MiLB
+#     pitch tables consolidate one row per type and names display correctly.
+CARD_SCHEMA_VERSION = 10
 
 # Allowed level values. New levels must be added here and exposed via the
 # frontend `level` state and any cron schedules.
@@ -1051,6 +1054,18 @@ def fetch_pitcher_season(pitcher_id, season_year, level=DEFAULT_LEVEL):
             _season_cache[cache_key] = pd.DataFrame()
             return _season_cache[cache_key]
         df = pd.read_csv(io.StringIO(content), low_memory=False)
+        if not df.empty:
+            # Match the normalization fetch_date applies so downstream callers
+            # (player page, season averages, full-MiLB compose) see consistent
+            # name format and pitch_name values regardless of data origin.
+            # Without this, raw Savant pitch_name values like "4-Seam Fastball"
+            # diverged from the MLB Stats API path's "Four-Seamer" output and
+            # produced duplicate rows when concatenated.
+            if "player_name" in df.columns:
+                df["player_name"] = _fix_names_vectorized(df["player_name"])
+            if "pitch_type" in df.columns:
+                df["pitch_name"] = df["pitch_type"].map(PITCH_TYPE_MAP)
+                df["pitch_name"] = df["pitch_name"].fillna("Unclassified")
         _season_cache[cache_key] = df if not df.empty else pd.DataFrame()
         return _season_cache[cache_key]
     except Exception as e:

@@ -81,6 +81,13 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
   const dateDisplay = date || "";
   const isHome = result && result.home_team === team;
   const oppPrefix = isHome ? "vs." : "@";
+  // For MiLB cards, suffix the player name with their parent MLB org so the
+  // org affiliation is always visible (e.g., "Jackson Ferris (LAD)"). The
+  // rest of the card uses the raw MiLB abbreviation (OKC, BUF, ...) instead
+  // of the parent so opponent matchups read naturally at the level played.
+  const parentOrgAbbrev = level === "aaa" ? displayTeamAbbrev(team, level) : null;
+  const milbAbbrev = (abbr) => level === "aaa" ? displayAbbrev(abbr) : displayTeamAbbrev(abbr, level);
+  const nameWithOrg = parentOrgAbbrev ? `${name} (${parentOrgAbbrev})` : name;
 
   // Determine if game is final and compute projected decision for live games
   const isFinal = linescoreData?.is_final !== false; // default to true if unknown
@@ -185,7 +192,9 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
   // `season_totals` as belonging to the card's level.
   const legacySeasonTotals = (!seasonTotalsMlb && !seasonTotalsMilb && inlineSeasonTotals && inlineSeasonTotals.games)
     ? inlineSeasonTotals : null;
-  const showBothLevels = !!seasonTotalsMlb && !!seasonTotalsMilb;
+  // MLB game cards never display the MiLB row — only AAA cards show both
+  // levels when the pitcher has games at MLB and MiLB this season.
+  const showBothLevels = level === "aaa" && !!seasonTotalsMlb && !!seasonTotalsMilb;
 
   // Fetch next scheduled starts. The schedule sheet is MLB-only (Probables
   // tab on the staff Google Sheet) — skip the fetch entirely for AAA so
@@ -299,18 +308,18 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
       <div className="card-top">
         <div className="card-info">
           {onPlayerClick && pitcher_id ? (
-            <a className="card-name" href={"#player/" + pitcher_id} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); onPlayerClick(pitcher_id, e); } }} style={{ cursor: "pointer", textDecoration: "none" }}>{name}</a>
+            <a className="card-name" href={"#player/" + pitcher_id} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); onPlayerClick(pitcher_id, e); } }} style={{ cursor: "pointer", textDecoration: "none" }}>{nameWithOrg}</a>
           ) : (
-            <div className="card-name">{name}</div>
+            <div className="card-name">{nameWithOrg}</div>
           )}
           <div className="card-meta">
-            {displayTeamAbbrev(team, level)} · {hand}HP ·{" "}
+            {milbAbbrev(team)} · {hand}HP ·{" "}
             {onGameClick ? (
               <a className="card-game-link" href={`#card/${date}/${pitcher_id}/${result?.game_pk || ""}`} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); onGameClick(e); } }} role="button" tabIndex={0}>
-                {dateDisplay} {oppPrefix} {displayTeamAbbrev(opponent, level)}
+                {dateDisplay} {oppPrefix} {milbAbbrev(opponent)}
               </a>
             ) : (
-              <span>{dateDisplay} {oppPrefix} {displayTeamAbbrev(opponent, level)}</span>
+              <span>{dateDisplay} {oppPrefix} {milbAbbrev(opponent)}</span>
             )}
           </div>
           {cardData.game_weather && (
@@ -347,14 +356,14 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
             <table className="card-gameline-table">
               <thead>
                 <tr>
-                  <th>Pitcher</th><th>Dec.</th><th>IP</th><th>R</th><th>ER</th><th>Hits</th><th>BB</th>
+                  <th>Pitcher</th><th>Dec</th><th>IP</th><th>R</th><th>ER</th><th>Hits</th><th>BB</th>
                   <th className="gameline-divider-right">K</th>
                   <th>Whiffs</th><th>SwStr%</th><th>CSW%</th><th>Strike%</th><th>2Str%</th><th>PAR%</th><th>#</th><th>HR</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td className="card-pitcher-name" style={{ color: "#ffc277" }}>{name}</td>
+                  <td className="card-pitcher-name" style={{ color: "#ffc277" }}>{nameWithOrg}</td>
                   {(() => {
                     const dec = result.decision || (projectedDecision ? projectedDecision : "ND");
                     const isProjected = !result.decision && projectedDecision;
@@ -431,8 +440,11 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                       renderTotalsRow(seasonTotalsMilb, "MiLB Total", "row-milb"),
                     ];
                   }
-                  // Single-level: show whichever has data, labeled "Season Total"
-                  const single = seasonTotalsMlb || seasonTotalsMilb || legacySeasonTotals;
+                  // Single-level: pick the level-appropriate totals so MLB
+                  // cards never fall back to MiLB data and vice versa.
+                  const single = level === "aaa"
+                    ? (seasonTotalsMilb || legacySeasonTotals)
+                    : (seasonTotalsMlb || legacySeasonTotals);
                   return renderTotalsRow(single, "Season Total", "row-single");
                 })()}
               </tbody>
