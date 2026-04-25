@@ -22,7 +22,7 @@ from data import (
     get_override_version, CARD_SCHEMA_VERSION,
     is_custom_season_range, LEVELS, DEFAULT_LEVEL,
     fetch_pitcher_full_milb_season, get_milb_errors, _clear_milb_errors,
-    get_stat_lines_refresh, record_stat_lines_refresh,
+    get_stat_lines_refresh, record_stat_lines_refresh, fetch_game_pitches,
 )
 from aggregation import (
     aggregate_pitch_data, aggregate_pitcher_results, get_pitcher_card,
@@ -223,7 +223,7 @@ def _resolve_stat_lines_updated_at(date_str: str, level: str):
 
 
 def _build_selected_game_payload(date_str: str, game_pk: int, level: str):
-    df = fetch_date(date_str, level=level)
+    df = fetch_game_pitches(date_str, game_pk, level=level)
     pitch_data = aggregate_pitch_data(date_str, game_pk, level=level, df=df)
     results_data = aggregate_pitcher_results(date_str, game_pk, level=level, df=df)
     return {
@@ -913,12 +913,13 @@ def cron_warmup_daily_cards(request: Request, level: str = Query(DEFAULT_LEVEL))
 def _get_live_pitchers(today: str, level: str = DEFAULT_LEVEL):
     """Query MLB Stats API for currently live games and return the set of
     pitcher IDs currently on the mound, plus a map of game_pk → game status.
-    Returns (active_pitcher_ids: set, game_statuses: dict[int, str])."""
+    Returns (active_pitcher_ids: set, live_game_pks: set, game_statuses: dict[int, str])."""
     import requests as _req
     sport_id = "11" if level == "aaa" else "1"
     url = (f"https://statsapi.mlb.com/api/v1/schedule?sportId={sport_id}"
            f"&date={today}&hydrate=linescore,game(content(summary))")
     active = set()
+    live_games = set()
     statuses = {}
     try:
         resp = _req.get(url, timeout=10)
@@ -930,6 +931,7 @@ def _get_live_pitchers(today: str, level: str = DEFAULT_LEVEL):
                 statuses[gpk] = state
                 if state != "Live":
                     continue
+                live_games.add(int(gpk))
                 # Get current pitcher from linescore defense
                 ls = g.get("linescore", {})
                 defense = ls.get("defense", {})
@@ -939,7 +941,7 @@ def _get_live_pitchers(today: str, level: str = DEFAULT_LEVEL):
                     active.add(int(pid))
     except Exception as e:
         print(f"[LiveCards/{level}] MLB schedule error: {e}")
-    return active, statuses
+    return active, live_games, statuses
 
 
 @app.get("/api/cron/warmup-live-cards")
@@ -962,7 +964,7 @@ def cron_warmup_live_cards(request: Request, level: str = Query(DEFAULT_LEVEL)):
         today = _now_et().strftime("%Y-%m-%d")
 
         # 1. Get currently active pitchers from MLB Stats API
-        active_pids, game_statuses = _get_live_pitchers(today, level=lv)
+        active_pids, _live_games, game_statuses = _get_live_pitchers(today, level=lv)
 
         # 2. Load previous run's active set from Redis
         redis_key = f"live_cards_active:{lv}_{today}"
@@ -1040,6 +1042,51 @@ def cron_warmup_live_cards(request: Request, level: str = Query(DEFAULT_LEVEL)):
 
 
 # ── Manual refresh endpoint (called by the refresh button) ──
+@app.get("/api/cron/warmup-live-game-views")
+def cron_warmup_live_game_views(request: Request, level: str = Query(DEFAULT_LEVEL)):
+    """Every minute during game hours: pre-compute selected-game payloads for
+    currently live games so homepage game views mostly read a hot cache."""
+    auth = request.headers.get("authorization")
+    cron_secret = os.environ.get("CRON_SECRET")
+    if _IS_SERVERLESS and cron_secret and auth != f"Bearer {cron_secret}":
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    try:
+        lv = _resolve_level(level)
+        today = _now_et().strftime("%Y-%m-%d")
+        _active_pids, live_games, _statuses = _get_live_pitchers(today, level=lv)
+
+        if not live_games:
+            return {"status": "no_games", "date": today, "level": lv, "warmed": 0}
+
+        warmed = 0
+        skipped_empty = 0
+        for gpk in sorted(live_games):
+            agg_key = (
+                f"game_view_{lv}_{today}_{int(gpk)}"
+                f"_v{get_override_version()}_s{CARD_SCHEMA_VERSION}"
+            )
+            try:
+                payload = _build_selected_game_payload(today, int(gpk), level=lv)
+                if payload.get("pitchData") or payload.get("resultsData"):
+                    set_agg_cache(agg_key, payload)
+                    warmed += 1
+                else:
+                    skipped_empty += 1
+            except Exception as e:
+                print(f"[LiveGameViews/{lv}] Game error {gpk}: {e}")
+
+        return {
+            "status": "ok",
+            "date": today,
+            "level": lv,
+            "live_games": len(live_games),
+            "warmed": warmed,
+            "skipped_empty": skipped_empty,
+        }
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.post("/api/refresh")
 def manual_refresh(level: str = Query(DEFAULT_LEVEL)):
     """Lightweight refresh: clear only today's caches and re-fetch.

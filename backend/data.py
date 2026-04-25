@@ -957,6 +957,36 @@ def _fetch_missing_from_mlb_api(date_str, savant_pks):
                 print(f"MLB API fallback error for game {futures[f]}: {e}")
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
+
+def _postprocess_pitch_df(df, level=DEFAULT_LEVEL):
+    """Apply shared name/team/pitch-type normalization and overrides."""
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    df = df.copy()
+    # Resolve batter IDs to names where batter_name is missing/empty
+    if "batter" in df.columns:
+        if "batter_name" not in df.columns:
+            df["batter_name"] = _resolve_batter_names(df["batter"])
+        else:
+            missing_mask = (
+                df["batter_name"].isna()
+                | (df["batter_name"].astype(str).str.strip() == "")
+                | (df["batter_name"].astype(str) == "nan")
+            )
+            if missing_mask.any():
+                resolved = _resolve_batter_names(df.loc[missing_mask, "batter"])
+                df.loc[missing_mask, "batter_name"] = resolved.values
+    if "player_name" in df.columns:
+        df["player_name"] = _fix_names_vectorized(df["player_name"])
+    # Always map pitch_name from pitch_type codes for consistent naming
+    if "pitch_type" in df.columns:
+        df["pitch_name"] = df["pitch_type"].map(PITCH_TYPE_MAP)
+        df["pitch_name"] = df["pitch_name"].fillna("Unclassified")
+    df = _assign_teams_vectorized(df)
+    # Apply pitch reclassification overrides (level-filtered)
+    return _apply_overrides(df, level=level)
+
 def _get_today_str():
     """Get today's date string in US Eastern (approx UTC-5)."""
     from datetime import timedelta
@@ -970,6 +1000,40 @@ def _is_today(date_str):
         return date_str == _get_today_str()
     except Exception:
         return False
+
+
+_game_pitch_cache = {}  # { (level, date_str, game_pk): (timestamp, is_final, dataframe) }
+
+
+def fetch_game_pitches(date_str, game_pk, level=DEFAULT_LEVEL):
+    """Fetch pitch data for a single game using the per-game feed when possible.
+
+    This avoids rebuilding selected live-game views from the full day's pitch
+    dataset. Live games use a short TTL; final games are cached indefinitely.
+    """
+    game_pk = int(game_pk)
+    cache_key = (level, str(date_str), game_pk)
+    if cache_key in _game_pitch_cache:
+        ts, is_final, df = _game_pitch_cache[cache_key]
+        if is_final or (time.time() - ts) < LIVE_CACHE_TTL:
+            return df
+
+    game_df = _fetch_game_from_mlb_api(game_pk, date_str)
+    if game_df is not None and not game_df.empty:
+        game_df = _postprocess_pitch_df(game_df, level=level)
+        is_final = _is_game_final(_get_game_feed(game_pk))
+        _game_pitch_cache[cache_key] = (time.time(), is_final, game_df)
+        return game_df
+
+    day_df = fetch_date(date_str, level=level)
+    if day_df.empty or "game_pk" not in day_df.columns:
+        empty = pd.DataFrame()
+        _game_pitch_cache[cache_key] = (time.time(), False, empty)
+        return empty
+    game_df = day_df[day_df["game_pk"] == game_pk].copy()
+    is_final = not _is_today(date_str)
+    _game_pitch_cache[cache_key] = (time.time(), is_final, game_df)
+    return game_df
 
 def fetch_date(date_str, level=DEFAULT_LEVEL):
     # In-memory cache key includes level so MLB and AAA don't collide
@@ -1016,25 +1080,7 @@ def fetch_date(date_str, level=DEFAULT_LEVEL):
         _cache[cache_key] = (time.time(), pd.DataFrame())
         return pd.DataFrame()
 
-    df = df.copy()
-    # Resolve batter IDs to names where batter_name is missing/empty
-    if "batter" in df.columns:
-        if "batter_name" not in df.columns:
-            df["batter_name"] = _resolve_batter_names(df["batter"])
-        else:
-            missing_mask = df["batter_name"].isna() | (df["batter_name"].astype(str).str.strip() == "") | (df["batter_name"].astype(str) == "nan")
-            if missing_mask.any():
-                resolved = _resolve_batter_names(df.loc[missing_mask, "batter"])
-                df.loc[missing_mask, "batter_name"] = resolved.values
-    if "player_name" in df.columns:
-        df["player_name"] = _fix_names_vectorized(df["player_name"])
-    # Always map pitch_name from pitch_type codes for consistent naming
-    if "pitch_type" in df.columns:
-        df["pitch_name"] = df["pitch_type"].map(PITCH_TYPE_MAP)
-        df["pitch_name"] = df["pitch_name"].fillna("Unclassified")
-    df = _assign_teams_vectorized(df)
-    # Apply pitch reclassification overrides (level-filtered)
-    df = _apply_overrides(df, level=level)
+    df = _postprocess_pitch_df(df, level=level)
     _cache[cache_key] = (time.time(), df)
     # Also clear boxscore + feed caches for today so IP/ER/scoreboard refresh
     if _is_today(date_str):
@@ -1742,6 +1788,11 @@ def clear_cache(date_str=None, level=None, pitcher_ids=None):
                 if k_date == date_str and (level is None or k_level == level):
                     _schedule_cache.pop(k, None)
                     redis_delete(f"schedule:{k_level}_{k_date}")
+        for k in list(_game_pitch_cache.keys()):
+            if isinstance(k, tuple) and len(k) == 3:
+                k_level, k_date, _ = k
+                if k_date == date_str and (level is None or k_level == level):
+                    _game_pitch_cache.pop(k, None)
         # Clear daily agg caches for this date
         for k in list(_agg_cache.keys()):
             if date_str in k:
@@ -1789,6 +1840,9 @@ def clear_cache(date_str=None, level=None, pitcher_ids=None):
         for k in list(_season_cache.keys()):
             if isinstance(k, tuple) and k[0] == level:
                 _season_cache.pop(k, None)
+        for k in list(_game_pitch_cache.keys()):
+            if isinstance(k, tuple) and k[0] == level:
+                _game_pitch_cache.pop(k, None)
         for k in list(_agg_cache.keys()):
             if f"_{level}_" in k:
                 _agg_cache.pop(k, None)
@@ -1803,6 +1857,7 @@ def clear_cache(date_str=None, level=None, pitcher_ids=None):
         _range_cache.clear()
         _agg_cache.clear()
         _schedule_cache.clear()
+        _game_pitch_cache.clear()
         # Clear Redis aggregation and schedule keys
         redis_delete_pattern("agg:*")
         redis_delete_pattern("schedule:*")

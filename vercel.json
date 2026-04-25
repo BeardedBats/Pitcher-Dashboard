@@ -29,6 +29,10 @@
       "schedule": "*/10 16-23,0-5 * * *"
     },
     {
+      "path": "/api/cron/warmup-live-game-views",
+      "schedule": "* 16-23,0-5 * * *"
+    },
+    {
       "path": "/api/cron/warmup-daily?level=aaa",
       "schedule": "35 9 * * *"
     },
@@ -43,6 +47,10 @@
     {
       "path": "/api/cron/warmup-live-cards?level=aaa",
       "schedule": "5,15,25,35,45,55 16-23,0-5 * * *"
+    },
+    {
+      "path": "/api/cron/warmup-live-game-views?level=aaa",
+      "schedule": "* 16-23,0-5 * * *"
     }
   ]
 }
