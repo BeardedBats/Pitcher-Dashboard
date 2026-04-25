@@ -1,5 +1,5 @@
 import React from "react";
-import { displayAbbrev } from "../constants";
+import { displayTeamAbbrev } from "../constants";
 
 const NOT_STARTED_STATUSES = ["Scheduled", "Pre-Game", "Delayed Start", "Cancelled", "Suspended"];
 
@@ -25,7 +25,7 @@ function ordinalInning(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-export default function GameTabs({ games, selectedGame, onSelectGame }) {
+export default function GameTabs({ games, selectedGame, onSelectGame, level = "mlb" }) {
   const [viewMode, setViewMode] = React.useState("all");
 
   const handleAllGames = () => {
@@ -70,8 +70,8 @@ export default function GameTabs({ games, selectedGame, onSelectGame }) {
         const noData = g.has_data === false && !notStarted && !warmup;
         const pregame = notStarted || warmup;
 
-        const awayAbbr = displayAbbrev(g.away_team);
-        const homeAbbr = displayAbbrev(g.home_team);
+        const awayAbbr = displayTeamAbbrev(g.away_team, level);
+        const homeAbbr = displayTeamAbbrev(g.home_team, level);
         const awayWinning = (live || final_) && g.away_score != null && g.home_score != null && g.away_score > g.home_score;
         const homeWinning = (live || final_) && g.away_score != null && g.home_score != null && g.home_score > g.away_score;
 

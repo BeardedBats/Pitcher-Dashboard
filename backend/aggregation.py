@@ -17,17 +17,17 @@ def _ip_to_outs(ip_str):
         return 0
 
 
-_season_game_agg_cache = {}  # { (pitcher_id, year, before_date): [game_dicts] }
+_season_game_agg_cache = {}  # { (level, pitcher_id, year, before_date): [game_dicts] }
 
 
-def _pitcher_season_game_aggregates(pitcher_id, season_year, before_date=None):
+def _pitcher_season_game_aggregates(pitcher_id, season_year, before_date=None, level="mlb"):
     """Per-game aggregates for a pitcher's season (cached).
     Returns a list of dicts: {game_pk, game_date, pitches, outs, appearance_order}.
     """
-    cache_key = (int(pitcher_id), int(season_year), str(before_date) if before_date else None)
+    cache_key = (level, int(pitcher_id), int(season_year), str(before_date) if before_date else None)
     if cache_key in _season_game_agg_cache:
         return _season_game_agg_cache[cache_key]
-    df = fetch_pitcher_season(pitcher_id, season_year)
+    df = fetch_pitcher_season(pitcher_id, season_year, level=level)
     if df is None or df.empty:
         _season_game_agg_cache[cache_key] = []
         return []
@@ -63,7 +63,7 @@ def _pitcher_season_game_aggregates(pitcher_id, season_year, before_date=None):
     return results
 
 
-def _check_opener_swap(first, second, season_year, before_date=None):
+def _check_opener_swap(first, second, season_year, before_date=None, level="mlb"):
     """Return True if the 'opener' swap applies (first=RP, second=SP).
 
     All four conditions must be true:
@@ -85,12 +85,12 @@ def _check_opener_swap(first, second, season_year, before_date=None):
     if not cond_d:
         return False
 
-    first_season = _pitcher_season_game_aggregates(first["pitcher_id"], season_year, before_date=before_date)
+    first_season = _pitcher_season_game_aggregates(first["pitcher_id"], season_year, before_date=before_date, level=level)
     cond_a = all(g["outs"] <= 9 for g in first_season)
     if not cond_a:
         return False
 
-    second_season = _pitcher_season_game_aggregates(second["pitcher_id"], season_year, before_date=before_date)
+    second_season = _pitcher_season_game_aggregates(second["pitcher_id"], season_year, before_date=before_date, level=level)
     cond_c_pitches = any(g["pitches"] > 60 for g in second_season)
     if not cond_c_pitches:
         return False
@@ -98,7 +98,7 @@ def _check_opener_swap(first, second, season_year, before_date=None):
     return cond_c_sp
 
 
-def classify_pitcher_roles(results_for_game, season_year=None, before_date=None):
+def classify_pitcher_roles(results_for_game, season_year=None, before_date=None, level="mlb"):
     """Classify pitchers in a game as 'SP' or 'RP'.
 
     results_for_game: list of result rows for a single game's pitchers. Each row
@@ -122,7 +122,7 @@ def classify_pitcher_roles(results_for_game, season_year=None, before_date=None)
         if len(sorted_rows) >= 2 and season_year is not None:
             first = sorted_rows[0]
             second = sorted_rows[1]
-            if _check_opener_swap(first, second, season_year, before_date=before_date):
+            if _check_opener_swap(first, second, season_year, before_date=before_date, level=level):
                 roles[first["pitcher_id"]] = "RP"
                 roles[second["pitcher_id"]] = "SP"
     return roles
@@ -283,8 +283,8 @@ def _aggregate_pitch_df(df, full_df=None):
     results.sort(key=lambda r: (r["pitcher"], r["pitch_name"]))
     return results
 
-def aggregate_pitch_data(date_str, game_pk=None):
-    df = fetch_date(date_str)
+def aggregate_pitch_data(date_str, game_pk=None, level="mlb"):
+    df = fetch_date(date_str, level=level)
     if df.empty: return []
     if game_pk is not None:
         df = df[df["game_pk"] == game_pk]
@@ -315,7 +315,7 @@ def _compute_game_fastball_velo(gdf):
     return pick, round(float(pick_df["release_speed"].mean()), 1)
 
 
-def _compute_season_fastball_velos(pitcher_ids, season_year, before_date=None):
+def _compute_season_fastball_velos(pitcher_ids, season_year, before_date=None, level="mlb"):
     """Batch-compute season-to-date fastball mean velos for a list of pitcher IDs.
     Reuses the cached range DataFrame so we don't hit Savant per-pitcher.
     Returns {pitcher_id: {"Four-Seamer": velo, "Sinker": velo}}."""
@@ -325,7 +325,7 @@ def _compute_season_fastball_velos(pitcher_ids, season_year, before_date=None):
         from data import fetch_date_range, _get_default_end_date
         start_date = f"{season_year}-03-25"
         end_date = _get_default_end_date()
-        df = fetch_date_range(start_date, end_date)
+        df = fetch_date_range(start_date, end_date, level=level)
     except Exception:
         return {}
     if df is None or df.empty:
@@ -348,8 +348,8 @@ def _compute_season_fastball_velos(pitcher_ids, season_year, before_date=None):
     return result
 
 
-def aggregate_pitcher_results(date_str, game_pk=None):
-    df = fetch_date(date_str)
+def aggregate_pitcher_results(date_str, game_pk=None, level="mlb"):
+    df = fetch_date(date_str, level=level)
     if df.empty: return []
     if game_pk is not None:
         df = df[df["game_pk"] == game_pk]
@@ -433,12 +433,12 @@ def aggregate_pitcher_results(date_str, game_pk=None):
     for r in results:
         results_by_game.setdefault(r["game_pk"], []).append(r)
     for game_rows in results_by_game.values():
-        roles = classify_pitcher_roles(game_rows, season_year=season_year, before_date=date_str)
+        roles = classify_pitcher_roles(game_rows, season_year=season_year, before_date=date_str, level=level)
         for r in game_rows:
             r["role"] = roles.get(r["pitcher_id"], "RP")
     # Attach season-to-date fastball velo + delta for each pitcher (batched)
     season_velos = _compute_season_fastball_velos(
-        [r["pitcher_id"] for r in results], season_year, before_date=date_str,
+        [r["pitcher_id"] for r in results], season_year, before_date=date_str, level=level,
     )
     for r in results:
         pick = r.get("velo_pitch")
@@ -526,8 +526,8 @@ def build_pitches_list(pdf):
     return pitches
 
 
-def get_pitcher_card(date_str, pitcher_id, game_pk):
-    df = fetch_date(date_str)
+def get_pitcher_card(date_str, pitcher_id, game_pk, level="mlb"):
+    df = fetch_date(date_str, level=level)
     if df.empty: return {}
     pdf = df[(df["pitcher"] == pitcher_id) & (df["game_pk"] == game_pk)]
     if pdf.empty: return {}
@@ -689,7 +689,7 @@ def get_pitcher_card(date_str, pitcher_id, game_pk):
         "result": pitcher_result,
     }
 
-def get_season_averages(pitcher_id, season_year, before_date=None, exclude_game_pk=None):
+def get_season_averages(pitcher_id, season_year, before_date=None, exclude_game_pk=None, level="mlb"):
     """Compute season averages per pitch type for a pitcher.
 
     Optional filters:
@@ -698,7 +698,7 @@ def get_season_averages(pitcher_id, season_year, before_date=None, exclude_game_
     - exclude_game_pk: Exclude this specific game_pk from the aggregation.
       Useful when before_date alone could include doubleheaders or same-day starts.
     """
-    df = fetch_pitcher_season(pitcher_id, season_year)
+    df = fetch_pitcher_season(pitcher_id, season_year, level=level)
     if df is None or df.empty:
         return {}
     from data import PITCH_TYPE_MAP
@@ -744,12 +744,12 @@ def get_season_averages(pitcher_id, season_year, before_date=None, exclude_game_
     return result
 
 
-def find_previous_mlb_season(pitcher_id, current_year, max_lookback=5):
-    """Return the most recent year (< current_year) with MLB pitch data for this pitcher.
-    Returns None if no prior season has data within the lookback window."""
+def find_previous_mlb_season(pitcher_id, current_year, max_lookback=5, level="mlb"):
+    """Return the most recent year (< current_year) with pitch data for this pitcher
+    at the given level. Returns None if no prior season has data within lookback."""
     for years_back in range(1, max_lookback + 1):
         year = current_year - years_back
-        df = fetch_pitcher_season(pitcher_id, year)
+        df = fetch_pitcher_season(pitcher_id, year, level=level)
         if df is not None and not df.empty:
             return year
     return None

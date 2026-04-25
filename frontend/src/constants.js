@@ -172,6 +172,63 @@ export function displayAbbrev(abbr) {
   return TEAM_ABBREV_DISPLAY[abbr] || abbr;
 }
 
+// Triple-A team abbrev → MLB parent club abbrev (2026).
+// Keys MUST match what Savant returns in `home_team`/`away_team` for AAA games.
+// Verified against Savant's CSV on 2026-04-23 — the only deviation from common
+// usage is `SL` (Salt Lake Bees), which Savant uses instead of `SLC`.
+// Always renders the parent abbrev for AAA games — even when both teams in a
+// matchup map to the same parent (e.g. an intra-org spring exhibition).
+export const AAA_AFFILIATION = {
+  // International League (IL)
+  BUF: "TOR",  // Buffalo Bisons
+  CLT: "CWS",  // Charlotte Knights → display CHW
+  COL: "CLE",  // Columbus Clippers (collides with Colorado MLB code; safe because lookup is level-gated)
+  DUR: "TB",   // Durham Bulls → display TBR
+  GWN: "ATL",  // Gwinnett Stripers
+  IND: "PIT",  // Indianapolis Indians
+  IOW: "CHC",  // Iowa Cubs
+  JAX: "MIA",  // Jacksonville Jumbo Shrimp
+  LHV: "PHI",  // Lehigh Valley IronPigs
+  LOU: "CIN",  // Louisville Bats
+  MEM: "STL",  // Memphis Redbirds
+  NAS: "MIL",  // Nashville Sounds
+  NOR: "BAL",  // Norfolk Tides
+  OMA: "KC",   // Omaha Storm Chasers → display KCR
+  ROC: "WSH",  // Rochester Red Wings
+  SWB: "NYY",  // Scranton/Wilkes-Barre RailRiders
+  STP: "MIN",  // St. Paul Saints
+  SYR: "NYM",  // Syracuse Mets
+  TOL: "DET",  // Toledo Mud Hens
+  WOR: "BOS",  // Worcester Red Sox
+
+  // Pacific Coast League (PCL)
+  ABQ: "COL",  // Albuquerque Isotopes
+  ELP: "SD",   // El Paso Chihuahuas → display SDP
+  LV:  "ATH",  // Las Vegas Aviators
+  OKC: "LAD",  // Oklahoma City Comets
+  RNO: "ARI",  // Reno Aces
+  RR:  "TEX",  // Round Rock Express
+  SAC: "SF",   // Sacramento River Cats → display SFG
+  SL:  "LAA",  // Salt Lake Bees (Savant uses "SL", not "SLC")
+  SUG: "HOU",  // Sugar Land Space Cowboys
+  TAC: "SEA",  // Tacoma Rainiers
+};
+
+// Resolves a team abbrev for display.
+// - At level="aaa": map AAA → parent MLB abbrev, then apply MLB display overrides.
+//   Always returns the parent abbrev (even on intra-org matchups), per spec.
+// - At level="mlb" (default): just apply MLB display overrides.
+export function displayTeamAbbrev(abbr, level = "mlb") {
+  if (!abbr) return abbr;
+  if (level === "aaa") {
+    const parent = AAA_AFFILIATION[abbr];
+    if (parent) return displayAbbrev(parent);
+    // Unmapped AAA team — fall through to raw abbrev (e.g. an exhibition vs.
+    // a non-affiliate). Better than dropping the label entirely.
+  }
+  return displayAbbrev(abbr);
+}
+
 export const RESULT_COLORS = {
   // Strikeouts — warm orange
   strikeout: "#ffc680", strikeout_double_play: "#ffc680",

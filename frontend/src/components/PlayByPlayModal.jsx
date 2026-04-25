@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { PITCH_COLORS, PITCH_DESC_COLORS, BATTED_BALL_COLORS, BIP_QUALITY_COLORS, displayAbbrev } from "../constants";
+import { PITCH_COLORS, PITCH_DESC_COLORS, BATTED_BALL_COLORS, BIP_QUALITY_COLORS, displayTeamAbbrev } from "../constants";
 import { getResultColor, classifyBattedBall, getBIPQuality } from "../utils/formatting";
 import { getTooltipResult, getPADescriptionSpans, isCIOrErrorEvent } from "../utils/pitchFilters";
 import { vpToZoomCoord } from "../utils/desktopZoom";
@@ -79,7 +79,9 @@ function computeInningStats(pas, pitcherId) {
   return { ip: ip.toFixed(1), hits, bbs, ks, hrs, runs, pitches: totalPitches };
 }
 
-export default function PlayByPlayModal({ data, inning: initialInning, isTop: initialIsTop, pitcherId, onClose }) {
+export default function PlayByPlayModal({ data, inning: initialInning, isTop: initialIsTop, pitcherId, onClose, level = "mlb" }) {
+  // Local alias keeps existing call sites unchanged.
+  const displayAbbrev = (abbr) => displayTeamAbbrev(abbr, level);
   const isMobile = useIsMobile();
   const [expanded, setExpanded] = useState({});
   const [activePaIndex, setActivePaIndex] = useState(0);

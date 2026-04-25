@@ -27,3 +27,5 @@ Savant Dashboard design-system.html
 
 # Generated docs (send separately)
 *.docx
+
+.vercel

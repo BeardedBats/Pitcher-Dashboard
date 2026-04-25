@@ -13,6 +13,27 @@ const TeamPage = lazy(() => import("./components/TeamPage"));
 const PlayerPage = lazy(() => import("./components/PlayerPage"));
 import { fetchGames, fetchPitchData, fetchPitcherResults, fetchPitcherCard, fetchDefaultDate, fetchGameLinescore, reclassifyPitch, fetchInitialLoad, fetchRefresh, fetchLastRefresh } from "./utils/api";
 import { PITCH_TYPE_FILTERS, PITCH_COLORS, TEAMS_LIST, PITCHER_RESULTS_COLUMNS } from "./constants";
+
+// Hash routing helpers — `#aaa[/...]` selects the AAA level, anything else is MLB.
+function parseHash(rawHash) {
+  const hash = (rawHash || "").replace(/^#/, "");
+  if (!hash) return { level: "mlb", parts: [] };
+  const parts = hash.split("/");
+  if (parts[0] === "aaa") {
+    return { level: "aaa", parts: parts.slice(1) };
+  }
+  return { level: "mlb", parts };
+}
+
+function buildHash(level, ...parts) {
+  const segs = [];
+  if (level === "aaa") segs.push("aaa");
+  for (const p of parts) {
+    if (p == null || p === "") continue;
+    segs.push(String(p));
+  }
+  return segs.length ? "#" + segs.join("/") : "";
+}
 import useIsMobile from "./hooks/useIsMobile";
 
 function getYesterdayEST() {
@@ -53,6 +74,8 @@ function openInNewWindow(hash) {
 
 export default function App() {
   const isMobile = useIsMobile();
+  // Read initial level from the hash so a refresh on #aaa stays on AAA.
+  const [level, setLevel] = useState(() => parseHash(window.location.hash).level);
   const [date, setDate] = useState(null);
   const [games, setGames] = useState([]);
   const [selectedGame, setSelectedGame] = useState(null);
@@ -91,12 +114,14 @@ export default function App() {
   // Ref to skip the pitch/results data fetch (e.g. after initial load already provided it)
   const skipNextDataFetch = React.useRef(false);
 
-  // Fetch everything on mount in a single API call
+  // Fetch everything on mount in a single API call.
+  // `#aaa` (no further parts) is treated as a level toggle, NOT a deep link —
+  // so we still run initial-load for the AAA games view.
   useEffect(() => {
-    const hash = window.location.hash.replace(/^#/, "");
-    if (hash) return; // Deep-link will handle its own loading
+    const { level: hashLevel, parts: hashParts } = parseHash(window.location.hash);
+    if (hashParts.length > 0) return; // Deep-link (e.g. #aaa/card/...) will handle its own loading
     setLoading(true);
-    fetchInitialLoad()
+    fetchInitialLoad(hashLevel)
       .then(data => {
         initialLoadDone.current = true;
         skipNextDataFetch.current = true;
@@ -109,11 +134,11 @@ export default function App() {
       .catch(() => {
         // Fallback to sequential flow — date change will trigger games fetch
         setLoading(false);
-        fetchDefaultDate()
+        fetchDefaultDate(hashLevel)
           .then(d => setDate(d))
           .catch(() => setDate(getYesterdayEST()));
       });
-  }, []);
+  }, []); // eslint-disable-line
 
   // Fetch last refresh timestamp on mount; fall back to "now" so button always shows a time
   useEffect(() => {
@@ -132,15 +157,15 @@ export default function App() {
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      const data = await fetchRefresh();
+      const data = await fetchRefresh(level);
       setLastRefresh(data.timestamp);
       setToast({ message: "Data refreshed", type: "success" });
       // Re-fetch current page data including linescore
       if (date) {
         const fetches = [
-          fetchGames(date),
-          fetchPitchData(date, selectedGame),
-          fetchPitcherResults(date, selectedGame),
+          fetchGames(date, level),
+          fetchPitchData(date, selectedGame, level),
+          fetchPitcherResults(date, selectedGame, level),
         ];
         const gpk = cardData?.result?.game_pk || selectedGame;
         if (gpk) fetches.push(fetchGameLinescore(gpk));
@@ -165,33 +190,42 @@ export default function App() {
     } catch { return ""; }
   };
 
-  // Handle hash-based deep linking for new windows (e.g. #player/12345 or #card/2026-03-08/12345/789)
+  // Handle hash-based deep linking for new windows. Examples:
+  //   #player/12345                         (MLB player)
+  //   #card/2026-03-08/12345/789            (MLB card)
+  //   #aaa                                  (AAA games view — no parts after prefix)
+  //   #aaa/player/12345                     (AAA player)
+  //   #aaa/card/2026-03-08/12345/789        (AAA card)
   const hashHandled = React.useRef(false);
   useEffect(() => {
     if (hashHandled.current) return;
-    const hash = window.location.hash.replace(/^#/, "");
-    if (!hash) return;
+    const { level: hashLevel, parts } = parseHash(window.location.hash);
+    if (parts.length === 0) {
+      // Bare `#` or `#aaa` — initial-load effect handles data fetch.
+      hashHandled.current = true;
+      return;
+    }
     hashHandled.current = true;
-    const parts = hash.split("/");
+    if (hashLevel !== level) setLevel(hashLevel);
+    const baseHash = window.location.pathname;
     if (parts[0] === "player" && parts[1]) {
-      // #player/{pitcherId}
+      // #[aaa/]player/{pitcherId}
       const pid = Number(parts[1]);
       setPage("player");
       setPlayerPageId(pid);
       setLoading(false);
-      // Set history state so back button works, but push a list entry first
-      window.history.replaceState({ view: "list", page: "games", selectedGame: null }, "", window.location.pathname);
-      window.history.pushState({ view: "list", page: "player", pitcherId: pid }, "", `#player/${pid}`);
+      window.history.replaceState({ view: "list", page: "games", selectedGame: null, level: hashLevel }, "", baseHash);
+      window.history.pushState({ view: "list", page: "player", pitcherId: pid, level: hashLevel }, "", buildHash(hashLevel, "player", pid));
     } else if (parts[0] === "team" && parts[1]) {
-      // #team/{teamAbbrev}
+      // #[aaa/]team/{teamAbbrev}
       const team = parts[1];
       setPage("team");
       setSelectedTeamPage(team);
       setLoading(false);
-      window.history.replaceState({ view: "list", page: "games", selectedGame: null }, "", window.location.pathname);
-      window.history.pushState({ view: "list", page: "team", team }, "", `#team/${team}`);
+      window.history.replaceState({ view: "list", page: "games", selectedGame: null, level: hashLevel }, "", baseHash);
+      window.history.pushState({ view: "list", page: "team", team, level: hashLevel }, "", buildHash(hashLevel, "team", team));
     } else if (parts[0] === "card" && parts[1] && parts[2] && parts[3]) {
-      // #card/{date}/{pitcherId}/{gamePk}
+      // #[aaa/]card/{date}/{pitcherId}/{gamePk}
       const gameDate = parts[1];
       const pitcherId = Number(parts[2]);
       const gamePk = Number(parts[3]);
@@ -201,21 +235,19 @@ export default function App() {
       setSelectedGame(gamePk);
       setDate(gameDate);
       setLoading(true);
-      // Fetch card immediately — show it as soon as it's ready.
-      // Push a list entry first so closeCard (history.back()) returns to main view
-      window.history.replaceState({ view: "list", page: "games", selectedGame: null, date: gameDate }, "", window.location.pathname);
-      fetchPitcherCard(gameDate, pitcherId, gamePk)
+      window.history.replaceState({ view: "list", page: "games", selectedGame: null, date: gameDate, level: hashLevel }, "", baseHash);
+      fetchPitcherCard(gameDate, pitcherId, gamePk, hashLevel)
         .then(cd => {
           setCardData(cd); setLoading(false);
-          window.history.pushState({ view: "card", selectedGame: gamePk, pitcherId, gamePk, date: gameDate }, "", `#card/${gameDate}/${pitcherId}/${gamePk}`);
+          window.history.pushState({ view: "card", selectedGame: gamePk, pitcherId, gamePk, date: gameDate, level: hashLevel }, "", buildHash(hashLevel, "card", gameDate, pitcherId, gamePk));
         })
         .catch(e => { setError(e.message); setLoading(false); });
       // Background: load games for the game tabs (non-blocking)
-      fetchGames(gameDate)
+      fetchGames(gameDate, hashLevel)
         .then(g => setGames(g))
         .catch(() => {});
     }
-  }, []);
+  }, []); // eslint-disable-line
 
   // Track whether we're currently handling a popstate event to avoid pushing duplicate history
   const isPopState = React.useRef(false);
@@ -231,8 +263,47 @@ export default function App() {
     setPage("games");
     setPlayerPageId(null);
     setSelectedTeamPage(null);
-    window.history.pushState({ view: "list", page: "games", selectedGame: null }, "", window.location.pathname);
+    // resetToDefault always lands on MLB games view (the "home" of the app)
+    setLevel("mlb");
+    window.history.pushState({ view: "list", page: "games", selectedGame: null, level: "mlb" }, "", window.location.pathname);
   }, []);
+
+  // Switch between MLB and AAA. Clears the current view (card/team/player) so
+  // the level swap lands on the games list and re-fires data hooks via the
+  // [date, level] effect.
+  const selectLevel = useCallback((newLevel) => {
+    if (newLevel === level) return;
+    setLevel(newLevel);
+    setCardData(null);
+    setSelectedGame(null);
+    setPage("games");
+    setPlayerPageId(null);
+    setSelectedTeamPage(null);
+    setDate(null); // force /api/default-date refetch for new level
+    setGames([]);
+    setPitchData([]);
+    setResultsData([]);
+    setLoading(true);
+    fetchInitialLoad(newLevel)
+      .then(data => {
+        initialLoadDone.current = true;
+        skipNextDataFetch.current = true;
+        setDate(data.date);
+        setGames(data.games);
+        setPitchData(data.pitchData);
+        setResultsData(data.resultsData);
+        setLoading(false);
+      })
+      .catch(() => {
+        setLoading(false);
+        fetchDefaultDate(newLevel)
+          .then(d => setDate(d))
+          .catch(() => setDate(getYesterdayEST()));
+      });
+    // Update URL to reflect the level (bare `#aaa` or no hash for mlb)
+    const url = newLevel === "aaa" ? "#aaa" : window.location.pathname;
+    window.history.pushState({ view: "list", page: "games", selectedGame: null, level: newLevel }, "", url);
+  }, [level]);
 
   // Browser back/forward navigation support
   useEffect(() => {
@@ -242,29 +313,38 @@ export default function App() {
     }
   }, []);
 
-  // Helper: pushState that auto-saves current scroll position and syncs URL hash
+  // Helper: pushState that auto-saves current scroll position and syncs URL hash.
+  // Always reads current `level` from state so AAA navigation gets the right prefix.
   const pushState = useCallback((state, title = "") => {
     const current = window.history.state;
     if (current && current.scrollY == null) {
       window.history.replaceState({ ...current, scrollY: window.scrollY }, "");
     }
+    const stateLevel = state.level || level;
+    const stateWithLevel = { ...state, level: stateLevel };
     // Build hash from state so refreshes restore the same view
     let hash = "";
     if (state.view === "card" && state.date && state.pitcherId && state.gamePk) {
-      hash = `#card/${state.date}/${state.pitcherId}/${state.gamePk}`;
+      hash = buildHash(stateLevel, "card", state.date, state.pitcherId, state.gamePk);
     } else if (state.page === "player" && state.pitcherId) {
-      hash = `#player/${state.pitcherId}`;
+      hash = buildHash(stateLevel, "player", state.pitcherId);
     } else if (state.page === "team" && state.team) {
-      hash = `#team/${state.team}`;
+      hash = buildHash(stateLevel, "team", state.team);
+    } else if (stateLevel === "aaa") {
+      // No deep hash but AAA — preserve the level marker
+      hash = buildHash(stateLevel);
     }
     const url = hash || window.location.pathname;
-    window.history.pushState(state, title, url);
-  }, []);
+    window.history.pushState(stateWithLevel, title, url);
+  }, [level]);
 
   useEffect(() => {
     const handlePopState = (e) => {
       const state = e.state;
       isPopState.current = true;
+      // Restore level from state — back/forward across MLB ↔ AAA must re-fetch with correct level.
+      if (state?.level && state.level !== level) setLevel(state.level);
+      const popLevel = state?.level || level;
       if (!state || state.view === "list") {
         setCardData(null);
         setSelectedGame(state?.selectedGame || null);
@@ -280,7 +360,7 @@ export default function App() {
         setPage("games");
         setSelectedGame(state.selectedGame);
         setLoading(true);
-        fetchPitcherCard(cardDate, state.pitcherId, state.gamePk)
+        fetchPitcherCard(cardDate, state.pitcherId, state.gamePk, popLevel)
           .then(cd => { setCardData(cd); setLoading(false); })
           .catch(err => { setError(err.message); setLoading(false); });
       }
@@ -292,7 +372,7 @@ export default function App() {
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [date]);
+  }, [date, level]);
 
   // Restore scroll position AFTER React re-renders the list view
   useEffect(() => {
@@ -325,10 +405,10 @@ export default function App() {
     setGames([]); setSelectedGame(null); setCardData(null);
     setPitchData([]); setResultsData([]);
     setLoading(true); setError(null);
-    fetchGames(date)
+    fetchGames(date, level)
       .then(g => { setGames(g); setLoading(false); })
       .catch(e => { setError(e.message); setLoading(false); });
-  }, [date]);
+  }, [date, level]);
 
   useEffect(() => {
     if (games.length === 0) return;
@@ -340,12 +420,12 @@ export default function App() {
     if (cardData) return;
     setLoading(true); setError(null);
     Promise.all([
-      fetchPitchData(date, selectedGame),
-      fetchPitcherResults(date, selectedGame),
+      fetchPitchData(date, selectedGame, level),
+      fetchPitcherResults(date, selectedGame, level),
     ]).then(([pd, pr]) => {
       setPitchData(pd); setResultsData(pr); setLoading(false);
     }).catch(e => { setError(e.message); setLoading(false); });
-  }, [selectedGame, date, games.length]); // eslint-disable-line
+  }, [selectedGame, date, games.length, level]); // eslint-disable-line
 
   // Fetch linescore when a specific game is selected or card opens.
   // Poll every 60s during live games so scoreboard stays current.
@@ -380,12 +460,16 @@ export default function App() {
     return resultsData.filter(r => r.role === "RP");
   }, [resultsData, rpOnly]);
 
+  // Build the hash fragment used for "open in new tab" links so they preserve level.
+  const cardHash = (gameDate, pitcherId, gamePk) => buildHash(level, "card", gameDate, pitcherId, gamePk).replace(/^#/, "");
+  const playerHash = (pitcherId) => buildHash(level, "player", pitcherId).replace(/^#/, "");
+
   const openCard = (pitcherId, gamePk, e) => {
     // Ctrl+Click / Cmd+Click / Middle-click → open in new tab, don't navigate current page
     if (isNewWindowClick(e) && date) {
       if (e && e.preventDefault) e.preventDefault();
       if (e && e.stopPropagation) e.stopPropagation();
-      openInNewWindow(`card/${date}/${pitcherId}/${gamePk}`);
+      openInNewWindow(cardHash(date, pitcherId, gamePk));
       return;
     }
     // Save scroll position NOW — before setLoading(true) unmounts the table and resets scrollY to 0
@@ -394,7 +478,7 @@ export default function App() {
       window.history.replaceState({ ...current, scrollY: window.scrollY }, "");
     }
     setLoading(true); setError(null);
-    fetchPitcherCard(date, pitcherId, gamePk)
+    fetchPitcherCard(date, pitcherId, gamePk, level)
       .then(cd => {
         setCardData(cd); setLoading(false);
         if (!isPopState.current) {
@@ -420,7 +504,7 @@ export default function App() {
     if (isNewWindowClick(e) && pitcherId) {
       if (e && e.preventDefault) e.preventDefault();
       if (e && e.stopPropagation) e.stopPropagation();
-      openInNewWindow(`player/${pitcherId}`);
+      openInNewWindow(playerHash(pitcherId));
       return;
     }
     // If we have a pitcher ID, navigate directly
@@ -437,14 +521,15 @@ export default function App() {
         const API = window.__BACKEND_PORT__
           ? `http://localhost:${window.__BACKEND_PORT__}`
           : process.env.NODE_ENV === "development" ? "http://localhost:8000" : "";
-        const res = await fetch(`${API}/api/resolve-pitcher?name=${encodeURIComponent(playerName)}`);
+        const lvParam = level && level !== "mlb" ? `&level=${encodeURIComponent(level)}` : "";
+        const res = await fetch(`${API}/api/resolve-pitcher?name=${encodeURIComponent(playerName)}${lvParam}`);
         const data = await res.json();
         if (data.pitcher_id) {
           // If Ctrl+Click was held, open resolved player in new tab
           if (isNewWindowClick(e)) {
             if (e && e.preventDefault) e.preventDefault();
             if (e && e.stopPropagation) e.stopPropagation();
-            openInNewWindow(`player/${data.pitcher_id}`);
+            openInNewWindow(playerHash(data.pitcher_id));
             return;
           }
           setPage("player");
@@ -463,7 +548,7 @@ export default function App() {
     if (isNewWindowClick(e)) {
       if (e && e.preventDefault) e.preventDefault();
       if (e && e.stopPropagation) e.stopPropagation();
-      openInNewWindow(`card/${gameDate}/${pitcherId}/${gamePk}`);
+      openInNewWindow(cardHash(gameDate, pitcherId, gamePk));
       return;
     }
     // Save scroll position NOW — before setLoading(true) unmounts the content
@@ -482,8 +567,8 @@ export default function App() {
     setLoading(true);
     // Fetch card and games for that date in parallel
     Promise.all([
-      fetchPitcherCard(gameDate, pitcherId, gamePk),
-      fetchGames(gameDate),
+      fetchPitcherCard(gameDate, pitcherId, gamePk, level),
+      fetchGames(gameDate, level),
     ]).then(([cd, g]) => {
       setDate(gameDate);
       setGames(g);
@@ -522,7 +607,7 @@ export default function App() {
         ))}
       </select>
       <div className="header-nav-spacer" />
-      <SearchBar onSelectPlayer={(id, name, e) => navigateToPlayer(id, name, e)} />
+      <SearchBar level={level} onSelectPlayer={(id, name, e) => navigateToPlayer(id, name, e)} />
     </div>
   );
 
@@ -547,22 +632,34 @@ export default function App() {
       {/* === TEAM PAGE === */}
       {page === "team" && selectedTeamPage && !cardData && (
         <Suspense fallback={<div className="loading"><div className="loading-bars"><div className="loading-bar" /><div className="loading-bar" /><div className="loading-bar" /></div></div>}>
-          <TeamPage teamAbbrev={selectedTeamPage} onPlayerClick={(id, name, e) => navigateToPlayer(id, name, e)} onBack={navigateBackToGames} />
+          <TeamPage teamAbbrev={selectedTeamPage} level={level} onPlayerClick={(id, name, e) => navigateToPlayer(id, name, e)} onBack={navigateBackToGames} />
         </Suspense>
       )}
 
       {/* === PLAYER PAGE === */}
       {page === "player" && playerPageId && !cardData && (
         <Suspense fallback={<div className="loading"><div className="loading-bars"><div className="loading-bar" /><div className="loading-bar" /><div className="loading-bar" /></div></div>}>
-          <PlayerPage pitcherId={playerPageId} onBack={navigateBackToGames} onGameClick={navigateToGameCard} />
+          <PlayerPage pitcherId={playerPageId} level={level} onBack={navigateBackToGames} onGameClick={navigateToGameCard} />
         </Suspense>
       )}
 
       {/* === GAMES PAGE (original daily view) === */}
       {page === "games" && !cardData && (
         <>
+          <div className="level-tabs">
+            <button
+              type="button"
+              className={`level-tab${level === "mlb" ? " active" : ""}`}
+              onClick={() => selectLevel("mlb")}
+            >MLB</button>
+            <button
+              type="button"
+              className={`level-tab${level === "aaa" ? " active" : ""}`}
+              onClick={() => selectLevel("aaa")}
+            >Triple-A</button>
+          </div>
           {games.length > 0 && (
-            <GameTabs games={games} selectedGame={selectedGame} onSelectGame={gp => {
+            <GameTabs games={games} selectedGame={selectedGame} level={level} onSelectGame={gp => {
               if (gp !== selectedGame && !isPopState.current) {
                 pushState({ view: "game", selectedGame: gp }, "");
               }
@@ -571,7 +668,7 @@ export default function App() {
           )}
 
           {games.length > 0 && selectedGame && linescoreData && (
-            <Scoreboard data={linescoreData} onInningClick={(inn, isTop) => setPbpModal({ inning: inn, isTop })} />
+            <Scoreboard data={linescoreData} level={level} onInningClick={(inn, isTop) => setPbpModal({ inning: inn, isTop })} />
           )}
 
           {games.length > 0 && (
@@ -643,10 +740,10 @@ export default function App() {
         <div className={splitByTeam ? "table-card-none" : "table-card"}>
           <div className="table-container">
             {view === "pitch-data" && (
-              <PitchDataTable data={filteredPitchData} date={date} onPitcherClick={openCard} splitByTeam={splitByTeam} spOnly={spOnly} isMobile={isMobile} sortKey={pitchSortKey} onSortKeyChange={setPitchSortKey} sortDir={pitchSortDir} onSortDirChange={setPitchSortDir} />
+              <PitchDataTable data={filteredPitchData} date={date} level={level} onPitcherClick={openCard} splitByTeam={splitByTeam} spOnly={spOnly} isMobile={isMobile} sortKey={pitchSortKey} onSortKeyChange={setPitchSortKey} sortDir={pitchSortDir} onSortDirChange={setPitchSortDir} />
             )}
             {view === "pitcher-results" && (
-              <PitcherResultsTable data={filteredResultsData} date={date} onPitcherClick={openCard} spOnly={spOnly} splitByTeam={splitByTeam} isMobile={isMobile} sortKey={resultsSortKey} onSortKeyChange={setResultsSortKey} sortDir={resultsSortDir} onSortDirChange={setResultsSortDir} hiddenCols={resultsHiddenCols} />
+              <PitcherResultsTable data={filteredResultsData} date={date} level={level} onPitcherClick={openCard} spOnly={spOnly} splitByTeam={splitByTeam} isMobile={isMobile} sortKey={resultsSortKey} onSortKeyChange={setResultsSortKey} sortDir={resultsSortDir} onSortDirChange={setResultsSortDir} hiddenCols={resultsHiddenCols} />
             )}
           </div>
         </div>
@@ -660,7 +757,7 @@ export default function App() {
             {headerNav}
           </div>
           {games.length > 0 && (
-            <GameTabs games={games} selectedGame={selectedGame} onSelectGame={gp => {
+            <GameTabs games={games} selectedGame={selectedGame} level={level} onSelectGame={gp => {
               if (gp !== selectedGame && !isPopState.current) {
                 pushState({ view: "game", selectedGame: gp }, "");
               }
@@ -673,16 +770,16 @@ export default function App() {
                 {"\u2190"} {selectedGame ? "Back to Game" : "Back to All Games"}
               </button>
               {linescoreData && (
-                <Scoreboard data={linescoreData} pitcherId={cardData?.result?.pitcher_id} onInningClick={(inn, isTop) => setPbpModal({ inning: inn, isTop })} />
+                <Scoreboard data={linescoreData} level={level} pitcherId={cardData?.result?.pitcher_id} onInningClick={(inn, isTop) => setPbpModal({ inning: inn, isTop })} />
               )}
             </div>
-            <PitcherCard cardData={cardData} date={date} linescoreData={linescoreData} isMobile={isMobile} onPlayerClick={(id, e) => navigateToPlayer(id, null, e)} onGameClick={(e) => {
+            <PitcherCard cardData={cardData} date={date} linescoreData={linescoreData} isMobile={isMobile} level={level} onPlayerClick={(id, e) => navigateToPlayer(id, null, e)} onGameClick={(e) => {
               const gamePk = cardData?.result?.game_pk || selectedGame;
               const pitcherId = cardData?.result?.pitcher_id;
               if (isNewWindowClick(e) && gamePk && date && pitcherId) {
                 if (e && e.preventDefault) e.preventDefault();
                 if (e && e.stopPropagation) e.stopPropagation();
-                openInNewWindow(`card/${date}/${pitcherId}/${gamePk}`);
+                openInNewWindow(cardHash(date, pitcherId, gamePk));
                 return;
               }
               if (gamePk) {
@@ -692,8 +789,8 @@ export default function App() {
                 // Force data re-fetch even if selectedGame hasn't changed
                 setLoading(true); setError(null);
                 Promise.all([
-                  fetchPitchData(date, gamePk),
-                  fetchPitcherResults(date, gamePk),
+                  fetchPitchData(date, gamePk, level),
+                  fetchPitcherResults(date, gamePk, level),
                 ]).then(([pd, pr]) => {
                   setPitchData(pd); setResultsData(pr); setLoading(false);
                 }).catch(e => { setError(e.message); setLoading(false); });
@@ -713,6 +810,7 @@ export default function App() {
           inning={pbpModal.inning}
           isTop={pbpModal.isTop}
           pitcherId={cardData?.result?.pitcher_id || null}
+          level={level}
           onClose={() => setPbpModal(null)}
         />
       )}
@@ -725,14 +823,15 @@ export default function App() {
           date={date}
           onClose={() => setReclassifyPitch(null)}
           onConfirm={(req) => {
-            reclassifyPitch(req).then(() => {
+            // Carry the active level so the override is saved against the right namespace
+            reclassifyPitch({ ...req, level }).then(() => {
               setReclassifyPitch(null);
               // Refresh the pitcher card data
               const pid = cardData.pitcher_id || cardData.result?.pitcher_id;
               const gpk = cardData.game_pk || cardData.result?.game_pk || selectedGame;
               if (pid && gpk) {
                 setLoading(true);
-                fetchPitcherCard(date, pid, gpk)
+                fetchPitcherCard(date, pid, gpk, level)
                   .then(cd => { setCardData(cd); setLoading(false); })
                   .catch(err => { setError(err.message); setLoading(false); });
               }

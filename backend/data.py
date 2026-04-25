@@ -28,7 +28,13 @@ _override_version = 0  # Incremented on every save/remove to bust agg caches
 # Cache-shape version. Bump whenever a cached payload (card, season totals,
 # player page) gains or changes fields so all old cache entries miss after
 # deploy. Included in every relevant cache key alongside _override_version.
-CARD_SCHEMA_VERSION = 6
+# v7: cache keys carry a {level} prefix (mlb|aaa) for the Triple-A tab.
+CARD_SCHEMA_VERSION = 7
+
+# Allowed level values. New levels must be added here and exposed via the
+# frontend `level` state and any cron schedules.
+LEVELS = ("mlb", "aaa")
+DEFAULT_LEVEL = "mlb"
 
 def _load_overrides():
     global _overrides, _override_version
@@ -70,12 +76,14 @@ def get_override_version():
     """Return current override version counter for cache-busting."""
     return _override_version
 
-def save_pitch_override(game_pk, pitcher_id, at_bat_number, pitch_number, new_pitch_type):
+def save_pitch_override(game_pk, pitcher_id, at_bat_number, pitch_number, new_pitch_type, level=DEFAULT_LEVEL):
     """Save a pitch reclassification override.
     new_pitch_type can be either a human name ('Four-Seamer') or a code ('FF').
+    `level` (mlb|aaa) is prefixed on the key so AAA reclassifications don't
+    collide with MLB ones at the same game_pk numeric value.
     """
     global _override_version
-    key = f"{game_pk}_{pitcher_id}_{at_bat_number}_{pitch_number}"
+    key = f"{level}_{game_pk}_{pitcher_id}_{at_bat_number}_{pitch_number}"
     # Determine code and name regardless of which format was passed
     if new_pitch_type in PITCH_NAME_TO_CODE:
         # Human name passed (e.g., "Four-Seamer")
@@ -101,11 +109,17 @@ def save_pitch_override(game_pk, pitcher_id, at_bat_number, pitch_number, new_pi
         _override_version += 1
     return key
 
-def remove_pitch_override(game_pk, pitcher_id, at_bat_number, pitch_number):
-    """Remove a pitch reclassification override."""
+def remove_pitch_override(game_pk, pitcher_id, at_bat_number, pitch_number, level=DEFAULT_LEVEL):
+    """Remove a pitch reclassification override. Falls back to the legacy
+    un-prefixed key when nothing matches the level-prefixed one (so MLB
+    reclassifications saved before v7 can still be undone)."""
     global _override_version
-    key = f"{game_pk}_{pitcher_id}_{at_bat_number}_{pitch_number}"
+    key = f"{level}_{game_pk}_{pitcher_id}_{at_bat_number}_{pitch_number}"
     removed = _overrides.pop(key, None)
+    if removed is None and level == DEFAULT_LEVEL:
+        # Legacy 4-part key (no level prefix) — pre-v7 MLB overrides
+        legacy_key = f"{game_pk}_{pitcher_id}_{at_bat_number}_{pitch_number}"
+        removed = _overrides.pop(legacy_key, None)
     if removed:
         _save_overrides()
         # Persist version to Redis so warmup crons and restarts use the same cache keys
@@ -119,8 +133,13 @@ def remove_pitch_override(game_pk, pitcher_id, at_bat_number, pitch_number):
 def get_all_overrides():
     return dict(_overrides)
 
-def _apply_overrides(df):
-    """Apply pitch reclassification overrides to a DataFrame."""
+def _apply_overrides(df, level=DEFAULT_LEVEL):
+    """Apply pitch reclassification overrides to a DataFrame.
+
+    Override keys use the level-prefixed form `{level}_{gpk}_{pid}_{ab}_{pn}`.
+    Legacy 4-part MLB keys (saved before v7) are still honored when `level`
+    is mlb so historical reclassifications survive the migration.
+    """
     if not _overrides or df.empty:
         return df
     required = {"game_pk", "pitcher", "at_bat_number"}
@@ -129,9 +148,20 @@ def _apply_overrides(df):
     has_pitch_number = "pitch_number" in df.columns
     for key, ov in _overrides.items():
         parts = key.split("_")
-        if len(parts) != 4:
+        if len(parts) == 5:
+            ov_level, gpk_s, pid_s, abn_s, pnum_s = parts
+        elif len(parts) == 4:
+            # Legacy MLB-only override (pre-v7)
+            ov_level = DEFAULT_LEVEL
+            gpk_s, pid_s, abn_s, pnum_s = parts
+        else:
             continue
-        gpk, pid, abn, pnum = int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])
+        if ov_level != level:
+            continue
+        try:
+            gpk, pid, abn, pnum = int(gpk_s), int(pid_s), int(abn_s), int(pnum_s)
+        except ValueError:
+            continue
         mask = (df["game_pk"] == gpk) & (df["pitcher"] == pid) & (df["at_bat_number"] == abn)
         if has_pitch_number:
             # Match by pitch_number column value directly (not positional index)
@@ -181,6 +211,49 @@ SAVANT_CSV_URL = (
     "&min_results=0&min_pas=0&sort_col=pitches&player_event_sort=api_p_release_speed"
     "&sort_order=desc&type=details&all=true"
 )
+
+# Triple-A: Savant's `&minors=true` returns AAA + Single-A FSL combined
+# (FSL is Statcast's testing ground). There is no Savant URL param to filter
+# to AAA only — verified empirically in scripts/verify_aaa.py. Filter rows
+# by game_pk against the MLB Stats API sportId=11 schedule instead.
+SAVANT_AAA_FLAG = "&minors=true"
+MLB_STATS_AAA_SCHEDULE_URL = (
+    "https://statsapi.mlb.com/api/v1/schedule?sportId=11"
+    "&startDate={start}&endDate={end}"
+)
+
+_aaa_pks_cache = {}  # { (start, end): (timestamp, set) } — short TTL since live games are added during the day
+AAA_PKS_CACHE_TTL = 300  # 5 minutes
+
+
+def _get_aaa_game_pks(start_date, end_date):
+    """Return the set of game_pks for AAA games in [start_date, end_date]
+    inclusive. Cached for 5 minutes — live AAA games can appear partway
+    through a day, so we don't cache forever even for past dates."""
+    key = (start_date, end_date)
+    if key in _aaa_pks_cache:
+        ts, pks = _aaa_pks_cache[key]
+        if (time.time() - ts) < AAA_PKS_CACHE_TTL:
+            return pks
+    url = MLB_STATS_AAA_SCHEDULE_URL.format(start=start_date, end=end_date)
+    try:
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        pks = set()
+        for d in data.get("dates", []):
+            for g in d.get("games", []):
+                pk = g.get("gamePk")
+                if pk is not None:
+                    pks.add(int(pk))
+        _aaa_pks_cache[key] = (time.time(), pks)
+        return pks
+    except Exception as e:
+        print(f"[AAA schedule] Error fetching {start_date}..{end_date}: {e}")
+        # Return cached value if available (better stale than empty)
+        if key in _aaa_pks_cache:
+            return _aaa_pks_cache[key][1]
+        return set()
 
 def _fix_name(name):
     if not isinstance(name, str): return name
@@ -250,8 +323,10 @@ def _assign_teams_vectorized(df):
         df["opponent"] = df["opponent"].fillna(pd.Series(computed_opp, index=df.index))
     return df
 
-def _fetch_from_savant(date_str):
+def _fetch_from_savant(date_str, level=DEFAULT_LEVEL):
     url = SAVANT_CSV_URL.format(date=date_str)
+    if level == "aaa":
+        url += SAVANT_AAA_FLAG
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
         resp = requests.get(url, headers=headers, timeout=60)
@@ -260,15 +335,27 @@ def _fetch_from_savant(date_str):
         if not content.strip() or "No Results" in content[:200]:
             return pd.DataFrame()
         df = pd.read_csv(io.StringIO(content), low_memory=False)
-        return df if not df.empty else pd.DataFrame()
-    except Exception as e:
-        print(f"Error fetching from Baseball Savant: {e}")
-        try:
-            from pybaseball import statcast
-            return statcast(start_dt=date_str, end_dt=date_str)
-        except Exception as e2:
-            print(f"Fallback failed: {e2}")
+        if df.empty:
             return pd.DataFrame()
+        if level == "aaa":
+            # Strip Single-A FSL rows — Savant returns both levels under
+            # &minors=true. AAA isolation is by game_pk vs MLB schedule API.
+            aaa_pks = _get_aaa_game_pks(date_str, date_str)
+            if "game_pk" in df.columns and aaa_pks:
+                df = df[df["game_pk"].isin(aaa_pks)]
+            else:
+                # No schedule data — better empty than mixing in Single-A
+                return pd.DataFrame()
+        return df
+    except Exception as e:
+        print(f"Error fetching from Baseball Savant ({level}): {e}")
+        if level == "mlb":
+            try:
+                from pybaseball import statcast
+                return statcast(start_dt=date_str, end_dt=date_str)
+            except Exception as e2:
+                print(f"Fallback failed: {e2}")
+        return pd.DataFrame()
 
 MLB_GAME_FEED_URL = "https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live"
 
@@ -683,10 +770,11 @@ def _is_today(date_str):
     except Exception:
         return False
 
-def fetch_date(date_str):
-    # For today's date, use TTL-based cache so live data refreshes
-    if date_str in _cache:
-        cached = _cache[date_str]
+def fetch_date(date_str, level=DEFAULT_LEVEL):
+    # In-memory cache key includes level so MLB and AAA don't collide
+    cache_key = (level, date_str)
+    if cache_key in _cache:
+        cached = _cache[cache_key]
         if isinstance(cached, tuple):
             ts, df = cached
             if _is_today(date_str) and (time.time() - ts) > LIVE_CACHE_TTL:
@@ -700,28 +788,31 @@ def fetch_date(date_str):
             # else fall through to re-fetch
 
     # Primary: Savant CSV
-    df = _fetch_from_savant(date_str)
+    df = _fetch_from_savant(date_str, level=level)
     if df is None:
         df = pd.DataFrame()
 
-    # Fallback: MLB Stats API for games Savant doesn't have
-    savant_pks = set(df["game_pk"].unique()) if not df.empty else set()
-    mlb_df = _fetch_missing_from_mlb_api(date_str, savant_pks)
-    if not mlb_df.empty:
-        # Apply same transforms to MLB API data
-        if "pitch_type" in mlb_df.columns:
-            mlb_df["pitch_name"] = mlb_df["pitch_type"].map(PITCH_TYPE_MAP)
-            mlb_df["pitch_name"] = mlb_df["pitch_name"].fillna("Unclassified")
-        mlb_df = _assign_teams_vectorized(mlb_df)
-        if not df.empty:
-            # Align columns before concat to avoid FutureWarning with empty/NA columns
-            shared_cols = list(set(df.columns) | set(mlb_df.columns))
-            df = pd.concat([df.reindex(columns=shared_cols), mlb_df.reindex(columns=shared_cols)], ignore_index=True)
-        else:
-            df = mlb_df
+    # Fallback: MLB Stats API for games Savant doesn't have. MLB only —
+    # AAA doesn't have a per-pitch fallback path (and Savant minors data
+    # has full coverage at AAA).
+    if level == DEFAULT_LEVEL:
+        savant_pks = set(df["game_pk"].unique()) if not df.empty else set()
+        mlb_df = _fetch_missing_from_mlb_api(date_str, savant_pks)
+        if not mlb_df.empty:
+            # Apply same transforms to MLB API data
+            if "pitch_type" in mlb_df.columns:
+                mlb_df["pitch_name"] = mlb_df["pitch_type"].map(PITCH_TYPE_MAP)
+                mlb_df["pitch_name"] = mlb_df["pitch_name"].fillna("Unclassified")
+            mlb_df = _assign_teams_vectorized(mlb_df)
+            if not df.empty:
+                # Align columns before concat to avoid FutureWarning with empty/NA columns
+                shared_cols = list(set(df.columns) | set(mlb_df.columns))
+                df = pd.concat([df.reindex(columns=shared_cols), mlb_df.reindex(columns=shared_cols)], ignore_index=True)
+            else:
+                df = mlb_df
 
     if df.empty:
-        _cache[date_str] = (time.time(), pd.DataFrame())
+        _cache[cache_key] = (time.time(), pd.DataFrame())
         return pd.DataFrame()
 
     df = df.copy()
@@ -741,9 +832,9 @@ def fetch_date(date_str):
         df["pitch_name"] = df["pitch_type"].map(PITCH_TYPE_MAP)
         df["pitch_name"] = df["pitch_name"].fillna("Unclassified")
     df = _assign_teams_vectorized(df)
-    # Apply pitch reclassification overrides
-    df = _apply_overrides(df)
-    _cache[date_str] = (time.time(), df)
+    # Apply pitch reclassification overrides (level-filtered)
+    df = _apply_overrides(df, level=level)
+    _cache[cache_key] = (time.time(), df)
     # Also clear boxscore + feed caches for today so IP/ER/scoreboard refresh
     if _is_today(date_str):
         for gpk in set(df["game_pk"].unique()) if not df.empty else []:
@@ -762,12 +853,19 @@ SAVANT_PITCHER_SEASON_URL = (
     "&player_event_sort=api_p_release_speed&sort_order=desc"
 )
 
-def fetch_pitcher_season(pitcher_id, season_year):
-    """Fetch all pitches for a pitcher in a given season. Cached."""
-    cache_key = f"{pitcher_id}_{season_year}"
+def fetch_pitcher_season(pitcher_id, season_year, level=DEFAULT_LEVEL):
+    """Fetch all pitches for a pitcher in a given season. Cached.
+
+    For `level=aaa` we hit Savant with `&minors=true` and post-filter to the
+    AAA game_pk set for the season window, since Savant returns AAA + FSL
+    together.
+    """
+    cache_key = (level, pitcher_id, season_year)
     if cache_key in _season_cache:
         return _season_cache[cache_key]
     url = SAVANT_PITCHER_SEASON_URL.format(pitcher_id=pitcher_id, year=season_year)
+    if level == "aaa":
+        url += SAVANT_AAA_FLAG
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
         resp = requests.get(url, headers=headers, timeout=90)
@@ -777,10 +875,20 @@ def fetch_pitcher_season(pitcher_id, season_year):
             _season_cache[cache_key] = pd.DataFrame()
             return _season_cache[cache_key]
         df = pd.read_csv(io.StringIO(content), low_memory=False)
+        if df.empty:
+            _season_cache[cache_key] = pd.DataFrame()
+            return _season_cache[cache_key]
+        if level == "aaa":
+            # Filter to AAA-only game_pks for the full season window
+            aaa_pks = _get_aaa_game_pks(f"{season_year}-03-20", f"{season_year}-11-01")
+            if "game_pk" in df.columns and aaa_pks:
+                df = df[df["game_pk"].isin(aaa_pks)]
+            else:
+                df = pd.DataFrame()
         _season_cache[cache_key] = df if not df.empty else pd.DataFrame()
         return _season_cache[cache_key]
     except Exception as e:
-        print(f"Error fetching season data for pitcher {pitcher_id}, year {season_year}: {e}")
+        print(f"Error fetching season data for pitcher {pitcher_id}, year {season_year}, level {level}: {e}")
         _season_cache[cache_key] = pd.DataFrame()
         return _season_cache[cache_key]
 
@@ -805,7 +913,7 @@ SAVANT_RANGE_URL = (
 )
 
 
-def _transform_range_df(df):
+def _transform_range_df(df, level=DEFAULT_LEVEL):
     """Apply standard transforms to a range DataFrame (names, pitch mapping, teams)."""
     df = df.copy()
     if "player_name" in df.columns:
@@ -814,13 +922,16 @@ def _transform_range_df(df):
         df["pitch_name"] = df["pitch_type"].map(PITCH_TYPE_MAP)
         df["pitch_name"] = df["pitch_name"].fillna("Unclassified")
     df = _assign_teams_vectorized(df)
-    df = _apply_overrides(df)
+    df = _apply_overrides(df, level=level)
     return df
 
 
-def _fetch_savant_range_chunk(start_date, end_date):
-    """Fetch a single chunk of CSV from Savant. Returns raw DataFrame."""
+def _fetch_savant_range_chunk(start_date, end_date, level=DEFAULT_LEVEL):
+    """Fetch a single chunk of CSV from Savant. Returns raw DataFrame.
+    For AAA, appends `&minors=true` and filters to AAA game_pks."""
     url = SAVANT_RANGE_URL.format(start=start_date, end=end_date)
+    if level == "aaa":
+        url += SAVANT_AAA_FLAG
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
         resp = requests.get(url, headers=headers, timeout=120)
@@ -829,13 +940,21 @@ def _fetch_savant_range_chunk(start_date, end_date):
         if not content.strip() or "No Results" in content[:200]:
             return pd.DataFrame()
         df = pd.read_csv(io.StringIO(content), low_memory=False)
-        return df if not df.empty else pd.DataFrame()
+        if df.empty:
+            return pd.DataFrame()
+        if level == "aaa":
+            aaa_pks = _get_aaa_game_pks(start_date, end_date)
+            if "game_pk" in df.columns and aaa_pks:
+                df = df[df["game_pk"].isin(aaa_pks)]
+            else:
+                return pd.DataFrame()
+        return df
     except Exception as e:
-        print(f"Error fetching date range {start_date} to {end_date}: {e}")
+        print(f"Error fetching date range {start_date} to {end_date} ({level}): {e}")
         return pd.DataFrame()
 
 
-def _fetch_savant_range_raw(start_date, end_date):
+def _fetch_savant_range_raw(start_date, end_date, level=DEFAULT_LEVEL):
     """Fetch raw CSV from Savant for a date range, chunking into weekly intervals
     to avoid the 25,000 row cap per request."""
     from datetime import datetime, timedelta
@@ -848,8 +967,8 @@ def _fetch_savant_range_raw(start_date, end_date):
         chunk_end = min(cur + timedelta(days=chunk_days - 1), end_dt)
         cs = cur.strftime("%Y-%m-%d")
         ce = chunk_end.strftime("%Y-%m-%d")
-        print(f"Fetching Savant chunk {cs} to {ce}...")
-        chunk_df = _fetch_savant_range_chunk(cs, ce)
+        print(f"Fetching Savant chunk {cs} to {ce} ({level})...")
+        chunk_df = _fetch_savant_range_chunk(cs, ce, level=level)
         if not chunk_df.empty:
             frames.append(chunk_df)
         cur = chunk_end + timedelta(days=1)
@@ -859,19 +978,25 @@ def _fetch_savant_range_raw(start_date, end_date):
     # Deduplicate in case of overlap
     if "game_pk" in combined.columns and "at_bat_number" in combined.columns and "pitch_number" in combined.columns:
         combined = combined.drop_duplicates(subset=["game_pk", "at_bat_number", "pitch_number"], keep="first")
-    print(f"Savant range total: {len(combined)} rows across {combined['game_date'].nunique() if 'game_date' in combined.columns else '?'} dates")
+    print(f"Savant range total ({level}): {len(combined)} rows across {combined['game_date'].nunique() if 'game_date' in combined.columns else '?'} dates")
     return combined
 
 
-def _merge_daily_cache(df, start_date, end_date):
-    """Merge any cached daily data into a range DataFrame.
+def _merge_daily_cache(df, start_date, end_date, level=DEFAULT_LEVEL):
+    """Merge any cached daily data into a range DataFrame for the given level.
 
     The daily cache (_cache) includes MLB API fallback data that the Savant
     range endpoint may not have (e.g., today's live games). This merges those
     extra game_pk rows into the range DataFrame so player pages show all games.
     """
     daily_frames = []
-    for date_str, cached in _cache.items():
+    for cache_key, cached in _cache.items():
+        # Cache keys are (level, date_str) tuples since v7
+        if not (isinstance(cache_key, tuple) and len(cache_key) == 2):
+            continue
+        cache_level, date_str = cache_key
+        if cache_level != level:
+            continue
         if date_str < start_date or date_str > end_date:
             continue
         if isinstance(cached, tuple):
@@ -900,21 +1025,21 @@ def _merge_daily_cache(df, start_date, end_date):
     return merged
 
 
-def fetch_date_range(start_date, end_date):
+def fetch_date_range(start_date, end_date, level=DEFAULT_LEVEL):
     """Fetch all pitches across a date range from Savant, supplemented with daily cache."""
-    cache_key = f"{start_date}_{end_date}"
+    cache_key = (level, start_date, end_date)
     if cache_key in _range_cache:
         ts, df = _range_cache[cache_key]
         if not _is_today(end_date) or (time.time() - ts) < RANGE_CACHE_TTL:
             # Past-date ranges never expire; today's data uses TTL-based refresh
-            return _merge_daily_cache(df, start_date, end_date)
+            return _merge_daily_cache(df, start_date, end_date, level=level)
 
-    df = _fetch_savant_range_raw(start_date, end_date)
+    df = _fetch_savant_range_raw(start_date, end_date, level=level)
     if not df.empty:
-        df = _transform_range_df(df)
+        df = _transform_range_df(df, level=level)
 
     # Merge in any daily-cached data (includes MLB API fallback games)
-    df = _merge_daily_cache(df if not df.empty else pd.DataFrame(), start_date, end_date)
+    df = _merge_daily_cache(df if not df.empty else pd.DataFrame(), start_date, end_date, level=level)
 
     _range_cache[cache_key] = (time.time(), df)
     return df
@@ -978,20 +1103,21 @@ def set_agg_cache(key, result):
 
 _pitchers_list_cache = {}  # { "start_end": (timestamp, list) }
 
-def fetch_all_pitchers_list(start_date, end_date):
+def fetch_all_pitchers_list(start_date, end_date, level=DEFAULT_LEVEL):
     """Get deduplicated list of all pitchers in date range. Cached."""
-    cache_key = f"{start_date}_{end_date}"
+    cache_key = (level, start_date, end_date)
     if cache_key in _pitchers_list_cache:
         ts, result = _pitchers_list_cache[cache_key]
         if not _is_today(end_date) or (time.time() - ts) < RANGE_CACHE_TTL:
             return result
+    redis_key = f"pitchers:{level}_{start_date}_{end_date}"
     # L2: Redis — only trust for past-date ranges; live ranges may be stale
     if not _is_today(end_date):
-        redis_val = redis_get(f"pitchers:{cache_key}")
+        redis_val = redis_get(redis_key)
         if redis_val is not None:
             _pitchers_list_cache[cache_key] = (time.time(), redis_val)
             return redis_val
-    df = fetch_date_range(start_date, end_date)
+    df = fetch_date_range(start_date, end_date, level=level)
     if df.empty:
         return []
     grouped = df.groupby("pitcher").agg({
@@ -1009,7 +1135,7 @@ def fetch_all_pitchers_list(start_date, end_date):
     result.sort(key=lambda r: r["name"])
     _pitchers_list_cache[cache_key] = (time.time(), result)
     ttl = RANGE_CACHE_TTL if _is_today(end_date) else None
-    redis_set(f"pitchers:{cache_key}", result, ttl=ttl)
+    redis_set(redis_key, result, ttl=ttl)
     return result
 
 
@@ -1036,7 +1162,7 @@ def is_custom_season_range(start_date, end_date):
     return start_date != f"{current_year}-03-25" or end_date != today
 
 
-def warmup_range_data(start_date="2026-03-25", end_date=None):
+def warmup_range_data(start_date="2026-03-25", end_date=None, level=DEFAULT_LEVEL):
     """Pre-fetch and warm all caches for the standard date range.
     Called on server startup in a background thread."""
     global _warmup_status
@@ -1047,29 +1173,33 @@ def warmup_range_data(start_date="2026-03-25", end_date=None):
         if _warmup_status["loading"]:
             return  # already running
         _warmup_status["loading"] = True
-        _warmup_status["progress"] = "Fetching pitch data from Savant..."
+        _warmup_status["progress"] = f"Fetching pitch data from Savant ({level})..."
 
-    print(f"[Warmup] Starting data pre-fetch: {start_date} to {end_date}")
+    print(f"[Warmup] Starting data pre-fetch ({level}): {start_date} to {end_date}")
     t0 = time.time()
     try:
-        df = fetch_date_range(start_date, end_date)
+        df = fetch_date_range(start_date, end_date, level=level)
         elapsed = time.time() - t0
-        print(f"[Warmup] Savant data loaded: {len(df)} rows in {elapsed:.1f}s")
+        print(f"[Warmup] Savant data loaded ({level}): {len(df)} rows in {elapsed:.1f}s")
 
         if not df.empty:
-            with _warmup_lock:
-                _warmup_status["progress"] = "Pre-fetching boxscore data..."
-            prefetch_boxscores(df)
+            # MLB only: prefetch MLB Stats API boxscores. AAA boxscores still
+            # work via the same endpoints but we don't pre-warm to keep cron
+            # runtime under control.
+            if level == DEFAULT_LEVEL:
+                with _warmup_lock:
+                    _warmup_status["progress"] = "Pre-fetching boxscore data..."
+                prefetch_boxscores(df)
 
             with _warmup_lock:
-                _warmup_status["progress"] = "Pre-computing aggregations..."
+                _warmup_status["progress"] = f"Pre-computing aggregations ({level})..."
 
             # Pre-compute the default leaderboard aggregations
             from aggregation import aggregate_pitcher_results_range, aggregate_pitch_data_range
             results = aggregate_pitcher_results_range(df)
-            set_agg_cache(f"leaderboard_results_{start_date}_{end_date}", results)
+            set_agg_cache(f"leaderboard_{level}_results_{start_date}_{end_date}", results)
             pitch_data = aggregate_pitch_data_range(df)
-            set_agg_cache(f"leaderboard_pitch-data_{start_date}_{end_date}", pitch_data)
+            set_agg_cache(f"leaderboard_{level}_pitch-data_{start_date}_{end_date}", pitch_data)
 
             # Pre-compute per-team aggregations so team pages load instantly
             if "pitcher_team" in df.columns:
@@ -1081,33 +1211,33 @@ def warmup_range_data(start_date="2026-03-25", end_date=None):
                     if tdf.empty:
                         continue
                     t_results = aggregate_pitcher_results_range(tdf)
-                    set_agg_cache(f"team_{team}_results_{start_date}_{end_date}", t_results)
+                    set_agg_cache(f"team_{level}_{team}_results_{start_date}_{end_date}", t_results)
                     t_pitch = aggregate_pitch_data_range(tdf)
-                    set_agg_cache(f"team_{team}_pitch-data_{start_date}_{end_date}", t_pitch)
-                print(f"[Warmup] Team aggregations cached for {len(teams)} teams")
+                    set_agg_cache(f"team_{level}_{team}_pitch-data_{start_date}_{end_date}", t_pitch)
+                print(f"[Warmup] Team aggregations cached for {len(teams)} teams ({level})")
 
             # Also warm the daily cache for the default date so first game load is instant
             with _warmup_lock:
                 _warmup_status["progress"] = "Warming default date cache..."
             try:
-                default_date = get_default_date()
-                fetch_date(default_date)
-                print(f"[Warmup] Default date {default_date} warmed")
+                default_date = get_default_date(level=level)
+                fetch_date(default_date, level=level)
+                print(f"[Warmup] Default date {default_date} warmed ({level})")
 
                 # Pre-compute daily aggregations for the initial-load endpoint
                 with _warmup_lock:
                     _warmup_status["progress"] = "Pre-computing daily aggregations..."
                 from aggregation import aggregate_pitch_data, aggregate_pitcher_results
-                pd_result = aggregate_pitch_data(default_date, None)
-                set_agg_cache(f"daily_pitch_{default_date}", pd_result)
-                pr_result = aggregate_pitcher_results(default_date, None)
-                set_agg_cache(f"daily_results_s{CARD_SCHEMA_VERSION}_{default_date}", pr_result)
-                print(f"[Warmup] Daily aggregations for {default_date} cached")
+                pd_result = aggregate_pitch_data(default_date, None, level=level)
+                set_agg_cache(f"daily_pitch_{level}_{default_date}", pd_result)
+                pr_result = aggregate_pitcher_results(default_date, None, level=level)
+                set_agg_cache(f"daily_results_{level}_s{CARD_SCHEMA_VERSION}_{default_date}", pr_result)
+                print(f"[Warmup] Daily aggregations for {default_date} ({level}) cached")
             except Exception as e2:
                 print(f"[Warmup] Default date warm failed: {e2}")
 
             elapsed_total = time.time() - t0
-            print(f"[Warmup] Complete in {elapsed_total:.1f}s — {len(df)} pitches, boxscores + aggregations cached")
+            print(f"[Warmup] Complete ({level}) in {elapsed_total:.1f}s — {len(df)} pitches")
 
         with _warmup_lock:
             _warmup_status["ready"] = True
@@ -1115,16 +1245,16 @@ def warmup_range_data(start_date="2026-03-25", end_date=None):
             _warmup_status["progress"] = "Ready"
             _warmup_status["error"] = None
     except Exception as e:
-        print(f"[Warmup] Error: {e}")
+        print(f"[Warmup] Error ({level}): {e}")
         with _warmup_lock:
             _warmup_status["loading"] = False
             _warmup_status["error"] = str(e)
             _warmup_status["progress"] = f"Error: {e}"
 
 
-def start_warmup(start_date="2026-03-25", end_date=None):
+def start_warmup(start_date="2026-03-25", end_date=None, level=DEFAULT_LEVEL):
     """Kick off warmup in a background thread."""
-    t = threading.Thread(target=warmup_range_data, args=(start_date, end_date), daemon=True)
+    t = threading.Thread(target=warmup_range_data, args=(start_date, end_date, level), daemon=True)
     t.start()
     return t
 
@@ -1224,33 +1354,20 @@ def compute_player_page(df, pitcher_id):
     }
 
 
-def get_top400_pitcher_ids(df):
-    """Return a dict of {pitcher_id: name} for Top 400 pitchers found in the data."""
-    from top400 import is_top400
-    if "player_name" not in df.columns or "pitcher" not in df.columns:
-        return {}
-    # Build unique pitcher_id → name mapping from the DataFrame
-    pitcher_map = df.drop_duplicates(subset=["pitcher"])[["pitcher", "player_name"]].set_index("pitcher")["player_name"].to_dict()
-    return {int(pid): name for pid, name in pitcher_map.items() if is_top400(name)}
-
-
-def warmup_player_pages(df, start_date, end_date, pitcher_ids=None, only_date=None):
-    """Pre-compute and cache player pages.
+def warmup_player_pages(df, start_date, end_date, pitcher_ids, only_date=None, level=DEFAULT_LEVEL):
+    """Pre-compute and cache player pages for the given pitcher IDs.
 
     Args:
         df: Full season DataFrame (already loaded).
         start_date, end_date: Date range strings (for cache key).
-        pitcher_ids: List of pitcher IDs to compute. If None, computes all Top 400.
+        pitcher_ids: List of pitcher IDs to compute. Required.
         only_date: If set, only compute for pitchers who pitched on this date.
+        level: mlb|aaa — included in the cache key.
 
     Returns:
         dict with 'computed' count and 'skipped' count.
     """
-    top400_map = get_top400_pitcher_ids(df)
-    if pitcher_ids is not None:
-        target_ids = [pid for pid in pitcher_ids if pid in top400_map]
-    else:
-        target_ids = list(top400_map.keys())
+    target_ids = list(pitcher_ids or [])
 
     # If only_date is set, filter to pitchers who pitched on that date
     if only_date and "game_date" in df.columns:
@@ -1262,7 +1379,7 @@ def warmup_player_pages(df, start_date, end_date, pitcher_ids=None, only_date=No
     skipped = 0
     suffix = "_custom" if is_custom_season_range(start_date, end_date) else ""
     for pid in target_ids:
-        agg_key = f"player_v2_{pid}_s{CARD_SCHEMA_VERSION}{suffix}"
+        agg_key = f"player_v2_{level}_{pid}_s{CARD_SCHEMA_VERSION}{suffix}"
         try:
             result = compute_player_page(df, pid)
             if result is not None:
@@ -1271,10 +1388,10 @@ def warmup_player_pages(df, start_date, end_date, pitcher_ids=None, only_date=No
             else:
                 skipped += 1
         except Exception as e:
-            print(f"[PlayerWarmup] Error computing player {pid} ({top400_map.get(pid)}): {e}")
+            print(f"[PlayerWarmup] Error computing player {pid}: {e}")
             skipped += 1
 
-    return {"computed": computed, "skipped": skipped, "total_top400_in_data": len(top400_map)}
+    return {"computed": computed, "skipped": skipped}
 
 
 def get_warmup_status():
@@ -1283,14 +1400,32 @@ def get_warmup_status():
         return dict(_warmup_status)
 
 
-def clear_cache(date_str=None):
+def clear_cache(date_str=None, level=None):
+    """Clear caches for a specific date and/or level.
+
+    - `date_str=None`, `level=None` → clear everything
+    - `date_str=X`, `level=None` → clear date X across all levels
+    - `date_str=X`, `level=L` → clear date X for level L only
+    - `date_str=None`, `level=L` → clear all entries for level L
+    """
     if date_str:
-        _cache.pop(date_str, None)
-        _schedule_cache.pop(date_str, None)
-        redis_delete(f"schedule:{date_str}")
+        # Drop matching daily caches (filter by level if provided)
+        for k in list(_cache.keys()):
+            if isinstance(k, tuple) and len(k) == 2:
+                k_level, k_date = k
+                if k_date == date_str and (level is None or k_level == level):
+                    _cache.pop(k, None)
+        for k in list(_schedule_cache.keys()):
+            if isinstance(k, tuple) and len(k) == 2:
+                k_level, k_date = k
+                if k_date == date_str and (level is None or k_level == level):
+                    _schedule_cache.pop(k, None)
+                    redis_delete(f"schedule:{k_level}_{k_date}")
         # Clear daily agg caches for this date
         for k in list(_agg_cache.keys()):
             if date_str in k:
+                if level is not None and f"_{level}_" not in k and not k.endswith(f"_{level}"):
+                    continue
                 _agg_cache.pop(k, None)
                 redis_delete(f"agg:{k}")
         # Clear range cache and pitchers list cache — any range covering this date
@@ -1298,11 +1433,33 @@ def clear_cache(date_str=None):
         # the March 25–April 11 range and its derived caches)
         for range_dict in (_range_cache, _pitchers_list_cache):
             for k in list(range_dict.keys()):
-                parts = k.split("_")
-                if len(parts) == 2:
-                    start, end = parts
+                if isinstance(k, tuple) and len(k) == 3:
+                    k_level, start, end = k
+                    if level is not None and k_level != level:
+                        continue
                     if start <= date_str <= end:
                         range_dict.pop(k, None)
+    elif level is not None:
+        # Clear everything for one level
+        for k in list(_cache.keys()):
+            if isinstance(k, tuple) and k[0] == level:
+                _cache.pop(k, None)
+        for k in list(_range_cache.keys()):
+            if isinstance(k, tuple) and k[0] == level:
+                _range_cache.pop(k, None)
+        for k in list(_pitchers_list_cache.keys()):
+            if isinstance(k, tuple) and k[0] == level:
+                _pitchers_list_cache.pop(k, None)
+        for k in list(_schedule_cache.keys()):
+            if isinstance(k, tuple) and k[0] == level:
+                _schedule_cache.pop(k, None)
+        for k in list(_season_cache.keys()):
+            if isinstance(k, tuple) and k[0] == level:
+                _season_cache.pop(k, None)
+        for k in list(_agg_cache.keys()):
+            if f"_{level}_" in k:
+                _agg_cache.pop(k, None)
+                redis_delete(f"agg:{k}")
     else:
         _cache.clear()
         _season_cache.clear()
@@ -1318,6 +1475,10 @@ def _last_name(full_name):
     return full_name.split()[-1] if full_name else ""
 
 MLB_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&sportId=51&gameType=S&gameType=R&gameType=E&gameType=W&gameType=D&gameType=L&gameType=F&startDate={date}&endDate={date}&hydrate=team,probablePitcher,linescore"
+# Triple-A schedule. sportId=11 covers International League + PCL (single
+# combined sport ID per MLB Stats API). gameType=R only — AAA doesn't run
+# spring training games on the same gameType codes as MLB.
+AAA_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule?sportId=11&gameType=R&startDate={date}&endDate={date}&hydrate=team,probablePitcher,linescore"
 
 # Map full team names to abbreviations used by Savant
 _TEAM_ABBREV = {
@@ -1344,21 +1505,25 @@ _TEAM_ABBREV = {
 _schedule_cache = {}  # { date_str: (timestamp, games_list) }
 SCHEDULE_CACHE_TTL = 120  # 2 minutes
 
-def _get_mlb_schedule(date_str, force_refresh=False):
+def _get_mlb_schedule(date_str, force_refresh=False, level=DEFAULT_LEVEL):
     """Get full game list from MLB Stats API (includes all game types). Cached.
-    force_refresh=True bypasses both in-memory and Redis caches."""
+    force_refresh=True bypasses both in-memory and Redis caches.
+    level=mlb hits sportId=1+51, level=aaa hits sportId=11."""
+    cache_key = (level, date_str)
+    redis_key = f"schedule:{level}_{date_str}"
     if not force_refresh:
-        if date_str in _schedule_cache:
-            ts, games = _schedule_cache[date_str]
+        if cache_key in _schedule_cache:
+            ts, games = _schedule_cache[cache_key]
             if time.time() - ts < SCHEDULE_CACHE_TTL:
                 return games
         # L2: Redis
-        redis_val = redis_get(f"schedule:{date_str}")
+        redis_val = redis_get(redis_key)
         if redis_val is not None:
-            _schedule_cache[date_str] = (time.time(), redis_val)
+            _schedule_cache[cache_key] = (time.time(), redis_val)
             return redis_val
     try:
-        url = MLB_SCHEDULE_URL.format(date=date_str)
+        url_template = AAA_SCHEDULE_URL if level == "aaa" else MLB_SCHEDULE_URL
+        url = url_template.format(date=date_str)
         resp = requests.get(url, timeout=15)
         resp.raise_for_status()
         data = resp.json()
@@ -1416,14 +1581,14 @@ def _get_mlb_schedule(date_str, force_refresh=False):
                     "current_inning": current_inning,
                     "inning_half": inning_half,
                 })
-        _schedule_cache[date_str] = (time.time(), games)
-        redis_set(f"schedule:{date_str}", games, ttl=SCHEDULE_CACHE_TTL)
+        _schedule_cache[cache_key] = (time.time(), games)
+        redis_set(redis_key, games, ttl=SCHEDULE_CACHE_TTL)
         return games
     except Exception as e:
-        print(f"MLB Schedule API error: {e}")
+        print(f"MLB Schedule API error ({level}): {e}")
         return None
 
-def get_default_date():
+def get_default_date(level=DEFAULT_LEVEL):
     """Return the smart default date:
     - Yesterday (ET) if no game has started today yet
     - Today (ET) once any game is in progress or finished
@@ -1444,7 +1609,7 @@ def get_default_date():
 
     # Check if any game today has started
     not_started = {"Scheduled", "Pre-Game", "Warmup", "Delayed Start"}
-    schedule = _get_mlb_schedule(today_str)
+    schedule = _get_mlb_schedule(today_str, level=level)
     if schedule:
         if any(g.get("status") not in not_started for g in schedule):
             return today_str
@@ -1465,18 +1630,18 @@ def get_default_date():
                 except Exception:
                     pass
         if should_have_started:
-            schedule = _get_mlb_schedule(today_str, force_refresh=True)
+            schedule = _get_mlb_schedule(today_str, force_refresh=True, level=level)
             if schedule and any(g.get("status") not in not_started for g in schedule):
                 return today_str
     # No games started today (or no games at all) — show yesterday
     return yesterday_str
 
-def get_games(date_str):
-    df = fetch_date(date_str)  # This now includes MLB API fallback data
+def get_games(date_str, level=DEFAULT_LEVEL):
+    df = fetch_date(date_str, level=level)  # This now includes MLB API fallback data
     data_pks = set(df["game_pk"].unique()) if not df.empty else set()
 
     # Try MLB Stats API for full game list
-    mlb_games = _get_mlb_schedule(date_str)
+    mlb_games = _get_mlb_schedule(date_str, level=level)
     if mlb_games:
         for g in mlb_games:
             g["has_data"] = g["game_pk"] in data_pks

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { PITCH_COLORS, CARD_PITCH_DATA_COLUMNS, displayAbbrev } from "../constants";
+import { PITCH_COLORS, CARD_PITCH_DATA_COLUMNS, displayTeamAbbrev } from "../constants";
 import { fetchSeasonAverages, fetchPitcherSchedule } from "../utils/api";
 import { getOpponentTierColor } from "../constants";
 import useIsMobile from "../hooks/useIsMobile";
@@ -16,8 +16,10 @@ const API = window.__BACKEND_PORT__
   ? `http://localhost:${window.__BACKEND_PORT__}`
   : process.env.NODE_ENV === "development" ? "http://localhost:8000" : "";
 
-export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
+export default function PlayerPage({ pitcherId, onBack, onGameClick, level = "mlb" }) {
   const isMobile = useIsMobile();
+  // Local alias to avoid touching every existing displayAbbrev call site.
+  const displayAbbrev = (abbr) => displayTeamAbbrev(abbr, level);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadMsg, setLoadMsg] = useState("Loading player data...");
@@ -61,13 +63,14 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
       pitcher_id: pitcherId,
       start_date: "2026-03-25",
     });
+    if (level && level !== "mlb") params.set("level", level);
     fetch(`${API}/api/player-page?${params}`)
       .then((r) => r.json())
       .then((d) => { if (!cancelled) { cancelled = true; clearTimeout(pollTimer); setData(d); setLoading(false); } })
       .catch(() => { if (!cancelled) { cancelled = true; clearTimeout(pollTimer); setLoading(false); } });
 
     return () => { cancelled = true; clearTimeout(pollTimer); };
-  }, [pitcherId]);
+  }, [pitcherId, level]);
 
   // Always fetch season averages for change display.
   // auto_fallback resolves the most recent prior MLB season with data — so
@@ -76,7 +79,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
   useEffect(() => {
     if (!seasonAvgs && pitcherId) {
       setLoadingAvgs(true);
-      fetchSeasonAverages(pitcherId, currentYear, { autoFallback: true })
+      fetchSeasonAverages(pitcherId, currentYear, { autoFallback: true, level })
         .then(payload => {
           const avgs = payload?.averages || {};
           setSeasonAvgs(avgs);
@@ -85,7 +88,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick }) {
         })
         .catch(() => { setSeasonAvgs({}); setPrevSeason(null); setLoadingAvgs(false); });
     }
-  }, [seasonAvgs, pitcherId, currentYear]);
+  }, [seasonAvgs, pitcherId, currentYear, level]);
 
   // Select correct pitch table based on batter filter AND game filter
   const activePitchData = useMemo(() => {

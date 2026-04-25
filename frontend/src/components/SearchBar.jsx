@@ -1,29 +1,21 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
-import { TOP_400_NAMES } from "../top400";
+import React, { useState, useRef, useEffect } from "react";
+
+const API_BASE = window.__BACKEND_PORT__
+  ? `http://localhost:${window.__BACKEND_PORT__}`
+  : process.env.NODE_ENV === "development" ? "http://localhost:8000" : "";
 
 /**
- * Client-side search against the Top 400 pitcher list.
- * Uses Unicode NFKD normalization to strip diacritics so that
- * "Vasquez" matches "Vásquez" and vice versa.
+ * Server-side pitcher search backed by /api/pitchers-search.
+ * Returns the actual pitchers in the season's data (level-aware).
+ * The endpoint is accent-insensitive on the server side.
  */
-function stripAccents(str) {
-  return str.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/\u00ad/g, "");
-}
-
-export default function SearchBar({ onSelectPlayer }) {
+export default function SearchBar({ onSelectPlayer, level = "mlb" }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
   const [highlightIdx, setHighlightIdx] = useState(-1);
   const wrapperRef = useRef(null);
-
-  // Build searchable list once from the Top 400 set
-  const searchList = useMemo(() => {
-    return Array.from(TOP_400_NAMES).map((name) => ({
-      name,
-      normalized: stripAccents(name).toLowerCase(),
-    }));
-  }, []);
+  const reqIdRef = useRef(0);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -35,30 +27,44 @@ export default function SearchBar({ onSelectPlayer }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleChange = (e) => {
-    const val = e.target.value;
-    setQuery(val);
-    setHighlightIdx(-1);
-    if (!val.trim()) {
+  // Debounced server search — 150ms feels responsive without flooding the API.
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) {
       setResults([]);
       setOpen(false);
       return;
     }
-    const q = stripAccents(val).toLowerCase();
-    const matches = searchList
-      .filter((item) => item.normalized.includes(q))
-      .slice(0, 15);
-    setResults(matches.map((m) => m.name));
-    setOpen(matches.length > 0);
-  };
+    const myReqId = ++reqIdRef.current;
+    const t = setTimeout(() => {
+      const params = new URLSearchParams({ q: trimmed });
+      if (level && level !== "mlb") params.set("level", level);
+      fetch(`${API_BASE}/api/pitchers-search?${params}`)
+        .then((r) => r.json())
+        .then((data) => {
+          // Drop stale responses
+          if (myReqId !== reqIdRef.current) return;
+          const list = Array.isArray(data) ? data : [];
+          setResults(list);
+          setOpen(true);
+          setHighlightIdx(-1);
+        })
+        .catch(() => {
+          if (myReqId !== reqIdRef.current) return;
+          setResults([]);
+          setOpen(true);
+        });
+    }, 150);
+    return () => clearTimeout(t);
+  }, [query, level]);
 
-  const handleSelect = (name, e) => {
+  const handleSelect = (player, e) => {
     setQuery("");
     setResults([]);
     setOpen(false);
     setHighlightIdx(-1);
-    // Pass name instead of pitcher_id — App.jsx navigateToPlayer handles name-based lookup
-    onSelectPlayer(null, name, e);
+    // Server already gave us the pitcher_id — pass it directly.
+    onSelectPlayer(player.pitcher_id, player.name, e);
   };
 
   const handleKeyDown = (e) => {
@@ -84,20 +90,20 @@ export default function SearchBar({ onSelectPlayer }) {
         className="search-input"
         placeholder="Player Search"
         value={query}
-        onChange={handleChange}
+        onChange={(e) => setQuery(e.target.value)}
         onKeyDown={handleKeyDown}
         onFocus={() => { if (results.length > 0) setOpen(true); }}
       />
       {open && results.length > 0 && (
         <div className="search-dropdown">
-          {results.map((name, idx) => (
+          {results.map((p, idx) => (
             <div
-              key={name}
+              key={p.pitcher_id}
               className={`search-result${idx === highlightIdx ? " highlighted" : ""}`}
-              onClick={(e) => handleSelect(name, e)}
-              onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); handleSelect(name, e); } }}
+              onClick={(e) => handleSelect(p, e)}
+              onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); handleSelect(p, e); } }}
             >
-              <span className="search-result-name">{name}</span>
+              <span className="search-result-name">{p.name}</span>
             </div>
           ))}
         </div>

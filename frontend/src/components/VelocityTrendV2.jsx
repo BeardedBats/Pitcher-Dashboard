@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
-import { PITCH_COLORS, BATTED_BALL_COLORS, displayAbbrev } from "../constants";
+import { PITCH_COLORS, BATTED_BALL_COLORS, displayTeamAbbrev } from "../constants";
 import { isRunScored, getTooltipResult, getPBPResultColor, getPADescriptionSpans, isCIOrErrorEvent } from "../utils/pitchFilters";
 import { classifyBattedBall } from "../utils/formatting";
 import { vpToZoomCoord } from "../utils/desktopZoom";
@@ -32,7 +32,9 @@ function basesString(on1b, on2b, on3b) {
 // PA result colors are sourced from getPBPResultColor (utils/pitchFilters) so
 // Scoreboard, this component, PitcherCard, and PlayByPlayModal stay in sync.
 
-export default function VelocityTrendV2({ pitches, onReclassify, isMobile, linescoreData, pitcherId }) {
+export default function VelocityTrendV2({ pitches, onReclassify, isMobile, linescoreData, pitcherId, level = "mlb" }) {
+  // Local alias keeps existing call sites unchanged.
+  const displayAbbrev = (abbr) => displayTeamAbbrev(abbr, level);
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
   const dotsRef = useRef([]);

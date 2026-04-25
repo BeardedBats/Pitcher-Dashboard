@@ -1,9 +1,12 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
-import { displayAbbrev } from "../constants";
+import { displayTeamAbbrev } from "../constants";
 import { getPBPResultColor, getPADescriptionSpans, isCIOrErrorEvent } from "../utils/pitchFilters";
 import { vpToZoomCoord, getDesktopZoom } from "../utils/desktopZoom";
 
-export default function Scoreboard({ data, pitcherId, onInningClick }) {
+export default function Scoreboard({ data, pitcherId, onInningClick, level = "mlb" }) {
+  // Local alias keeps the displayAbbrev → displayTeamAbbrev swap contained
+  // (lots of call sites in this file).
+  const displayAbbrev = (abbr) => displayTeamAbbrev(abbr, level);
   const [tooltip, setTooltip] = useState(null); // { inning, top, x, y, above }
   const [clampedPos, setClampedPos] = useState(null); // { left, top, bottom }
   const boardRef = useRef(null);

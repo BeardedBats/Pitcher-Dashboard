@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { TEAM_FULL_NAMES, PITCH_COLORS, displayAbbrev } from "../constants";
+import { TEAM_FULL_NAMES, PITCH_COLORS, displayTeamAbbrev } from "../constants";
 
 const API = window.__BACKEND_PORT__
   ? `http://localhost:${window.__BACKEND_PORT__}`
   : process.env.NODE_ENV === "development" ? "http://localhost:8000" : "";
 
-export default function TeamPage({ teamAbbrev, onPlayerClick, onBack }) {
+export default function TeamPage({ teamAbbrev, onPlayerClick, onBack, level = "mlb" }) {
+  // Local alias keeps existing displayAbbrev call sites unchanged.
+  const displayAbbrev = (abbr) => displayTeamAbbrev(abbr, level);
   const [view, setView] = useState("results");
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -29,13 +31,14 @@ export default function TeamPage({ teamAbbrev, onPlayerClick, onBack }) {
     };
     pollTimer = setTimeout(pollStatus, 1000);
 
-    fetch(`${API}/api/team-pitchers?team=${encodeURIComponent(teamAbbrev)}&view=${view}`)
+    const lvParam = level && level !== "mlb" ? `&level=${encodeURIComponent(level)}` : "";
+    fetch(`${API}/api/team-pitchers?team=${encodeURIComponent(teamAbbrev)}&view=${view}${lvParam}`)
       .then((r) => r.json())
       .then((d) => { if (!cancelled) { cancelled = true; clearTimeout(pollTimer); setData(d); setLoading(false); } })
       .catch(() => { if (!cancelled) { cancelled = true; clearTimeout(pollTimer); setLoading(false); } });
 
     return () => { cancelled = true; clearTimeout(pollTimer); };
-  }, [teamAbbrev, view]);
+  }, [teamAbbrev, view, level]);
 
   const handleSort = (col) => {
     if (sortCol === col) {

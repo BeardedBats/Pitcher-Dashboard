@@ -18,9 +18,9 @@ from data import (
     fetch_date_range, fetch_all_pitchers_list, prefetch_boxscores,
     start_warmup, get_warmup_status, get_agg_cache, set_agg_cache,
     warmup_range_data, fetch_date, compute_player_page,
-    get_top400_pitcher_ids, warmup_player_pages,
+    warmup_player_pages,
     get_override_version, CARD_SCHEMA_VERSION,
-    is_custom_season_range,
+    is_custom_season_range, LEVELS, DEFAULT_LEVEL,
 )
 from aggregation import (
     aggregate_pitch_data, aggregate_pitcher_results, get_pitcher_card,
@@ -199,73 +199,86 @@ def _resolve_end_date(end_date: str) -> str:
     return datetime.now(et).strftime("%Y-%m-%d")
 
 
+def _resolve_level(level: str) -> str:
+    """Coerce a level query param to a known value. Falls back to mlb on any
+    bad input — never raise, since clients can call with default level."""
+    lv = (level or "").strip().lower()
+    return lv if lv in LEVELS else DEFAULT_LEVEL
+
+
 @app.get("/api/default-date")
-def default_date(): return {"date": get_default_date()}
+def default_date(level: str = Query(DEFAULT_LEVEL)):
+    return {"date": get_default_date(level=_resolve_level(level))}
 
 @app.get("/api/warmup-status")
 def warmup_status(): return get_warmup_status()
 
 @app.get("/api/games")
-def games(date: str = Query(...)): return get_games(date)
+def games(date: str = Query(...), level: str = Query(DEFAULT_LEVEL)):
+    return get_games(date, level=_resolve_level(level))
 
 @app.get("/api/pitch-data")
-def pitch_data(date: str = Query(...), game_pk: int = Query(None)):
+def pitch_data(date: str = Query(...), game_pk: int = Query(None), level: str = Query(DEFAULT_LEVEL)):
+    lv = _resolve_level(level)
     if game_pk is None:
         # Check agg cache for all-games daily aggregation
-        agg_key = f"daily_pitch_{date}"
+        agg_key = f"daily_pitch_{lv}_{date}"
         cached = get_agg_cache(agg_key)
         if cached is not None:
             return cached
-        result = aggregate_pitch_data(date, game_pk)
+        result = aggregate_pitch_data(date, game_pk, level=lv)
         set_agg_cache(agg_key, result)
         return result
-    return aggregate_pitch_data(date, game_pk)
+    return aggregate_pitch_data(date, game_pk, level=lv)
 
 @app.get("/api/pitcher-results")
-def pitcher_results(date: str = Query(...), game_pk: int = Query(None)):
+def pitcher_results(date: str = Query(...), game_pk: int = Query(None), level: str = Query(DEFAULT_LEVEL)):
+    lv = _resolve_level(level)
     if game_pk is None:
         # Check agg cache for all-games daily aggregation
-        agg_key = f"daily_results_s{CARD_SCHEMA_VERSION}_{date}"
+        agg_key = f"daily_results_{lv}_s{CARD_SCHEMA_VERSION}_{date}"
         cached = get_agg_cache(agg_key)
         if cached is not None:
             return cached
-        result = aggregate_pitcher_results(date, game_pk)
+        result = aggregate_pitcher_results(date, game_pk, level=lv)
         set_agg_cache(agg_key, result)
         return result
-    return aggregate_pitcher_results(date, game_pk)
+    return aggregate_pitcher_results(date, game_pk, level=lv)
 
 @app.get("/api/initial-load")
-def initial_load():
+def initial_load(level: str = Query(DEFAULT_LEVEL)):
     """Combined endpoint: returns default date + games + pitch data + pitcher results in one call.
     Eliminates the frontend waterfall of sequential API calls on first load."""
-    date = get_default_date()
-    games_list = get_games(date)
+    lv = _resolve_level(level)
+    date = get_default_date(level=lv)
+    games_list = get_games(date, level=lv)
     # Use agg cache for daily aggregations
-    pitch_key = f"daily_pitch_{date}"
-    results_key = f"daily_results_s{CARD_SCHEMA_VERSION}_{date}"
+    pitch_key = f"daily_pitch_{lv}_{date}"
+    results_key = f"daily_results_{lv}_s{CARD_SCHEMA_VERSION}_{date}"
     cached_pitch = get_agg_cache(pitch_key)
     cached_results = get_agg_cache(results_key)
-    pd_data = cached_pitch if cached_pitch is not None else aggregate_pitch_data(date, None)
-    pr_data = cached_results if cached_results is not None else aggregate_pitcher_results(date, None)
+    pd_data = cached_pitch if cached_pitch is not None else aggregate_pitch_data(date, None, level=lv)
+    pr_data = cached_results if cached_results is not None else aggregate_pitcher_results(date, None, level=lv)
     if cached_pitch is None:
         set_agg_cache(pitch_key, pd_data)
     if cached_results is None:
         set_agg_cache(results_key, pr_data)
-    return {"date": date, "games": games_list, "pitchData": pd_data, "resultsData": pr_data}
+    return {"date": date, "games": games_list, "pitchData": pd_data, "resultsData": pr_data, "level": lv}
 
 @app.post("/api/clear-cache")
-def clear(date: str = Query(None)):
-    clear_cache(date)
-    return {"status": "ok", "cleared": date or "all"}
+def clear(date: str = Query(None), level: str = Query(None)):
+    lv = _resolve_level(level) if level else None
+    clear_cache(date, level=lv)
+    return {"status": "ok", "cleared": date or "all", "level": lv or "all"}
 
-def _compute_season_totals(pitcher_id, start_date, end_date):
+def _compute_season_totals(pitcher_id, start_date, end_date, level=DEFAULT_LEVEL):
     """Compute season totals for a pitcher. Returns dict or {} if no data."""
     suffix = "_custom" if is_custom_season_range(start_date, end_date) else ""
-    agg_key = f"season_totals_{pitcher_id}_s{CARD_SCHEMA_VERSION}{suffix}"
+    agg_key = f"season_totals_{level}_{pitcher_id}_s{CARD_SCHEMA_VERSION}{suffix}"
     cached = get_agg_cache(agg_key)
     if cached is not None:
         return cached
-    df = fetch_date_range(start_date, end_date)
+    df = fetch_date_range(start_date, end_date, level=level)
     if df.empty:
         return {}
     game_log = get_pitcher_game_log(df, pitcher_id)
@@ -315,34 +328,42 @@ def _compute_season_totals(pitcher_id, start_date, end_date):
     return result
 
 @app.get("/api/pitcher-card")
-def pitcher_card(date: str = Query(...), pitcher_id: int = Query(...), game_pk: int = Query(...)):
+def pitcher_card(date: str = Query(...), pitcher_id: int = Query(...), game_pk: int = Query(...), level: str = Query(DEFAULT_LEVEL)):
+    lv = _resolve_level(level)
     # Include override version in cache key so reclassifications always bust the cache
-    agg_key = f"card_{date}_{pitcher_id}_{game_pk}_v{get_override_version()}_s{CARD_SCHEMA_VERSION}"
+    agg_key = f"card_{lv}_{date}_{pitcher_id}_{game_pk}_v{get_override_version()}_s{CARD_SCHEMA_VERSION}"
     cached = get_agg_cache(agg_key)
     if cached is not None:
         return cached
-    result = get_pitcher_card(date, pitcher_id, game_pk)
+    result = get_pitcher_card(date, pitcher_id, game_pk, level=lv)
     if result:
         # Compute season totals and weather BEFORE caching so cache hits are complete
         if "season_totals" not in result:
             current_year = date[:4]
             season_start = f"{current_year}-03-25"
             end_date = _resolve_end_date("")
-            result["season_totals"] = _compute_season_totals(pitcher_id, season_start, end_date)
+            result["season_totals"] = _compute_season_totals(pitcher_id, season_start, end_date, level=lv)
         if "game_weather" not in result:
-            home_team = result.get("result", {}).get("home_team", "")
-            result["game_weather"] = _get_game_weather(game_pk, home_team, date)
+            # Stadium coords / DOMED_STADIUMS only cover MLB. For AAA we leave
+            # the field absent so the frontend can render without weather.
+            if lv == DEFAULT_LEVEL:
+                home_team = result.get("result", {}).get("home_team", "")
+                result["game_weather"] = _get_game_weather(game_pk, home_team, date)
+            else:
+                result["game_weather"] = None
         set_agg_cache(agg_key, result)
     return result
 
 @app.get("/api/pitcher-season-totals")
-def pitcher_season_totals(pitcher_id: int = Query(...), start_date: str = Query("2026-03-25"), end_date: str = Query("")):
+def pitcher_season_totals(pitcher_id: int = Query(...), start_date: str = Query("2026-03-25"), end_date: str = Query(""), level: str = Query(DEFAULT_LEVEL)):
     """Return aggregated season totals for a pitcher's box score row."""
     end_date = _resolve_end_date(end_date)
-    return _compute_season_totals(pitcher_id, start_date, end_date)
+    return _compute_season_totals(pitcher_id, start_date, end_date, level=_resolve_level(level))
 
 @app.get("/api/game-linescore")
-def game_linescore(game_pk: int = Query(...)): return get_game_linescore(game_pk)
+def game_linescore(game_pk: int = Query(...)):
+    # game_pks are globally unique across MLB and AAA — no level needed here.
+    return get_game_linescore(game_pk)
 
 @app.get("/api/season-averages")
 def season_averages(
@@ -351,7 +372,9 @@ def season_averages(
     before_date: str = Query(None),
     exclude_game_pk: int = Query(None),
     auto_fallback: bool = Query(False),
+    level: str = Query(DEFAULT_LEVEL),
 ):
+    lv = _resolve_level(level)
     # Cache key includes optional filters so season-to-date and plain-season
     # results don't collide.
     suffix = ""
@@ -361,15 +384,14 @@ def season_averages(
         suffix += f"_x{exclude_game_pk}"
 
     # auto_fallback: `season` is the CURRENT year; walk back year-by-year until
-    # we find a prior MLB season with data. Intended for player-page deltas
-    # where "previous MLB season" may be 2+ years back (returning from injury,
-    # debut year, etc.).
+    # we find a prior season at this level with data. Intended for player-page
+    # deltas where "previous season" may be 2+ years back (injury, debut, etc.).
     if auto_fallback:
-        fb_key = f"season_avg_fb_{pitcher_id}_{season}{suffix}"
+        fb_key = f"season_avg_fb_{lv}_{pitcher_id}_{season}{suffix}"
         cached = get_agg_cache(fb_key)
         if cached is not None:
             return cached
-        resolved_season = find_previous_mlb_season(pitcher_id, season)
+        resolved_season = find_previous_mlb_season(pitcher_id, season, level=lv)
         if resolved_season is None:
             return {"season": None, "averages": {}}
         averages = get_season_averages(
@@ -377,13 +399,14 @@ def season_averages(
             resolved_season,
             before_date=before_date,
             exclude_game_pk=exclude_game_pk,
+            level=lv,
         )
         payload = {"season": resolved_season, "averages": averages or {}}
         if averages:
             set_agg_cache(fb_key, payload)
         return payload
 
-    agg_key = f"season_avg_{pitcher_id}_{season}{suffix}"
+    agg_key = f"season_avg_{lv}_{pitcher_id}_{season}{suffix}"
     cached = get_agg_cache(agg_key)
     if cached is not None:
         return cached
@@ -392,26 +415,27 @@ def season_averages(
         season,
         before_date=before_date,
         exclude_game_pk=exclude_game_pk,
+        level=lv,
     )
     if result:
         set_agg_cache(agg_key, result)
     return result
 
 @app.get("/api/pitchers-search")
-def pitchers_search(q: str = Query(""), start_date: str = Query("2026-03-25"), end_date: str = Query("")):
+def pitchers_search(q: str = Query(""), start_date: str = Query("2026-03-25"), end_date: str = Query(""), level: str = Query(DEFAULT_LEVEL)):
     end_date = _resolve_end_date(end_date)
-    pitchers = fetch_all_pitchers_list(start_date, end_date)
+    pitchers = fetch_all_pitchers_list(start_date, end_date, level=_resolve_level(level))
     if q:
         q_lower = q.lower()
         pitchers = [p for p in pitchers if q_lower in p["name"].lower()]
     return pitchers[:20]
 
 @app.get("/api/resolve-pitcher")
-def resolve_pitcher(name: str = Query(...), start_date: str = Query("2026-03-25"), end_date: str = Query("")):
+def resolve_pitcher(name: str = Query(...), start_date: str = Query("2026-03-25"), end_date: str = Query(""), level: str = Query(DEFAULT_LEVEL)):
     """Resolve a pitcher name to a pitcher_id from cached data. Uses accent-insensitive matching."""
     import unicodedata
     end_date = _resolve_end_date(end_date)
-    pitchers = fetch_all_pitchers_list(start_date, end_date)
+    pitchers = fetch_all_pitchers_list(start_date, end_date, level=_resolve_level(level))
 
     def strip_accents(s):
         return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c)).replace("\u00ad", "")
@@ -427,14 +451,15 @@ def resolve_pitcher(name: str = Query(...), start_date: str = Query("2026-03-25"
     return {"pitcher_id": None, "name": name}
 
 @app.get("/api/team-pitchers")
-def team_pitchers(team: str = Query(...), start_date: str = Query("2026-03-25"), end_date: str = Query(""), view: str = Query("results")):
+def team_pitchers(team: str = Query(...), start_date: str = Query("2026-03-25"), end_date: str = Query(""), view: str = Query("results"), level: str = Query(DEFAULT_LEVEL)):
+    lv = _resolve_level(level)
     end_date = _resolve_end_date(end_date)
     # Check aggregation cache first
-    agg_key = f"team_{team}_{view}_{start_date}_{end_date}"
+    agg_key = f"team_{lv}_{team}_{view}_{start_date}_{end_date}"
     cached = get_agg_cache(agg_key)
     if cached is not None:
         return cached
-    df = fetch_date_range(start_date, end_date)
+    df = fetch_date_range(start_date, end_date, level=lv)
     if df.empty:
         return []
     if "pitcher_team" in df.columns:
@@ -449,14 +474,15 @@ def team_pitchers(team: str = Query(...), start_date: str = Query("2026-03-25"),
     return result
 
 @app.get("/api/player-page")
-def player_page(pitcher_id: int = Query(...), start_date: str = Query("2026-03-25"), end_date: str = Query("")):
+def player_page(pitcher_id: int = Query(...), start_date: str = Query("2026-03-25"), end_date: str = Query(""), level: str = Query(DEFAULT_LEVEL)):
+    lv = _resolve_level(level)
     end_date = _resolve_end_date(end_date)
     suffix = "_custom" if is_custom_season_range(start_date, end_date) else ""
-    agg_key = f"player_v2_{pitcher_id}_s{CARD_SCHEMA_VERSION}{suffix}"
+    agg_key = f"player_v2_{lv}_{pitcher_id}_s{CARD_SCHEMA_VERSION}{suffix}"
     cached = get_agg_cache(agg_key)
     if cached is not None:
         return cached
-    df = fetch_date_range(start_date, end_date)
+    df = fetch_date_range(start_date, end_date, level=lv)
     empty = {"info": {}, "pitch_summary": [], "pitch_summary_vs_l": [], "pitch_summary_vs_r": [], "results_summary": {}, "game_log": []}
     if df.empty:
         return empty
@@ -473,19 +499,22 @@ class ReclassifyRequest(BaseModel):
     pitch_number: int
     new_pitch_type: str
     date: str = ""
+    level: str = DEFAULT_LEVEL
 
 @app.post("/api/pitch-reclassify")
 def reclassify_pitch(req: ReclassifyRequest):
-    key = save_pitch_override(req.game_pk, req.pitcher_id, req.at_bat_number, req.pitch_number, req.new_pitch_type)
+    lv = _resolve_level(req.level)
+    key = save_pitch_override(req.game_pk, req.pitcher_id, req.at_bat_number, req.pitch_number, req.new_pitch_type, level=lv)
     if req.date:
-        clear_cache(req.date)
+        clear_cache(req.date, level=lv)
     return {"status": "ok", "key": key}
 
 @app.delete("/api/pitch-reclassify")
-def undo_reclassify(game_pk: int = Query(...), pitcher_id: int = Query(...), at_bat_number: int = Query(...), pitch_number: int = Query(...), date: str = Query("")):
-    removed = remove_pitch_override(game_pk, pitcher_id, at_bat_number, pitch_number)
+def undo_reclassify(game_pk: int = Query(...), pitcher_id: int = Query(...), at_bat_number: int = Query(...), pitch_number: int = Query(...), date: str = Query(""), level: str = Query(DEFAULT_LEVEL)):
+    lv = _resolve_level(level)
+    removed = remove_pitch_override(game_pk, pitcher_id, at_bat_number, pitch_number, level=lv)
     if date:
-        clear_cache(date)
+        clear_cache(date, level=lv)
     return {"status": "ok" if removed else "not_found"}
 
 @app.get("/api/pitch-overrides")
@@ -494,7 +523,7 @@ def pitch_overrides(): return get_all_overrides()
 
 # ── Cron warmup endpoint (called by Vercel cron jobs) ──
 @app.get("/api/cron/warmup")
-def cron_warmup(request: Request):
+def cron_warmup(request: Request, level: str = Query(DEFAULT_LEVEL)):
     """Vercel cron job handler. Warms all caches: Savant data, boxscores, aggregations."""
     # Verify this is a cron request (Vercel sets this header)
     # In local dev, allow all requests
@@ -503,55 +532,18 @@ def cron_warmup(request: Request):
     if _IS_SERVERLESS and cron_secret and auth != f"Bearer {cron_secret}":
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     try:
-        warmup_range_data()
+        lv = _resolve_level(level)
+        warmup_range_data(level=lv)
         now = _now_et().isoformat()
         redis_set("last_refresh", now)
-        return {"status": "ok", "timestamp": now}
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-
-# ── Batch backfill: pre-compute Top 400 player pages in chunks ──
-@app.get("/api/cron/warmup-players")
-def cron_warmup_players(request: Request, batch: int = Query(1), batch_size: int = Query(50)):
-    """Pre-compute Top 400 player pages in batches.
-    Call with ?batch=1, then ?batch=2, etc. until all are done.
-    Each batch computes ~50 player pages."""
-    auth = request.headers.get("authorization")
-    cron_secret = os.environ.get("CRON_SECRET")
-    if _IS_SERVERLESS and cron_secret and auth != f"Bearer {cron_secret}":
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    try:
-        start_date = "2026-03-25"
-        end_date = _resolve_end_date("")
-        # Fetch the full season data (hits in-memory cache if warmup already ran)
-        df = fetch_date_range(start_date, end_date)
-        if df.empty:
-            return {"status": "no_data"}
-        # Get all Top 400 pitcher IDs in the data
-        top400_map = get_top400_pitcher_ids(df)
-        all_ids = sorted(top400_map.keys())
-        total_batches = (len(all_ids) + batch_size - 1) // batch_size
-        # Slice to the requested batch (1-indexed)
-        start_idx = (batch - 1) * batch_size
-        end_idx = start_idx + batch_size
-        batch_ids = all_ids[start_idx:end_idx]
-        if not batch_ids:
-            return {"status": "done", "message": f"No players in batch {batch}", "total_batches": total_batches}
-        result = warmup_player_pages(df, start_date, end_date, pitcher_ids=batch_ids)
-        return {
-            "status": "ok", "batch": batch, "total_batches": total_batches,
-            "batch_computed": result["computed"], "batch_skipped": result["skipped"],
-            "total_top400_in_data": result["total_top400_in_data"],
-            "players": [{"id": pid, "name": top400_map[pid]} for pid in batch_ids],
-        }
+        return {"status": "ok", "timestamp": now, "level": lv}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
 # ── Daily 5:30 AM ET cron: refresh data + leaderboard/team aggregations ──
 @app.get("/api/cron/warmup-daily")
-def cron_warmup_daily(request: Request):
+def cron_warmup_daily(request: Request, level: str = Query(DEFAULT_LEVEL)):
     """Daily cron (5:30 AM ET / 9:30 UTC): fetches fresh Savant data,
     re-computes leaderboard and team aggregations. Subsequent cron jobs
     (warmup-daily-players at 5:40, warmup-daily-cards at 5:50) handle
@@ -561,31 +553,33 @@ def cron_warmup_daily(request: Request):
     if _IS_SERVERLESS and cron_secret and auth != f"Bearer {cron_secret}":
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     try:
-        warmup_range_data()
+        lv = _resolve_level(level)
+        warmup_range_data(level=lv)
         now = _now_et().isoformat()
         redis_set("last_refresh", now)
-        return {"status": "ok", "timestamp": now}
+        return {"status": "ok", "timestamp": now, "level": lv}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
 # ── Daily 5:40 AM ET cron: re-compute player pages for yesterday's pitchers ──
 @app.get("/api/cron/warmup-daily-players")
-def cron_warmup_daily_players(request: Request):
+def cron_warmup_daily_players(request: Request, level: str = Query(DEFAULT_LEVEL)):
     """Daily cron (5:40 AM ET / 9:40 UTC): re-computes player pages for
-    every pitcher who pitched yesterday — not just Top 400. The stable
-    player_v2 key means each run overwrites the prior entry in Redis."""
+    every pitcher who pitched yesterday. The stable player_v2 key means
+    each run overwrites the prior entry in Redis."""
     auth = request.headers.get("authorization")
     cron_secret = os.environ.get("CRON_SECRET")
     if _IS_SERVERLESS and cron_secret and auth != f"Bearer {cron_secret}":
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     try:
+        lv = _resolve_level(level)
         start_date = "2026-03-25"
         end_date = _resolve_end_date("")
-        df = fetch_date_range(start_date, end_date)
+        df = fetch_date_range(start_date, end_date, level=lv)
         if df.empty:
             return {"status": "no_data"}
-        yesterday = get_default_date()
+        yesterday = get_default_date(level=lv)
         if "game_date" not in df.columns:
             return {"status": "no_game_date", "date_updated": yesterday}
         day_df = df[df["game_date"] == yesterday]
@@ -594,7 +588,7 @@ def cron_warmup_daily_players(request: Request):
         computed = 0
         skipped = 0
         for pid in target_ids:
-            agg_key = f"player_v2_{pid}_s{CARD_SCHEMA_VERSION}{suffix}"
+            agg_key = f"player_v2_{lv}_{pid}_s{CARD_SCHEMA_VERSION}{suffix}"
             try:
                 result = compute_player_page(df, pid)
                 if result is not None:
@@ -603,10 +597,10 @@ def cron_warmup_daily_players(request: Request):
                 else:
                     skipped += 1
             except Exception as e:
-                print(f"[DailyPlayers] Error computing player {pid}: {e}")
+                print(f"[DailyPlayers/{lv}] Error computing player {pid}: {e}")
                 skipped += 1
         return {
-            "status": "ok", "date_updated": yesterday,
+            "status": "ok", "date_updated": yesterday, "level": lv,
             "players_computed": computed,
             "players_skipped": skipped,
             "total_pitchers_yesterday": len(target_ids),
@@ -617,7 +611,7 @@ def cron_warmup_daily_players(request: Request):
 
 # ── Daily 5:50 AM ET cron: pre-compute game feeds, season avgs, pitcher cards ──
 @app.get("/api/cron/warmup-daily-cards")
-def cron_warmup_daily_cards(request: Request):
+def cron_warmup_daily_cards(request: Request, level: str = Query(DEFAULT_LEVEL)):
     """Daily cron (5:50 AM ET / 9:50 UTC): pre-computes game feeds,
     season averages, and pitcher cards for yesterday's games."""
     auth = request.headers.get("authorization")
@@ -625,14 +619,15 @@ def cron_warmup_daily_cards(request: Request):
     if _IS_SERVERLESS and cron_secret and auth != f"Bearer {cron_secret}":
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     try:
-        yesterday = get_default_date()
+        lv = _resolve_level(level)
+        yesterday = get_default_date(level=lv)
         # Fetch only yesterday's data — NOT the full season range.
         # The old approach called fetch_date_range (entire season) which has no
         # Redis L2 cache, so every serverless cold start re-fetched from Savant
         # (~30-60s) and often timed out before computing any cards.
-        day_df = fetch_date(yesterday)
+        day_df = fetch_date(yesterday, level=lv)
         if day_df.empty:
-            return {"status": "no_data", "date": yesterday}
+            return {"status": "no_data", "date": yesterday, "level": lv}
         cards_computed = 0
         feeds_warmed = 0
         avgs_warmed = 0
@@ -643,7 +638,7 @@ def cron_warmup_daily_cards(request: Request):
             try:
                 return bool(get_game_linescore(gpk))
             except Exception as e:
-                print(f"[DailyCards] Feed error {gpk}: {e}")
+                print(f"[DailyCards/{lv}] Feed error {gpk}: {e}")
                 return False
         with ThreadPoolExecutor(max_workers=10) as pool:
             for ok in pool.map(_warm_feed, game_pks):
@@ -653,15 +648,15 @@ def cron_warmup_daily_cards(request: Request):
         # Pre-compute season averages for all yesterday's pitchers
         prev_season = int(yesterday[:4]) - 1
         pitcher_ids = [int(pid) for pid in day_df["pitcher"].unique()]
-        uncached_pids = [pid for pid in pitcher_ids if get_agg_cache(f"season_avg_{pid}_{prev_season}") is None]
+        uncached_pids = [pid for pid in pitcher_ids if get_agg_cache(f"season_avg_{lv}_{pid}_{prev_season}") is None]
         def _warm_avg(pid):
             try:
-                avg_result = get_season_averages(pid, prev_season)
+                avg_result = get_season_averages(pid, prev_season, level=lv)
                 if avg_result:
-                    set_agg_cache(f"season_avg_{pid}_{prev_season}", avg_result)
+                    set_agg_cache(f"season_avg_{lv}_{pid}_{prev_season}", avg_result)
                     return True
             except Exception as e:
-                print(f"[DailyCards] Season avg error {pid}: {e}")
+                print(f"[DailyCards/{lv}] Season avg error {pid}: {e}")
             return False
         with ThreadPoolExecutor(max_workers=10) as pool:
             for ok in pool.map(_warm_avg, uncached_pids):
@@ -677,38 +672,41 @@ def cron_warmup_daily_cards(request: Request):
         st_suffix = "_custom" if is_custom_season_range(season_start, totals_end) else ""
         for pid in unique_pids:
             pid = int(pid)
-            st_key = f"season_totals_{pid}_s{CARD_SCHEMA_VERSION}{st_suffix}"
+            st_key = f"season_totals_{lv}_{pid}_s{CARD_SCHEMA_VERSION}{st_suffix}"
             if get_agg_cache(st_key) is not None:
                 continue
             try:
-                _compute_season_totals(pid, season_start, totals_end)
+                _compute_season_totals(pid, season_start, totals_end, level=lv)
                 totals_warmed += 1
             except Exception as e:
-                print(f"[DailyCards] Season totals error {pid}: {e}")
+                print(f"[DailyCards/{lv}] Season totals error {pid}: {e}")
 
         # Pre-compute pitcher cards with season_totals + weather baked in
         combos = day_df.groupby(["pitcher", "game_pk"]).size().reset_index()[["pitcher", "game_pk"]]
         for _, row in combos.iterrows():
             pid, gpk = int(row["pitcher"]), int(row["game_pk"])
-            agg_key = f"card_{yesterday}_{pid}_{gpk}_v{get_override_version()}_s{CARD_SCHEMA_VERSION}"
+            agg_key = f"card_{lv}_{yesterday}_{pid}_{gpk}_v{get_override_version()}_s{CARD_SCHEMA_VERSION}"
             if get_agg_cache(agg_key) is not None:
                 continue
             try:
-                card = get_pitcher_card(yesterday, pid, gpk)
+                card = get_pitcher_card(yesterday, pid, gpk, level=lv)
                 if card:
                     # Bake in season totals and weather so the endpoint has nothing left to compute
                     if "season_totals" not in card:
-                        card["season_totals"] = _compute_season_totals(pid, season_start, totals_end)
+                        card["season_totals"] = _compute_season_totals(pid, season_start, totals_end, level=lv)
                     if "game_weather" not in card:
-                        home_team = card.get("result", {}).get("home_team", "")
-                        card["game_weather"] = _get_game_weather(gpk, home_team, yesterday)
+                        if lv == DEFAULT_LEVEL:
+                            home_team = card.get("result", {}).get("home_team", "")
+                            card["game_weather"] = _get_game_weather(gpk, home_team, yesterday)
+                        else:
+                            card["game_weather"] = None
                     set_agg_cache(agg_key, card)
                     cards_computed += 1
             except Exception as e:
-                print(f"[DailyCards] Card error {pid}/{gpk}: {e}")
+                print(f"[DailyCards/{lv}] Card error {pid}/{gpk}: {e}")
 
         return {
-            "status": "ok", "date_updated": yesterday,
+            "status": "ok", "date_updated": yesterday, "level": lv,
             "cards_computed": cards_computed,
             "feeds_warmed": feeds_warmed,
             "avgs_warmed": avgs_warmed,
@@ -720,12 +718,13 @@ def cron_warmup_daily_cards(request: Request):
 
 # ── Live game card warmup (every 10 min during game hours) ──
 
-def _get_live_pitchers(today: str):
+def _get_live_pitchers(today: str, level: str = DEFAULT_LEVEL):
     """Query MLB Stats API for currently live games and return the set of
     pitcher IDs currently on the mound, plus a map of game_pk → game status.
     Returns (active_pitcher_ids: set, game_statuses: dict[int, str])."""
     import requests as _req
-    url = (f"https://statsapi.mlb.com/api/v1/schedule?sportId=1"
+    sport_id = "11" if level == "aaa" else "1"
+    url = (f"https://statsapi.mlb.com/api/v1/schedule?sportId={sport_id}"
            f"&date={today}&hydrate=linescore,game(content(summary))")
     active = set()
     statuses = {}
@@ -747,12 +746,12 @@ def _get_live_pitchers(today: str):
                 if pid:
                     active.add(int(pid))
     except Exception as e:
-        print(f"[LiveCards] MLB schedule error: {e}")
+        print(f"[LiveCards/{level}] MLB schedule error: {e}")
     return active, statuses
 
 
 @app.get("/api/cron/warmup-live-cards")
-def cron_warmup_live_cards(request: Request):
+def cron_warmup_live_cards(request: Request, level: str = Query(DEFAULT_LEVEL)):
     """Every 10 min during game hours: re-compute pitcher cards ONLY for
     pitchers currently on the mound in live games.
 
@@ -767,18 +766,19 @@ def cron_warmup_live_cards(request: Request):
     if _IS_SERVERLESS and cron_secret and auth != f"Bearer {cron_secret}":
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     try:
+        lv = _resolve_level(level)
         today = _now_et().strftime("%Y-%m-%d")
 
         # 1. Get currently active pitchers from MLB Stats API
-        active_pids, game_statuses = _get_live_pitchers(today)
+        active_pids, game_statuses = _get_live_pitchers(today, level=lv)
 
         # 2. Load previous run's active set from Redis
-        redis_key = f"live_cards_active:{today}"
+        redis_key = f"live_cards_active:{lv}_{today}"
         prev_active_raw = redis_get(redis_key)
         prev_active = set(prev_active_raw) if prev_active_raw else set()
 
         # 3. Load "done" set — pitchers who already got their final cache
-        done_key = f"live_cards_done:{today}"
+        done_key = f"live_cards_done:{lv}_{today}"
         done_raw = redis_get(done_key)
         done_pids = set(done_raw) if done_raw else set()
 
@@ -791,16 +791,17 @@ def cron_warmup_live_cards(request: Request):
         if not pids_to_cache:
             # Save active set and return
             redis_set(redis_key, list(active_pids), ttl=86400)
-            return {"status": "no_pitchers", "date": today,
+            return {"status": "no_pitchers", "date": today, "level": lv,
                     "active": len(active_pids), "done": len(done_pids)}
 
         # 5. Fetch today's pitch data
-        day_df = fetch_date(today)
+        day_df = fetch_date(today, level=lv)
         if day_df.empty:
             redis_set(redis_key, list(active_pids), ttl=86400)
-            return {"status": "no_data", "date": today}
+            return {"status": "no_data", "date": today, "level": lv}
 
-        prefetch_boxscores(day_df)
+        if lv == DEFAULT_LEVEL:
+            prefetch_boxscores(day_df)
 
         current_year = today[:4]
         season_start = f"{current_year}-03-25"
@@ -815,22 +816,25 @@ def cron_warmup_live_cards(request: Request):
             pid, gpk = int(row["pitcher"]), int(row["game_pk"])
             if pid not in pids_to_cache:
                 continue
-            agg_key = f"card_{today}_{pid}_{gpk}_v{get_override_version()}_s{CARD_SCHEMA_VERSION}"
+            agg_key = f"card_{lv}_{today}_{pid}_{gpk}_v{get_override_version()}_s{CARD_SCHEMA_VERSION}"
             try:
-                card = get_pitcher_card(today, pid, gpk)
+                card = get_pitcher_card(today, pid, gpk, level=lv)
                 if card:
                     if "season_totals" not in card:
-                        card["season_totals"] = _compute_season_totals(pid, season_start, totals_end)
+                        card["season_totals"] = _compute_season_totals(pid, season_start, totals_end, level=lv)
                     if "game_weather" not in card:
-                        home_team = card.get("result", {}).get("home_team", "")
-                        card["game_weather"] = _get_game_weather(gpk, home_team, today)
+                        if lv == DEFAULT_LEVEL:
+                            home_team = card.get("result", {}).get("home_team", "")
+                            card["game_weather"] = _get_game_weather(gpk, home_team, today)
+                        else:
+                            card["game_weather"] = None
                     set_agg_cache(agg_key, card)
                     if pid in active_pids:
                         cards_live += 1
                     else:
                         cards_final += 1
             except Exception as e:
-                print(f"[LiveCards] Card error {pid}/{gpk}: {e}")
+                print(f"[LiveCards/{lv}] Card error {pid}/{gpk}: {e}")
 
         # 7. Update state in Redis
         #    - Save current active set for next run's comparison
@@ -840,7 +844,7 @@ def cron_warmup_live_cards(request: Request):
         redis_set(done_key, list(new_done), ttl=86400)
 
         return {
-            "status": "ok", "date": today,
+            "status": "ok", "date": today, "level": lv,
             "cards_live": cards_live,
             "cards_final": cards_final,
             "active_pitchers": len(active_pids),
@@ -853,26 +857,27 @@ def cron_warmup_live_cards(request: Request):
 
 # ── Manual refresh endpoint (called by the refresh button) ──
 @app.post("/api/refresh")
-def manual_refresh():
+def manual_refresh(level: str = Query(DEFAULT_LEVEL)):
     """Lightweight refresh: clear only today's caches and re-fetch.
     Does NOT run the full season warmup — only refreshes live data."""
     try:
-        today = get_default_date()
-        clear_cache(today)
+        lv = _resolve_level(level)
+        today = get_default_date(level=lv)
+        clear_cache(today, level=lv)
         # Re-fetch today's pitch data (triggers Savant CSV download + warms cache)
-        df = fetch_date(today)
+        df = fetch_date(today, level=lv)
         # Re-compute today's daily aggregations.
         # aggregate_pitch_data / aggregate_pitcher_results take a date_str
         # (NOT a DataFrame) and re-fetch internally — but they hit the warm
         # cache from the fetch_date call above.
         if not df.empty:
-            pitch_agg = aggregate_pitch_data(today)
-            results_agg = aggregate_pitcher_results(today)
-            set_agg_cache(f"daily_pitch_{today}", pitch_agg)
-            set_agg_cache(f"daily_results_s{CARD_SCHEMA_VERSION}_{today}", results_agg)
+            pitch_agg = aggregate_pitch_data(today, level=lv)
+            results_agg = aggregate_pitcher_results(today, level=lv)
+            set_agg_cache(f"daily_pitch_{lv}_{today}", pitch_agg)
+            set_agg_cache(f"daily_results_{lv}_s{CARD_SCHEMA_VERSION}_{today}", results_agg)
         now = _now_et().isoformat()
         redis_set("last_refresh", now)
-        return {"status": "ok", "timestamp": now}
+        return {"status": "ok", "timestamp": now, "level": lv}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 

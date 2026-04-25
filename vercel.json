@@ -2,13 +2,52 @@
   "buildCommand": "cd frontend && npm install && npm run build",
   "outputDirectory": "frontend/build",
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/index.py" }
+    {
+      "source": "/api/:path*",
+      "destination": "/api/index.py"
+    }
   ],
   "crons": [
-    { "path": "/api/cron/warmup", "schedule": "0 0-4,17-23 * * *" },
-    { "path": "/api/cron/warmup-daily", "schedule": "30 9 * * *" },
-    { "path": "/api/cron/warmup-daily-players", "schedule": "40 9 * * *" },
-    { "path": "/api/cron/warmup-daily-cards", "schedule": "50 9 * * *" },
-    { "path": "/api/cron/warmup-live-cards", "schedule": "*/10 16-23,0-5 * * *" }
-  ]
+    {
+      "path": "/api/cron/warmup",
+      "schedule": "0 0-4,17-23 * * *"
+    },
+    {
+      "path": "/api/cron/warmup-daily",
+      "schedule": "30 9 * * *"
+    },
+    {
+      "path": "/api/cron/warmup-daily-players",
+      "schedule": "40 9 * * *"
+    },
+    {
+      "path": "/api/cron/warmup-daily-cards",
+      "schedule": "50 9 * * *"
+    },
+    {
+      "path": "/api/cron/warmup-live-cards",
+      "schedule": "*/10 16-23,0-5 * * *"
+    },
+    {
+      "path": "/api/cron/warmup-daily?level=aaa",
+      "schedule": "35 9 * * *"
+    },
+    {
+      "path": "/api/cron/warmup-daily-players?level=aaa",
+      "schedule": "45 9 * * *"
+    },
+    {
+      "path": "/api/cron/warmup-daily-cards?level=aaa",
+      "schedule": "55 9 * * *"
+    },
+    {
+      "path": "/api/cron/warmup-live-cards?level=aaa",
+      "schedule": "5,15,25,35,45,55 16-23,0-5 * * *"
+    }
+  ],
+  "experimentalServices": {
+    "web": {
+      "routePrefix": "/"
+    }
+  }
 }

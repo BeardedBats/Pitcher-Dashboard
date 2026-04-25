@@ -8,7 +8,7 @@ import ResultsTable from "./ResultsTable";
 import UsageTable from "./UsageTable";
 import VelocityTrend from "./VelocityTrend";
 import VelocityTrendV2 from "./VelocityTrendV2";
-import { PITCH_COLORS, PITCH_DESC_COLORS, RESULT_COLORS, CARD_PITCH_DATA_COLUMNS, displayAbbrev, getOpponentTierColor } from "../constants";
+import { PITCH_COLORS, PITCH_DESC_COLORS, RESULT_COLORS, CARD_PITCH_DATA_COLUMNS, displayAbbrev, displayTeamAbbrev, getOpponentTierColor } from "../constants";
 import { getResultColor } from "../utils/formatting";
 import { fetchSeasonAverages, fetchPitcherSchedule } from "../utils/api";
 import { classifyPitchResult, isRunScored, isStrikeoutPitch, isBallInPlay, classifyBIPQuality, classifyBattedBallFull, getTooltipResult, getPADescriptionSpans, isCIOrErrorEvent, RESULT_FILTER_OPTIONS, RESULT_QUICK_ACTIONS } from "../utils/pitchFilters";
@@ -72,7 +72,7 @@ function computeInningStats(pas, pitcherId) {
   return { ip, hits, bbs, ks, hrs, runs, pitches: totalPitches };
 }
 
-export default function PitcherCard({ cardData, date, linescoreData, onGameClick, onReclassify, onPlayerClick, isMobile }) {
+export default function PitcherCard({ cardData, date, linescoreData, onGameClick, onReclassify, onPlayerClick, isMobile, level = "mlb" }) {
   if (!cardData) return null;
   const { name, team, hand, opponent, pitches, sz_top, sz_bot,
     pitch_table, pitch_table_vs_l, pitch_table_vs_r, result, pitcher_id,
@@ -292,13 +292,13 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
             <div className="card-name">{name}</div>
           )}
           <div className="card-meta">
-            {displayAbbrev(team)} · {hand}HP ·{" "}
+            {displayTeamAbbrev(team, level)} · {hand}HP ·{" "}
             {onGameClick ? (
               <a className="card-game-link" href={`#card/${date}/${pitcher_id}/${result?.game_pk || ""}`} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); onGameClick(e); } }} role="button" tabIndex={0}>
-                {dateDisplay} {oppPrefix} {displayAbbrev(opponent)}
+                {dateDisplay} {oppPrefix} {displayTeamAbbrev(opponent, level)}
               </a>
             ) : (
-              <span>{dateDisplay} {oppPrefix} {displayAbbrev(opponent)}</span>
+              <span>{dateDisplay} {oppPrefix} {displayTeamAbbrev(opponent, level)}</span>
             )}
           </div>
           {cardData.game_weather && (
@@ -490,7 +490,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
         )}
         {metricsView === "velocity-trend" && (
           <div className="metrics-card">
-            <VelocityTrendV2 pitches={filteredPitches} onReclassify={onReclassify} isMobile={isMobile} linescoreData={linescoreData} pitcherId={pitcher_id} />
+            <VelocityTrendV2 pitches={filteredPitches} onReclassify={onReclassify} isMobile={isMobile} linescoreData={linescoreData} pitcherId={pitcher_id} level={level} />
           </div>
         )}
         {metricsView === "play-by-play" && pitcherPBP && (() => {
@@ -574,8 +574,8 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
                                   <span className="card-pbp-rbi">
                                     <span style={{ color: "#FF5EDC" }}>- {runsScored} Run{runsScored !== 1 ? "s" : ""} score{runsScored === 1 ? "s" : ""}.{" "}</span>
                                     {pa.away_score != null && pa.home_score != null && (() => {
-                                      const awayDisp = displayAbbrev(linescoreData.away_team) || linescoreData.away_team;
-                                      const homeDisp = displayAbbrev(linescoreData.home_team) || linescoreData.home_team;
+                                      const awayDisp = displayTeamAbbrev(linescoreData.away_team, level) || linescoreData.away_team;
+                                      const homeDisp = displayTeamAbbrev(linescoreData.home_team, level) || linescoreData.home_team;
                                       const battingTeam = seg.isTop ? linescoreData.away_team : linescoreData.home_team;
                                       const awayScored = linescoreData.away_team === battingTeam;
                                       const homeScored = linescoreData.home_team === battingTeam;

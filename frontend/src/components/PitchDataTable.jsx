@@ -1,9 +1,8 @@
 import React, { useState, useMemo } from "react";
-import { PITCH_COLORS, PITCH_DATA_COLUMNS, TEAM_FULL_NAMES, displayAbbrev } from "../constants";
+import { PITCH_COLORS, PITCH_DATA_COLUMNS, TEAM_FULL_NAMES, displayAbbrev, displayTeamAbbrev } from "../constants";
 
 const TEAM_SPLIT_HIDE = ["team", "opponent"];
 import { getCellHighlight, fmt, fmtPct, fmtInt, getVeloEmphasis, getIHBEmphasis } from "../utils/formatting";
-import { isTop400 } from "../top400";
 
 const DELTA_KEYS = ["velo", "usage", "usage_vs_r", "usage_vs_l", "ihb", "ext", "ivb"];
 const DELTA_THRESHOLDS = {
@@ -31,7 +30,7 @@ const IHB_ARM_SIDE_TYPES = ["Four-Seamer", "Sinker", "Changeup"];
 
 const MOBILE_HIDE_COLS = ["hand", "team", "opponent"];
 
-export default function PitchDataTable({ data, date, onPitcherClick, columns, splitByTeam, spOnly, pitcherHand, sortable = true, showChange, seasonAvgs, batterFilter, top400Names, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, selectedPitchType, onPitchTypeClick }) {
+export default function PitchDataTable({ data, date, onPitcherClick, columns, splitByTeam, spOnly, pitcherHand, sortable = true, showChange, seasonAvgs, batterFilter, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, selectedPitchType, onPitchTypeClick, level = "mlb" }) {
   const [sortKeyLocal, setSortKeyLocal] = useState(null);
   const [sortDirLocal, setSortDirLocal] = useState("asc");
   const sortKey = onSortKeyChange ? sortKeyProp : sortKeyLocal;
@@ -276,14 +275,12 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
     const v = row[col.key];
     if (col.key === "pitcher") {
       if (!v) return <span className="pitcher-name" style={{ color: "rgb(180, 185, 219)" }}>--</span>;
-      const isTop = top400Names && isTop400(v);
-      const nameClass = top400Names ? (isTop ? "pitcher-name pitcher-top400" : "pitcher-name") : "pitcher-name";
       if (onPitcherClick && row.pitcher_id && row.game_pk && date) {
-        return <a className={nameClass} href={`#card/${date}/${row.pitcher_id}/${row.game_pk}`} rel="nofollow" onClick={(e) => e.preventDefault()} onMouseDown={(e) => { if (e.button === 1) e.stopPropagation(); }} style={{ textDecoration: "none" }}>{v}</a>;
+        return <a className="pitcher-name" href={`#card/${date}/${row.pitcher_id}/${row.game_pk}`} rel="nofollow" onClick={(e) => e.preventDefault()} onMouseDown={(e) => { if (e.button === 1) e.stopPropagation(); }} style={{ textDecoration: "none" }}>{v}</a>;
       }
-      return <span className={nameClass}>{v}</span>;
+      return <span className="pitcher-name">{v}</span>;
     }
-    if (col.key === "team") return displayAbbrev(v) || <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
+    if (col.key === "team") return displayTeamAbbrev(v, level) || <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
     if (col.key === "hand") {
       if (!v) return <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
       return v === "R" ? "RHP" : v === "L" ? "LHP" : v;
@@ -291,7 +288,7 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
     if (col.key === "opponent") {
       if (!v) return <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
       const prefix = row.home_team && row.team === row.home_team ? "vs." : "@";
-      return `${prefix} ${displayAbbrev(v)}`;
+      return `${prefix} ${displayTeamAbbrev(v, level)}`;
     }
     if (col.key === "pitch_name") {
       const c = PITCH_COLORS[v] || "#D9D9D9";
@@ -371,7 +368,7 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
     const first = rows[0];
     if (!first || !first.opponent) return "";
     const prefix = first.home_team && first.team === first.home_team ? "vs." : "@";
-    return `${prefix} ${displayAbbrev(first.opponent)}`;
+    return `${prefix} ${displayTeamAbbrev(first.opponent, level)}`;
   };
 
   // Compute column widths for team cards

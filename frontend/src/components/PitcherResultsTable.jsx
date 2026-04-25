@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { PITCHER_RESULTS_COLUMNS, PITCH_COLORS, TEAM_FULL_NAMES, displayAbbrev } from "../constants";
+import { PITCHER_RESULTS_COLUMNS, PITCH_COLORS, TEAM_FULL_NAMES, displayAbbrev, displayTeamAbbrev } from "../constants";
 import { fmtPct, fmtInt } from "../utils/formatting";
 
 const TEAM_SPLIT_HIDE = ["team", "opponent"];
@@ -22,7 +22,7 @@ const DECISION_COLORS = {
   BS: "#FF5EDC",
 };
 
-export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly, splitByTeam, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, hiddenCols = [] }) {
+export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly, splitByTeam, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, hiddenCols = [], level = "mlb" }) {
   const [sortKeyLocal, setSortKeyLocal] = useState("ip");
   const [sortDirLocal, setSortDirLocal] = useState("desc");
   const sortKey = onSortKeyChange ? sortKeyProp : sortKeyLocal;
@@ -108,8 +108,8 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
   const formatGameLine = (row) => {
     if (!row.opponent) return <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
     const isHome = row.home_team && row.team === row.home_team;
-    const homeAbbr = displayAbbrev(row.home_team) || row.home_team || "";
-    const awayAbbr = displayAbbrev(row.away_team) || row.away_team || "";
+    const homeAbbr = displayTeamAbbrev(row.home_team, level) || row.home_team || "";
+    const awayAbbr = displayTeamAbbrev(row.away_team, level) || row.away_team || "";
     const homeScore = row.home_score != null ? row.home_score : "";
     const awayScore = row.away_score != null ? row.away_score : "";
     const gs = row.game_state || "";
@@ -159,7 +159,7 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
       }
       return <span className={nameClass}>{v}</span>;
     }
-    if (col.key === "team") return displayAbbrev(v) || <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
+    if (col.key === "team") return displayTeamAbbrev(v, level) || <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
     if (col.key === "hand") {
       if (!v) return <span style={{ color: "rgb(180, 185, 219)" }}>--</span>;
       return v === "R" ? "RHP" : v === "L" ? "LHP" : v;
@@ -178,7 +178,7 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
     const first = rows[0];
     if (!first || !first.opponent) return "";
     const prefix = first.home_team && first.team === first.home_team ? "vs." : "@";
-    return `${prefix} ${displayAbbrev(first.opponent)}`;
+    return `${prefix} ${displayTeamAbbrev(first.opponent, level)}`;
   };
 
   const renderTable = (rows, teamLabel, isCard) => {
