@@ -14,12 +14,8 @@ assets/
 *.sh
 BUILD.md
 VERCEL-MIGRATION.md
-boxscore-mockup.html
-velocity-range-mockup.html
 .github/
 /package.json
 /package-lock.json
 /index.py
 Dockerfile
-railway.toml
-render.yaml
