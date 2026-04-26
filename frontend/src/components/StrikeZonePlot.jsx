@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from "react";
 import { PITCH_COLORS, PITCH_DESC_COLORS, getSZResultColor, BATTED_BALL_COLORS } from "../constants";
 import { classifyBattedBall } from "../utils/formatting";
 import { getTooltipResult } from "../utils/pitchFilters";
-import { vpToZoomCoord } from "../utils/desktopZoom";
+import { vpToZoomCoord, getDesktopZoom } from "../utils/desktopZoom";
 
 const DEFAULT_W = 310, DEFAULT_H = 345;
 const PAD = { top: 16, right: 16, bottom: 44, left: 16 };
@@ -50,7 +50,9 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
-    const dpr = window.devicePixelRatio || 1;
+    // Compensate for body { zoom: 1.25 } on desktop — bigger bitmap so the
+    // post-zoom paint lands 1:1 on screen pixels (no bilinear blur).
+    const dpr = (window.devicePixelRatio || 1) * getDesktopZoom();
 
     // Determine responsive sizing
     let W = DEFAULT_W, H = DEFAULT_H;
@@ -193,10 +195,12 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const W = rect.width;
-    const H = rect.height;
-    const mx = (e.clientX - rect.left) * (canvas.width / (W * (window.devicePixelRatio || 1)));
-    const my = (e.clientY - rect.top) * (canvas.height / (H * (window.devicePixelRatio || 1)));
+    // Convert viewport pixels → CSS pixels (the canvas drawing coord
+    // system after ctx.scale). Body zoom on desktop scales the displayed
+    // box by getDesktopZoom(); divide to undo. Independent of dpr.
+    const z = getDesktopZoom();
+    const mx = (e.clientX - rect.left) / z;
+    const my = (e.clientY - rect.top) / z;
     const nearest = findNearest(mx, my);
     if (nearest) {
       setHover({ pitch: nearest.pitch, x: e.clientX, y: e.clientY });
@@ -216,10 +220,10 @@ export default function StrikeZonePlot({ pitches, szTop, szBot, stand, colorMode
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const W = rect.width;
-    const H = rect.height;
-    const mx = (e.clientX - rect.left) * (canvas.width / (W * (window.devicePixelRatio || 1)));
-    const my = (e.clientY - rect.top) * (canvas.height / (H * (window.devicePixelRatio || 1)));
+    // See handleMouseMove — body zoom undo, dpr-independent.
+    const z = getDesktopZoom();
+    const mx = (e.clientX - rect.left) / z;
+    const my = (e.clientY - rect.top) / z;
     const nearest = findNearest(mx, my);
     if (nearest) {
       if (isMobile) {

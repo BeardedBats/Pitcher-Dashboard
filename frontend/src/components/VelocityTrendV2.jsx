@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, useCallback, useMemo } from "react"
 import { PITCH_COLORS, BATTED_BALL_COLORS, displayTeamAbbrev } from "../constants";
 import { isRunScored, getTooltipResult, getPBPResultColor, getPADescriptionSpans, isCIOrErrorEvent } from "../utils/pitchFilters";
 import { classifyBattedBall } from "../utils/formatting";
-import { vpToZoomCoord } from "../utils/desktopZoom";
+import { vpToZoomCoord, getDesktopZoom } from "../utils/desktopZoom";
 
 const DOT_R = 4.5;
 const DOT_PAD = 3;
@@ -134,7 +134,11 @@ export default function VelocityTrendV2({ pitches, onReclassify, isMobile, lines
     if (!canvas || dims.w === 0 || ordered.length === 0 || pitchTypes.length === 0) return;
 
     const W = dims.w;
-    const dpr = window.devicePixelRatio || 1;
+    // Multiply DPR by the body zoom factor — the page lives inside
+    // body { zoom: 1.25 } on desktop, which bilinearly upscales canvas
+    // bitmaps. Allocating a 1.25× larger bitmap and ctx.scale-ing back to
+    // CSS coords means the post-zoom paint lands 1:1 on screen pixels.
+    const dpr = (window.devicePixelRatio || 1) * getDesktopZoom();
     canvas.width = W * dpr;
     canvas.height = H * dpr;
     canvas.style.width = W + "px";

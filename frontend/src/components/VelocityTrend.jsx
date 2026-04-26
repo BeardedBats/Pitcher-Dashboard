@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, useCallback, useMemo } from "react"
 import { PITCH_COLORS, BATTED_BALL_COLORS } from "../constants";
 import { isRunScored, getTooltipResult } from "../utils/pitchFilters";
 import { classifyBattedBall } from "../utils/formatting";
-import { vpToZoomCoord } from "../utils/desktopZoom";
+import { vpToZoomCoord, getDesktopZoom } from "../utils/desktopZoom";
 
 const DOT_R = 4.5;
 const DOT_PAD = 3;
@@ -112,7 +112,8 @@ export default function VelocityTrend({ pitches, isMobile }) {
 
     const W = dims.w;
     const H = totalH;
-    const dpr = window.devicePixelRatio || 1;
+    // Compensate for body { zoom: 1.25 } on desktop — see VelocityTrendV2.
+    const dpr = (window.devicePixelRatio || 1) * getDesktopZoom();
     canvas.width = W * dpr;
     canvas.height = H * dpr;
     canvas.style.width = W + "px";

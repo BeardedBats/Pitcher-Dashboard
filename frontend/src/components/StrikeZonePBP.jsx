@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { displayAbbrev } from "../constants";
 import { getTooltipResult } from "../utils/pitchFilters";
+import { getDesktopZoom } from "../utils/desktopZoom";
 
 const BATTED_BALL_COLORS = {
   "Barrel": "#ffa3a3",
@@ -135,7 +136,10 @@ export default function StrikeZonePBP({ pitches, pitchColors, result, resultLabe
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !pitches || pitches.length === 0) return;
-    const dpr = window.devicePixelRatio || 1;
+    // Compensate for body { zoom: 1.25 } on desktop — bigger bitmap so the
+    // post-zoom paint lands 1:1 on screen pixels (no bilinear blur). The
+    // canvas's CSS width/height are set inline in the JSX below.
+    const dpr = (window.devicePixelRatio || 1) * getDesktopZoom();
     canvas.width = WIDTH * dpr;
     canvas.height = HEIGHT * dpr;
     const ctx = canvas.getContext("2d");
