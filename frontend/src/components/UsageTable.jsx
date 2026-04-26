@@ -11,8 +11,9 @@ import { PITCH_COLORS, CARD_USAGE_COLUMNS } from "../constants";
  *   Behind:      (2,0), (2,1), (3,0), (3,1)
  *   Two-Strikes: (0,2), (1,2), (2,2), (3,2)
  *
- * Bucket columns = % of pitches in that bucket vs the same hand that were this pitch type
- * (each LHB/RHB column block sums to ~100%).
+ * Bucket columns = % of pitches of this pitch type to the same hand that were
+ * thrown in that bucket (each pitch-type row sums to ~100% within the LHB and
+ * RHB blocks).
  * PAR% (combined across hands) = Ks on this pitch type / pitches of this type thrown in a 2-strike count.
  *
  * The batter-hand filter is intentionally ignored on this tab — both LHB and RHB
@@ -51,8 +52,6 @@ export default function UsageTable({ pitches, gameFilter, isMobile, selectedPitc
       fp = fp.filter(p => String(p.game_pk) === String(gameFilter));
     }
 
-    const bucketTotalsL = emptyBucketTotals();
-    const bucketTotalsR = emptyBucketTotals();
     const byType = new Map();
 
     for (const p of fp) {
@@ -67,8 +66,6 @@ export default function UsageTable({ pitches, gameFilter, isMobile, selectedPitc
         rec[stand].count++;
         if (b) {
           rec[stand][b]++;
-          if (stand === "l") bucketTotalsL[b]++;
-          else bucketTotalsR[b]++;
         }
       }
       // PAR% — for each pitch type, count pitches in 2-strike counts and Ks
@@ -91,16 +88,16 @@ export default function UsageTable({ pitches, gameFilter, isMobile, selectedPitc
         count: r.count,
         par_pct: r.two_str_all > 0 ? Math.round((r.two_str_ks_all / r.two_str_all) * 100) : null,
         // LHB
-        firstpitch_pct_l: pct(r.l.firstpitch, bucketTotalsL.firstpitch),
-        early_pct_l: pct(r.l.early, bucketTotalsL.early),
-        behind_pct_l: pct(r.l.behind, bucketTotalsL.behind),
-        two_str_use_pct_l: pct(r.l.two_str, bucketTotalsL.two_str),
+        firstpitch_pct_l: pct(r.l.firstpitch, r.l.count),
+        early_pct_l: pct(r.l.early, r.l.count),
+        behind_pct_l: pct(r.l.behind, r.l.count),
+        two_str_use_pct_l: pct(r.l.two_str, r.l.count),
         par_pct_vs_l: r.l.two_str > 0 ? Math.round((r.l.two_str_ks / r.l.two_str) * 100) : null,
         // RHB
-        firstpitch_pct_r: pct(r.r.firstpitch, bucketTotalsR.firstpitch),
-        early_pct_r: pct(r.r.early, bucketTotalsR.early),
-        behind_pct_r: pct(r.r.behind, bucketTotalsR.behind),
-        two_str_use_pct_r: pct(r.r.two_str, bucketTotalsR.two_str),
+        firstpitch_pct_r: pct(r.r.firstpitch, r.r.count),
+        early_pct_r: pct(r.r.early, r.r.count),
+        behind_pct_r: pct(r.r.behind, r.r.count),
+        two_str_use_pct_r: pct(r.r.two_str, r.r.count),
         par_pct_vs_r: r.r.two_str > 0 ? Math.round((r.r.two_str_ks / r.r.two_str) * 100) : null,
         _count: r.count,
       });
@@ -117,21 +114,28 @@ export default function UsageTable({ pitches, gameFilter, isMobile, selectedPitc
     const totalKsTwoStrL = sumBy(rec => rec.l.two_str_ks);
     const totalTwoStrR = sumBy(rec => rec.r.two_str);
     const totalKsTwoStrR = sumBy(rec => rec.r.two_str_ks);
+    const totalL = sumBy(rec => rec.l.count);
+    const totalR = sumBy(rec => rec.r.count);
+    const totalFirstPitchL = sumBy(rec => rec.l.firstpitch);
+    const totalEarlyL = sumBy(rec => rec.l.early);
+    const totalBehindL = sumBy(rec => rec.l.behind);
+    const totalFirstPitchR = sumBy(rec => rec.r.firstpitch);
+    const totalEarlyR = sumBy(rec => rec.r.early);
+    const totalBehindR = sumBy(rec => rec.r.behind);
 
     const totals = {
       pitch_name: "Total",
       count: rows.reduce((s, r) => s + r.count, 0),
       par_pct: totalTwoStrAll > 0 ? Math.round((totalKsTwoStrAll / totalTwoStrAll) * 100) : null,
-      // Bucket columns show raw counts in the totals row (per-type % sums to 100% by construction)
-      firstpitch_pct_l: bucketTotalsL.firstpitch,
-      early_pct_l: bucketTotalsL.early,
-      behind_pct_l: bucketTotalsL.behind,
-      two_str_use_pct_l: bucketTotalsL.two_str,
+      firstpitch_pct_l: pct(totalFirstPitchL, totalL),
+      early_pct_l: pct(totalEarlyL, totalL),
+      behind_pct_l: pct(totalBehindL, totalL),
+      two_str_use_pct_l: pct(totalTwoStrL, totalL),
       par_pct_vs_l: totalTwoStrL > 0 ? Math.round((totalKsTwoStrL / totalTwoStrL) * 100) : null,
-      firstpitch_pct_r: bucketTotalsR.firstpitch,
-      early_pct_r: bucketTotalsR.early,
-      behind_pct_r: bucketTotalsR.behind,
-      two_str_use_pct_r: bucketTotalsR.two_str,
+      firstpitch_pct_r: pct(totalFirstPitchR, totalR),
+      early_pct_r: pct(totalEarlyR, totalR),
+      behind_pct_r: pct(totalBehindR, totalR),
+      two_str_use_pct_r: pct(totalTwoStrR, totalR),
       par_pct_vs_r: totalTwoStrR > 0 ? Math.round((totalKsTwoStrR / totalTwoStrR) * 100) : null,
     };
 
@@ -146,12 +150,6 @@ export default function UsageTable({ pitches, gameFilter, isMobile, selectedPitc
     "firstpitch_pct_r", "early_pct_r", "behind_pct_r", "two_str_use_pct_r",
     "par_pct", "par_pct_vs_l", "par_pct_vs_r",
   ]);
-  // Totals row displays raw counts (not %) for the bucket usage columns.
-  const totalsRawKeys = new Set([
-    "firstpitch_pct_l", "early_pct_l", "behind_pct_l", "two_str_use_pct_l",
-    "firstpitch_pct_r", "early_pct_r", "behind_pct_r", "two_str_use_pct_r",
-  ]);
-
   // Build group header row: collapse adjacent cols with the same `group` into a colspan.
   const groupHeaderCells = [];
   let i = 0;
@@ -186,7 +184,6 @@ export default function UsageTable({ pitches, gameFilter, isMobile, selectedPitc
       return <span style={{ color: c, fontWeight: 600 }}>{v}</span>;
     }
     if (v == null || v === "") return <span style={{ color: "rgb(180, 185, 219)" }}>—</span>;
-    if (isTotal && totalsRawKeys.has(col.key)) return v;
     if (pctKeys.has(col.key)) {
       if (v === 0) return <span style={{ color: "var(--text-dim, #8A8EB0)" }}>0%</span>;
       return `${v}%`;
