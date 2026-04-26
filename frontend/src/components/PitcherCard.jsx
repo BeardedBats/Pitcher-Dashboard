@@ -88,6 +88,10 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
   const parentOrgAbbrev = level === "aaa" ? displayTeamAbbrev(team, level) : null;
   const milbAbbrev = (abbr) => level === "aaa" ? displayAbbrev(abbr) : displayTeamAbbrev(abbr, level);
   const nameWithOrg = parentOrgAbbrev ? `${name} (${parentOrgAbbrev})` : name;
+  const playerHref = level === "aaa" ? `#aaa/player/${pitcher_id}` : `#player/${pitcher_id}`;
+  const cardHref = level === "aaa"
+    ? `#aaa/card/${date}/${pitcher_id}/${result?.game_pk || ""}`
+    : `#card/${date}/${pitcher_id}/${result?.game_pk || ""}`;
 
   // Determine if game is final and compute projected decision for live games
   const isFinal = linescoreData?.is_final !== false; // default to true if unknown
@@ -308,14 +312,14 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
       <div className="card-top">
         <div className="card-info">
           {onPlayerClick && pitcher_id ? (
-            <a className="card-name" href={"#player/" + pitcher_id} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); onPlayerClick(pitcher_id, e); } }} style={{ cursor: "pointer", textDecoration: "none" }}>{nameWithOrg}</a>
+            <a className="card-name" href={playerHref} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); onPlayerClick(pitcher_id, e); } }} style={{ cursor: "pointer", textDecoration: "none" }}>{nameWithOrg}</a>
           ) : (
             <div className="card-name">{nameWithOrg}</div>
           )}
           <div className="card-meta">
             {milbAbbrev(team)} · {hand}HP ·{" "}
             {onGameClick ? (
-              <a className="card-game-link" href={`#card/${date}/${pitcher_id}/${result?.game_pk || ""}`} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); onGameClick(e); } }} role="button" tabIndex={0}>
+              <a className="card-game-link" href={cardHref} rel="nofollow" onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); onGameClick(e); } }} role="button" tabIndex={0}>
                 {dateDisplay} {oppPrefix} {milbAbbrev(opponent)}
               </a>
             ) : (

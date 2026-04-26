@@ -14,42 +14,59 @@ function withLevel(url, level) {
   return url + (url.includes("?") ? "&" : "?") + `level=${encodeURIComponent(level)}`;
 }
 
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function fetchJson(url, { errorMessage, retries = 0, retryDelayMs = 250, shouldRetry } = {}) {
+  let attempt = 0;
+  while (true) {
+    const res = await fetch(url);
+    if (res.ok) return res.json();
+    if (attempt >= retries || !shouldRetry || !shouldRetry(res)) {
+      throw new Error(errorMessage || "Request failed");
+    }
+    attempt += 1;
+    await wait(retryDelayMs);
+  }
+}
+
 export async function fetchGames(date, level = "mlb") {
-  const res = await fetch(withLevel(`${BASE}/api/games?date=${date}`, level));
-  if (!res.ok) throw new Error("Failed to fetch games");
-  return res.json();
+  return fetchJson(withLevel(`${BASE}/api/games?date=${date}`, level), {
+    errorMessage: "Failed to fetch games",
+  });
 }
 
 export async function fetchPitchData(date, gamePk, level = "mlb") {
   const url = gamePk != null
     ? `${BASE}/api/pitch-data?date=${date}&game_pk=${gamePk}`
     : `${BASE}/api/pitch-data?date=${date}`;
-  const res = await fetch(withLevel(url, level));
-  if (!res.ok) throw new Error("Failed to fetch pitch data");
-  return res.json();
+  return fetchJson(withLevel(url, level), {
+    errorMessage: "Failed to fetch pitch data",
+  });
 }
 
 export async function fetchPitcherResults(date, gamePk, level = "mlb") {
   const url = gamePk != null
     ? `${BASE}/api/pitcher-results?date=${date}&game_pk=${gamePk}`
     : `${BASE}/api/pitcher-results?date=${date}`;
-  const res = await fetch(withLevel(url, level));
-  if (!res.ok) throw new Error("Failed to fetch pitcher results");
-  return res.json();
+  return fetchJson(withLevel(url, level), {
+    errorMessage: "Failed to fetch pitcher results",
+    retries: gamePk == null ? 1 : 0,
+    shouldRetry: (res) => res.status >= 500 || res.status === 429,
+  });
 }
 
 export async function fetchGameView(date, gamePk, level = "mlb") {
   const url = `${BASE}/api/game-view?date=${date}&game_pk=${gamePk}`;
-  const res = await fetch(withLevel(url, level));
-  if (!res.ok) throw new Error("Failed to fetch game view");
-  return res.json();
+  return fetchJson(withLevel(url, level), {
+    errorMessage: "Failed to fetch game view",
+  });
 }
 
 export async function fetchPitcherCard(date, pitcherId, gamePk, level = "mlb") {
   const url = `${BASE}/api/pitcher-card?date=${date}&pitcher_id=${pitcherId}&game_pk=${gamePk}`;
-  const res = await fetch(withLevel(url, level));
-  if (!res.ok) throw new Error("Failed to fetch pitcher card");
-  return res.json();
+  return fetchJson(withLevel(url, level), {
+    errorMessage: "Failed to fetch pitcher card",
+  });
 }
 
 export async function fetchSeasonAverages(pitcherId, season, { beforeDate, excludeGamePk, autoFallback, level } = {}) {

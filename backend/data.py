@@ -41,7 +41,10 @@ _override_version = 0  # Incremented on every save/remove to bust agg caches
 # v11: per-pitch-type rate stats (strike_pct, cs_pct, swstr_pct, csw_pct) are
 #     sent unrounded so the frontend's single Math.round agrees with
 #     ResultsTable, fixing the X.45 → 45.5 → 46 double-rounding mismatch.
-CARD_SCHEMA_VERSION = 11
+# v12: AAA player pages rebuild from the season range feed instead of
+#     Savant's broken per-pitcher minors query, fixing MiLB ID collisions and
+#     collapsing per-pitch rows back to one row per pitch type.
+CARD_SCHEMA_VERSION = 12
 
 # Allowed level values. New levels must be added here and exposed via the
 # frontend `level` state and any cron schedules.
@@ -1100,22 +1103,38 @@ SAVANT_PITCHER_SEASON_URL = (
     "&player_event_sort=api_p_release_speed&sort_order=desc"
 )
 
+def _season_date_bounds(season_year):
+    """Return the inclusive season window used for season-level pitch queries."""
+    start_date = f"{int(season_year)}-03-25"
+    today = _get_today_str()
+    season_end = f"{int(season_year)}-11-01"
+    if today < start_date:
+        return start_date, start_date
+    return start_date, min(today, season_end)
+
+
 def fetch_pitcher_season(pitcher_id, season_year, level=DEFAULT_LEVEL):
     """Fetch all pitches for a pitcher in a given season. Cached.
 
-    For `level=aaa` we hit Savant with `&minors=true` and DO NOT post-filter
-    by AAA game_pks — we want every Statcast-tracked minor-league level the
-    pitcher appeared at (AAA + Single-A FSL today). This matches the
-    "season totals = total minor league stats" semantics for AAA pitcher
-    cards. Levels that Statcast doesn't track (AA, High-A non-FSL, lower)
-    are not available through this pipeline.
+    For `level=aaa` we source from the season date-range cache instead of
+    Savant's per-pitcher minors query. The pitcher-specific endpoint can
+    return mismatched minors rows for certain IDs, while the range feed stays
+    consistent with the rest of the AAA UI and still includes every
+    Statcast-tracked minor-league level the pitcher appeared at.
     """
     cache_key = (level, pitcher_id, season_year)
     if cache_key in _season_cache:
         return _season_cache[cache_key]
-    url = SAVANT_PITCHER_SEASON_URL.format(pitcher_id=pitcher_id, year=season_year)
     if level == "aaa":
-        url += SAVANT_AAA_FLAG
+        start_date, end_date = _season_date_bounds(season_year)
+        season_df = fetch_date_range(start_date, end_date, level=level)
+        if season_df.empty or "pitcher" not in season_df.columns:
+            _season_cache[cache_key] = pd.DataFrame()
+            return _season_cache[cache_key]
+        season_df = season_df[season_df["pitcher"] == int(pitcher_id)].copy()
+        _season_cache[cache_key] = season_df if not season_df.empty else pd.DataFrame()
+        return _season_cache[cache_key]
+    url = SAVANT_PITCHER_SEASON_URL.format(pitcher_id=pitcher_id, year=season_year)
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
         resp = requests.get(url, headers=headers, timeout=90)
@@ -1634,10 +1653,27 @@ def compute_player_page(df, pitcher_id):
         pdf = pdf[pdf["game_type"] != "A"]
     if pdf.empty:
         return None
+    pdf = pdf.copy()
 
-    name = pdf["player_name"].iloc[0]
-    teams = list(pdf["pitcher_team"].unique()) if "pitcher_team" in pdf.columns else []
-    hand = pdf["p_throws"].iloc[0] if "p_throws" in pdf.columns else ""
+    raw_names = (
+        pdf["player_name"].dropna().astype(str).str.strip()
+        if "player_name" in pdf.columns else pd.Series(dtype=str)
+    )
+    raw_names = raw_names[(raw_names != "") & (raw_names.str.lower() != "nan")]
+    name = raw_names.mode().iloc[0] if not raw_names.empty else ""
+    if name:
+        pdf["player_name"] = name
+
+    teams = []
+    if "pitcher_team" in pdf.columns:
+        teams = [str(t) for t in pd.unique(pdf["pitcher_team"]) if pd.notna(t) and str(t).strip()]
+
+    raw_hands = (
+        pdf["p_throws"].dropna().astype(str).str.strip()
+        if "p_throws" in pdf.columns else pd.Series(dtype=str)
+    )
+    raw_hands = raw_hands[raw_hands != ""]
+    hand = raw_hands.mode().iloc[0] if not raw_hands.empty else ""
     info = {"name": name, "teams": teams, "hand": hand, "pitcher_id": int(pitcher_id)}
 
     pdf_prepped = _prep_df(pdf)

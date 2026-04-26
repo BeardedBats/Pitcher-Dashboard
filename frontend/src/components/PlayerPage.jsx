@@ -26,6 +26,11 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick, onChangeLev
   // abbrev mapping, so MLB views are unchanged.
   const displayAbbrev = (abbr) => level === "aaa" ? displayMlbAbbrev(abbr) : displayTeamAbbrev(abbr, level);
   const parentOrg = (abbr) => level === "aaa" ? displayTeamAbbrev(abbr, level) : null;
+  const buildCardHref = (gameDate, gamePk) => (
+    level === "aaa"
+      ? `#aaa/card/${gameDate}/${pitcherId}/${gamePk}`
+      : `#card/${gameDate}/${pitcherId}/${gamePk}`
+  );
   // Track whether we've already attempted the smart redirect for this pitcher
   // so we don't bounce back and forth between MLB / Minors views on every
   // re-render (the redirect changes `level`, which would re-trigger).
@@ -455,7 +460,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick, onChangeLev
                         onClick={(e) => onGameClick(row.date, pitcherId, row.game_pk, e)}
                         onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); onGameClick(row.date, pitcherId, row.game_pk, e); } }}
                       >
-                        <td><a href={`#card/${row.date}/${pitcherId}/${row.game_pk}`} rel="nofollow" onClick={(e) => e.preventDefault()} onMouseDown={(e) => { if (e.button === 1) e.stopPropagation(); }} style={{ color: "inherit", textDecoration: "none" }}>{dateShort}</a></td>
+                        <td><a href={buildCardHref(row.date, row.game_pk)} rel="nofollow" onClick={(e) => e.preventDefault()} onMouseDown={(e) => { if (e.button === 1) e.stopPropagation(); }} style={{ color: "inherit", textDecoration: "none" }}>{dateShort}</a></td>
                         <td>{row.team && row.home_team && row.team !== row.home_team ? "@ " : ""}{displayAbbrev(row.opponent)}</td>
                         <td style={{ color: decColor, fontWeight: baseDec !== "ND" ? 700 : 500 }}>{dec}</td>
                         <td>{row.ip}</td>
@@ -541,7 +546,7 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick, onChangeLev
                     {!pbpDisabled && pbpGamePk && pbpGameDate ? (
                       <a
                         className="metrics-subnav-btn"
-                        href={`#card/${pbpGameDate}/${pitcherId}/${pbpGamePk}`}
+                        href={buildCardHref(pbpGameDate, pbpGamePk)}
                         rel="nofollow"
                         onClick={(e) => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); handlePbpClick(); } }}
                         style={{ textDecoration: "none" }}

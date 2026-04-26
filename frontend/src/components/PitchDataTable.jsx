@@ -278,7 +278,10 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
     if (col.key === "pitcher") {
       if (!v) return <span className="pitcher-name" style={{ color: "rgb(180, 185, 219)" }}>--</span>;
       if (onPitcherClick && row.pitcher_id && row.game_pk && date) {
-        return <a className="pitcher-name" href={`#card/${date}/${row.pitcher_id}/${row.game_pk}`} rel="nofollow" onClick={(e) => e.preventDefault()} onMouseDown={(e) => { if (e.button === 1) e.stopPropagation(); }} style={{ textDecoration: "none" }}>{v}</a>;
+        const cardHref = level === "aaa"
+          ? `#aaa/card/${date}/${row.pitcher_id}/${row.game_pk}`
+          : `#card/${date}/${row.pitcher_id}/${row.game_pk}`;
+        return <a className="pitcher-name" href={cardHref} rel="nofollow" onClick={(e) => e.preventDefault()} onMouseDown={(e) => { if (e.button === 1) e.stopPropagation(); }} style={{ textDecoration: "none" }}>{v}</a>;
       }
       return <span className="pitcher-name">{v}</span>;
     }

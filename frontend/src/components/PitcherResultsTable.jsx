@@ -186,7 +186,10 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
       const isSP = row.role === "SP";
       const nameClass = isSP ? "pitcher-name pitcher-sp-highlight" : "pitcher-name";
       if (onPitcherClick && row.pitcher_id && row.game_pk && date) {
-        return <a className={nameClass} href={`#card/${date}/${row.pitcher_id}/${row.game_pk}`} rel="nofollow" onClick={(e) => e.preventDefault()} onMouseDown={(e) => { if (e.button === 1) e.stopPropagation(); }} style={{ textDecoration: "none" }}>{v}</a>;
+        const cardHref = level === "aaa"
+          ? `#aaa/card/${date}/${row.pitcher_id}/${row.game_pk}`
+          : `#card/${date}/${row.pitcher_id}/${row.game_pk}`;
+        return <a className={nameClass} href={cardHref} rel="nofollow" onClick={(e) => e.preventDefault()} onMouseDown={(e) => { if (e.button === 1) e.stopPropagation(); }} style={{ textDecoration: "none" }}>{v}</a>;
       }
       return <span className={nameClass}>{v}</span>;
     }

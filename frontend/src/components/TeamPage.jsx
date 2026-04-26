@@ -98,7 +98,8 @@ export default function TeamPage({ teamAbbrev, onPlayerClick, onBack, level = "m
     if (val == null) return "—";
     if (col.key === "pitcher") {
       if (onPlayerClick && row.pitcher_id) {
-        return <a href={"#player/" + row.pitcher_id} rel="nofollow" onClick={(e) => e.preventDefault()} onMouseDown={(e) => { if (e.button === 1) e.stopPropagation(); }} style={{ color: "inherit", textDecoration: "none" }}>{val}</a>;
+        const playerHref = level === "aaa" ? `#aaa/player/${row.pitcher_id}` : `#player/${row.pitcher_id}`;
+        return <a href={playerHref} rel="nofollow" onClick={(e) => e.preventDefault()} onMouseDown={(e) => { if (e.button === 1) e.stopPropagation(); }} style={{ color: "inherit", textDecoration: "none" }}>{val}</a>;
       }
       return val;
     }
