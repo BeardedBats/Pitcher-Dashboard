@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { PITCHER_RESULTS_COLUMNS, PITCH_COLORS, TEAM_FULL_NAMES, displayAbbrev, displayTeamAbbrev } from "../constants";
 import { fmtPct, fmtInt } from "../utils/formatting";
 
@@ -22,9 +22,9 @@ const DECISION_COLORS = {
   BS: "#FF5EDC",
 };
 
-export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly, splitByTeam, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, hiddenCols = [], level = "mlb" }) {
-  const [sortKeyLocal, setSortKeyLocal] = useState("ip");
-  const [sortDirLocal, setSortDirLocal] = useState("desc");
+export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly, splitByTeam, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, hiddenCols = [], level = "mlb", onSortedRowsChange }) {
+  const [sortKeyLocal, setSortKeyLocal] = useState("er");
+  const [sortDirLocal, setSortDirLocal] = useState("asc");
   const sortKey = onSortKeyChange ? sortKeyProp : sortKeyLocal;
   const setSortKey = onSortKeyChange || setSortKeyLocal;
   const sortDir = onSortDirChange ? sortDirProp : sortDirLocal;
@@ -84,6 +84,10 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
       return a.appearance_order - b.appearance_order;
     });
   }, [filtered, sortKey, sortDir]);
+
+  useEffect(() => {
+    if (onSortedRowsChange) onSortedRowsChange(sorted);
+  }, [onSortedRowsChange, sorted]);
 
   // Compute max pitcher name width across ALL data for consistent team card sizing
   const maxPitcherWidth = useMemo(() => {

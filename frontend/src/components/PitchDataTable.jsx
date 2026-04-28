@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { PITCH_COLORS, PITCH_DATA_COLUMNS, TEAM_FULL_NAMES, displayAbbrev, displayTeamAbbrev } from "../constants";
 
 const TEAM_SPLIT_HIDE = ["team", "opponent"];
@@ -30,7 +30,7 @@ const IHB_ARM_SIDE_TYPES = ["Four-Seamer", "Sinker", "Changeup"];
 
 const MOBILE_HIDE_COLS = ["hand", "team", "opponent"];
 
-export default function PitchDataTable({ data, date, onPitcherClick, columns, splitByTeam, spOnly, pitcherHand, sortable = true, showChange, seasonAvgs, batterFilter, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, selectedPitchType, onPitchTypeClick, level = "mlb" }) {
+export default function PitchDataTable({ data, date, onPitcherClick, columns, splitByTeam, spOnly, pitcherHand, sortable = true, showChange, seasonAvgs, batterFilter, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, selectedPitchType, onPitchTypeClick, level = "mlb", onSortedRowsChange }) {
   const [sortKeyLocal, setSortKeyLocal] = useState(null);
   const [sortDirLocal, setSortDirLocal] = useState("asc");
   const sortKey = onSortKeyChange ? sortKeyProp : sortKeyLocal;
@@ -78,6 +78,10 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
       return (a.pitch_name || "").localeCompare(b.pitch_name || "");
     });
   }, [filtered, sortKey, sortDir, sortable]);
+
+  useEffect(() => {
+    if (onSortedRowsChange) onSortedRowsChange(sorted);
+  }, [onSortedRowsChange, sorted]);
 
   const pctKeys = ["usage", "usage_vs_r", "usage_vs_l", "strike_pct", "cs_pct", "swstr_pct", "csw_pct"];
   const gradientKeys = ["ivb", "ext"];

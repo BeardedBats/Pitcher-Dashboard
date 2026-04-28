@@ -121,10 +121,11 @@ export default function App() {
   const [toast, setToast] = useState(null); // { message, type: "success"|"error" }
 
   // Lifted sort state so it persists across card navigation
-  const [resultsSortKey, setResultsSortKey] = useState("ip");
-  const [resultsSortDir, setResultsSortDir] = useState("desc");
+  const [resultsSortKey, setResultsSortKey] = useState("er");
+  const [resultsSortDir, setResultsSortDir] = useState("asc");
   const [pitchSortKey, setPitchSortKey] = useState(null);
   const [pitchSortDir, setPitchSortDir] = useState("asc");
+  const [currentTableRows, setCurrentTableRows] = useState([]);
 
   // Track whether this is the initial mount load (combined endpoint) vs user date change
   const initialLoadDone = React.useRef(false);
@@ -625,6 +626,20 @@ export default function App() {
       .catch(e => { setError(e.message); setLoading(false); });
   };
 
+  const handleCreateTabs = () => {
+    if (!date || !currentTableRows.length) return;
+    const seen = new Set();
+    currentTableRows.forEach(row => {
+      const pitcherId = row.pitcher_id;
+      const gamePk = row.game_pk;
+      if (!pitcherId || !gamePk) return;
+      const key = `${pitcherId}:${gamePk}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      openInNewWindow(cardHash(date, pitcherId, gamePk));
+    });
+  };
+
   const closeCard = () => {
     window.history.back();
   };
@@ -860,14 +875,21 @@ export default function App() {
       {error && <div className="error">{error}</div>}
 
       {!loading && !error && !cardData && page === "games" && (
-        <div className={splitByTeam ? "table-card-none" : "table-card"}>
-          <div className="table-container">
-            {view === "pitch-data" && (
-              <PitchDataTable data={filteredPitchData} date={date} level={level} onPitcherClick={openCard} splitByTeam={splitByTeam} spOnly={spOnly} isMobile={isMobile} sortKey={pitchSortKey} onSortKeyChange={setPitchSortKey} sortDir={pitchSortDir} onSortDirChange={setPitchSortDir} />
-            )}
-            {view === "pitcher-results" && (
-              <PitcherResultsTable data={filteredResultsData} date={date} level={level} onPitcherClick={openCard} spOnly={spOnly} splitByTeam={splitByTeam} isMobile={isMobile} sortKey={resultsSortKey} onSortKeyChange={setResultsSortKey} sortDir={resultsSortDir} onSortDirChange={setResultsSortDir} hiddenCols={resultsHiddenCols} />
-            )}
+        <div className="main-table-area">
+          <div className={splitByTeam ? "table-card-none" : "table-card"}>
+            <div className="table-container">
+              {view === "pitch-data" && (
+                <PitchDataTable data={filteredPitchData} date={date} level={level} onPitcherClick={openCard} splitByTeam={splitByTeam} spOnly={spOnly} isMobile={isMobile} sortKey={pitchSortKey} onSortKeyChange={setPitchSortKey} sortDir={pitchSortDir} onSortDirChange={setPitchSortDir} onSortedRowsChange={setCurrentTableRows} />
+              )}
+              {view === "pitcher-results" && (
+                <PitcherResultsTable data={filteredResultsData} date={date} level={level} onPitcherClick={openCard} spOnly={spOnly} splitByTeam={splitByTeam} isMobile={isMobile} sortKey={resultsSortKey} onSortKeyChange={setResultsSortKey} sortDir={resultsSortDir} onSortDirChange={setResultsSortDir} hiddenCols={resultsHiddenCols} onSortedRowsChange={setCurrentTableRows} />
+              )}
+            </div>
+          </div>
+          <div className="table-actions">
+            <button className="create-tabs-btn" onClick={handleCreateTabs} disabled={!currentTableRows.length}>
+              Create Tabs
+            </button>
           </div>
         </div>
       )}
