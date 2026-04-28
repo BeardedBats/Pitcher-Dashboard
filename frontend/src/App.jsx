@@ -91,6 +91,21 @@ function openInNewWindow(hash) {
   return true;
 }
 
+function openHashesInNewTabs(hashes) {
+  if (window.electronAPI?.openNewWindow) {
+    hashes.forEach(hash => window.electronAPI.openNewWindow(hash));
+    return hashes.length;
+  }
+
+  let opened = 0;
+  hashes.forEach(hash => {
+    const url = window.location.origin + window.location.pathname + "#" + hash;
+    const win = window.open(url, "_blank", "noopener,noreferrer");
+    if (win) opened += 1;
+  });
+  return opened;
+}
+
 export default function App() {
   const isMobile = useIsMobile();
   // Read initial level from the hash so a refresh on #aaa stays on AAA.
@@ -629,6 +644,7 @@ export default function App() {
   const handleCreateTabs = () => {
     if (!date || !currentTableRows.length) return;
     const seen = new Set();
+    const hashes = [];
     currentTableRows.forEach(row => {
       const pitcherId = row.pitcher_id;
       const gamePk = row.game_pk;
@@ -636,8 +652,12 @@ export default function App() {
       const key = `${pitcherId}:${gamePk}`;
       if (seen.has(key)) return;
       seen.add(key);
-      openInNewWindow(cardHash(date, pitcherId, gamePk));
+      hashes.push(cardHash(date, pitcherId, gamePk));
     });
+    const opened = openHashesInNewTabs(hashes);
+    if (opened < hashes.length) {
+      setToast({ message: `Opened ${opened} of ${hashes.length} tabs. Allow pop-ups for this site to open all.`, type: "error" });
+    }
   };
 
   const closeCard = () => {
