@@ -52,7 +52,9 @@ _override_version = 0  # Incremented on every save/remove to bust agg caches
 #     misclassified MiLB totals are invalidated.
 # v15: season totals and card results carry game_pks/raw counters so cards can
 #     safely merge the current/live game when a stable season cache is stale.
-CARD_SCHEMA_VERSION = 15
+# v16: player/card payloads include explicit `available_levels`; frontend
+#     level pills no longer infer MiLB availability from stale totals alone.
+CARD_SCHEMA_VERSION = 16
 
 # Allowed level values. New levels must be added here and exposed via the
 # frontend `level` state and any cron schedules.

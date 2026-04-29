@@ -188,9 +188,12 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
 
   // Dual season totals (MLB + MiLB) wired in v9. Fall back to legacy
   // single `season_totals` field for older cached payloads.
-  const seasonTotalsMlb = (cardData.season_totals_mlb && cardData.season_totals_mlb.games)
+  const hasAvailableLevels = Array.isArray(cardData.available_levels);
+  const hasMlbLevel = hasAvailableLevels ? cardData.available_levels.includes("mlb") : true;
+  const hasMilbLevel = hasAvailableLevels ? cardData.available_levels.includes("aaa") : true;
+  const seasonTotalsMlb = hasMlbLevel && (cardData.season_totals_mlb && cardData.season_totals_mlb.games)
     ? cardData.season_totals_mlb : null;
-  const seasonTotalsMilb = (cardData.season_totals_milb && cardData.season_totals_milb.games)
+  const seasonTotalsMilb = hasMilbLevel && (cardData.season_totals_milb && cardData.season_totals_milb.games)
     ? cardData.season_totals_milb : null;
   // Backward-compat: if neither dual field is present, treat the legacy
   // `season_totals` as belonging to the card's level.

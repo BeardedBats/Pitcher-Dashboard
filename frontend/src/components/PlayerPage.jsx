@@ -59,6 +59,14 @@ function aggregateGameLogTotals(log) {
   };
 }
 
+function hasLevelData(data, levelName) {
+  if (Array.isArray(data?.available_levels)) {
+    return data.available_levels.includes(levelName);
+  }
+  const totals = levelName === "aaa" ? data?.season_totals_milb : data?.season_totals_mlb;
+  return !!(totals && totals.games);
+}
+
 export default function PlayerPage({ pitcherId, onBack, onGameClick, onChangeLevel, level = "mlb" }) {
   const isMobile = useIsMobile();
   // For MiLB views we want the raw minor-league abbreviation (BUF, OKC, …)
@@ -198,8 +206,8 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick, onChangeLev
   useEffect(() => {
     if (!data) return;
     if (smartRedirectedRef.current === pitcherId) return;
-    const hasMlb = !!(data.season_totals_mlb && data.season_totals_mlb.games);
-    const hasMilb = !!(data.season_totals_milb && data.season_totals_milb.games);
+    const hasMlb = hasLevelData(data, "mlb");
+    const hasMilb = hasLevelData(data, "aaa");
     let target = null;
     if (hasMlb && !hasMilb && level !== "mlb") target = "mlb";
     else if (!hasMlb && hasMilb && level !== "aaa") target = "aaa";
@@ -420,8 +428,8 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick, onChangeLev
               // levels. When both pills render, they share the top row with
                 // the player name and are right-aligned via flexbox so their
               // top edge lines up with the "Regular Season" table header.
-              const hasMlb = !!(data?.season_totals_mlb && data.season_totals_mlb.games);
-              const hasMilb = !!(data?.season_totals_milb && data.season_totals_milb.games);
+              const hasMlb = hasLevelData(data, "mlb");
+              const hasMilb = hasLevelData(data, "aaa");
               const showPills = hasMlb && hasMilb && !!onChangeLevel;
               const nameNode = (
                 <div className="card-name">{(() => {

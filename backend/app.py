@@ -544,6 +544,15 @@ def _compute_dual_season_totals(pitcher_id, season_year):
     }
 
 
+def _available_levels_from_dual(dual):
+    levels = []
+    if dual.get("mlb") and dual["mlb"].get("games"):
+        levels.append(DEFAULT_LEVEL)
+    if dual.get("milb") and dual["milb"].get("games"):
+        levels.append("aaa")
+    return levels
+
+
 def _build_pitcher_card_payload(date_str, pitcher_id, game_pk, level=DEFAULT_LEVEL):
     """Return the fully-enriched pitcher-card payload used by both the endpoint
     and the warmup cron paths."""
@@ -562,6 +571,7 @@ def _build_pitcher_card_payload(date_str, pitcher_id, game_pk, level=DEFAULT_LEV
     result["season_totals_mlb"] = dual["mlb"]
     result["season_totals_milb"] = dual["milb"]
     result["season_totals_primary"] = dual["primary"]
+    result["available_levels"] = _available_levels_from_dual(dual)
     result["errors"] = dual["errors"]
 
     # Backward-compat: preserve the legacy single `season_totals` field.
@@ -617,6 +627,7 @@ def _build_player_page_payload(
         result["season_totals_mlb"] = dual["mlb"]
         result["season_totals_milb"] = dual["milb"]
         result["season_totals_primary"] = dual["primary"]
+        result["available_levels"] = _available_levels_from_dual(dual)
         result["errors"] = dual["errors"]
     else:
         # Cron warmups need to make the game log hot first. The full dual
@@ -626,6 +637,7 @@ def _build_player_page_payload(
         result["season_totals_mlb"] = summary if level == DEFAULT_LEVEL and summary else None
         result["season_totals_milb"] = summary if level == "aaa" and summary else None
         result["season_totals_primary"] = level if summary else None
+        result["available_levels"] = [level] if summary else []
         result["errors"] = []
     return result
 
