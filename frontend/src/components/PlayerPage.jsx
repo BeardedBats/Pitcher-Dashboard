@@ -17,6 +17,48 @@ const API = window.__BACKEND_PORT__
   ? `http://localhost:${window.__BACKEND_PORT__}`
   : process.env.NODE_ENV === "development" ? "http://localhost:8000" : "";
 
+function ipToThirds(ipVal) {
+  const parts = String(ipVal || "0.0").split(".");
+  const full = parseInt(parts[0], 10) || 0;
+  const thirds = parseInt(parts[1], 10) || 0;
+  return full * 3 + thirds;
+}
+
+function aggregateGameLogTotals(log) {
+  if (!log || log.length === 0) return null;
+  const totalPitches = log.reduce((sum, g) => sum + (g.pitches || 0), 0);
+  const ipThirds = log.reduce((sum, g) => sum + ipToThirds(g.ip), 0);
+  const totalPa = log.reduce((sum, g) => sum + (g.pa_count || 0), 0);
+  const twoStrikePas = log.reduce((sum, g) => sum + (g.two_strike_pas || 0), 0);
+  const twoStrikePitches = log.reduce((sum, g) => sum + (g.two_strike_pitches || 0), 0);
+  const strikeoutsForPar = log.reduce((sum, g) => sum + (g.strikeouts_for_par || 0), 0);
+  const whiffs = log.reduce((sum, g) => sum + (g.whiffs || 0), 0);
+  const strikes = log.reduce((sum, g) => sum + (g.strikes || 0), 0);
+  return {
+    games: log.length,
+    games_started: log.reduce((sum, g) => sum + (g.games_started || 0), 0),
+    ip_thirds: ipThirds,
+    hits: log.reduce((sum, g) => sum + (g.hits || 0), 0),
+    bbs: log.reduce((sum, g) => sum + (g.bbs || 0), 0),
+    ks: log.reduce((sum, g) => sum + (g.ks || 0), 0),
+    hrs: log.reduce((sum, g) => sum + (g.hrs || 0), 0),
+    er: log.reduce((sum, g) => sum + (g.er || 0), 0),
+    runs: log.reduce((sum, g) => sum + (g.runs || 0), 0),
+    batters_faced: log.reduce((sum, g) => sum + (g.batters_faced || 0), 0),
+    whiffs,
+    swstr_pct: totalPitches > 0 ? (whiffs / totalPitches) * 100 : 0,
+    csw_pct: totalPitches > 0
+      ? log.reduce((sum, g) => sum + ((g.csw_pct || 0) * (g.pitches || 0)), 0) / totalPitches
+      : 0,
+    strike_pct: totalPitches > 0 ? (strikes / totalPitches) * 100 : 0,
+    two_str_pct: totalPa > 0 ? (twoStrikePas / totalPa) * 100 : 0,
+    par_pct: twoStrikePitches > 0 ? (strikeoutsForPar / twoStrikePitches) * 100 : 0,
+    pitches: totalPitches,
+    wins: log.filter(g => g.decision === "W").length,
+    losses: log.filter(g => g.decision === "L").length,
+  };
+}
+
 export default function PlayerPage({ pitcherId, onBack, onGameClick, onChangeLevel, level = "mlb" }) {
   const isMobile = useIsMobile();
   // For MiLB views we want the raw minor-league abbreviation (BUF, OKC, …)
@@ -341,11 +383,12 @@ export default function PlayerPage({ pitcherId, onBack, onGameClick, onChangeLev
   // For MLB view: prefer season_totals_mlb. For Minors view: prefer
   // season_totals_milb (which spans Statcast AAA+FSL ⊕ MLB Stats API AA-below
   // PBP). Fall back to legacy results_summary for older cached payloads.
-  const rs = (
+  const cachedTotals = (
     (level === "aaa" && data.season_totals_milb) ||
     (level === "mlb" && data.season_totals_mlb) ||
     data.results_summary || {}
   );
+  const rs = aggregateGameLogTotals(sortedLog) || cachedTotals;
   // Asterisk on the 3 pitch-level columns when MiLB row is incomplete (some
   // AA games' PBP failed to load, so those stats are AAA-only).
   const partialFields = new Set(rs.partial_fields || []);

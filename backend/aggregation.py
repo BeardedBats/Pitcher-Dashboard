@@ -688,6 +688,11 @@ def get_pitcher_card(date_str, pitcher_id, game_pk, level="mlb"):
         # a strikeout / total pitches thrown in a two-strike count.
         "par_pct": round(strikeouts_r / two_strike_pitches_r * 100, 1) if two_strike_pitches_r > 0 else 0,
         "pitches": total_pitches, "hrs": hrs_r,
+        "strikes": strikes_r,
+        "pa_count": pa_count_r,
+        "two_strike_pas": two_strike_pas_r,
+        "two_strike_pitches": two_strike_pitches_r,
+        "strikeouts_for_par": strikeouts_r,
         "appearance_order": appearance_order_r,
         "home_team": home_team_r, "away_team": away_team_r,
     }
@@ -704,11 +709,13 @@ def get_pitcher_card(date_str, pitcher_id, game_pk, level="mlb"):
         pitcher_result["ks"] = pbox.get("ks", ks_r)
         pitcher_result["hrs"] = pbox.get("hrs", hrs_r)
         pitcher_result["batters_faced"] = pbox.get("batters_faced", 0)
+        pitcher_result["games_started"] = pbox.get("games_started", 0)
         pitcher_result["decision"] = pbox.get("decision", "")
     else:
         pitcher_result["er"] = 0
         pitcher_result["runs"] = 0
         pitcher_result["batters_faced"] = 0
+        pitcher_result["games_started"] = 0
         pitcher_result["decision"] = ""
     return {
         "pitcher_id": pitcher_id, "game_pk": game_pk,

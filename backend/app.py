@@ -352,6 +352,7 @@ def _aggregate_game_log_to_totals(game_log):
     last_game_date = max((g.get("date") or "" for g in game_log), default="")
     return {
         "games": len(game_log),
+        "game_pks": sorted(g.get("game_pk") for g in game_log if g.get("game_pk") is not None),
         "games_started": total_games_started,
         "ip": f"{total_ip_thirds // 3}.{total_ip_thirds % 3}",
         "ip_thirds": total_ip_thirds,
@@ -370,10 +371,79 @@ def _aggregate_game_log_to_totals(game_log):
         # Per-pitch PAR%: Ks / pitches thrown in 2-strike counts.
         "par_pct": round(total_strikeouts_par / total_two_str_pitches * 100, 1) if total_two_str_pitches > 0 else 0,
         "pitches": total_pitches,
+        "pa_count": total_pa_count,
+        "two_strike_pas": total_two_str_pas,
+        "two_strike_pitches": total_two_str_pitches,
+        "strikeouts_for_par": total_strikeouts_par,
         "wins": sum(1 for g in game_log if g.get("decision") == "W"),
         "losses": sum(1 for g in game_log if g.get("decision") == "L"),
         "last_game_date": last_game_date or None,
     }
+
+
+def _ip_to_thirds(ip_val):
+    parts = str(ip_val or "0.0").split(".")
+    full = int(parts[0]) if parts[0] else 0
+    thirds = int(parts[1]) if len(parts) > 1 and parts[1] else 0
+    return full * 3 + thirds
+
+
+def _merge_current_game_into_totals(totals, game_row, game_date):
+    """Return totals with the current card game included when a cache is stale."""
+    if not totals or not game_row:
+        return totals
+    game_pk = game_row.get("game_pk")
+    existing_pks = {
+        int(pk) for pk in (totals.get("game_pks") or [])
+        if pk is not None
+    }
+    if game_pk is not None and int(game_pk) in existing_pks:
+        return totals
+
+    last_game_date = totals.get("last_game_date") or ""
+    if not existing_pks and game_date and last_game_date >= game_date:
+        return totals
+
+    merged = dict(totals)
+    old_pitches = merged.get("pitches", 0) or 0
+    old_pa = merged.get("pa_count", 0) or 0
+    old_two_str_pitches = merged.get("two_strike_pitches", 0) or 0
+    game_pitches = game_row.get("pitches", 0) or 0
+    game_pa = game_row.get("pa_count", 0) or 0
+    game_two_str_pitches = game_row.get("two_strike_pitches", 0) or 0
+
+    merged["games"] = (merged.get("games", 0) or 0) + 1
+    merged["games_started"] = (merged.get("games_started", 0) or 0) + (game_row.get("games_started", 0) or 0)
+    merged["ip_thirds"] = (merged.get("ip_thirds", 0) or 0) + _ip_to_thirds(game_row.get("ip"))
+    merged["ip"] = f"{merged['ip_thirds'] // 3}.{merged['ip_thirds'] % 3}"
+    for key in ("hits", "bbs", "ks", "hrs", "er", "runs", "batters_faced", "whiffs", "strikes",
+                "pitches", "pa_count", "two_strike_pas", "two_strike_pitches", "strikeouts_for_par"):
+        merged[key] = (merged.get(key, 0) or 0) + (game_row.get(key, 0) or 0)
+    if game_row.get("decision") == "W":
+        merged["wins"] = (merged.get("wins", 0) or 0) + 1
+    if game_row.get("decision") == "L":
+        merged["losses"] = (merged.get("losses", 0) or 0) + 1
+    if game_pk is not None:
+        merged["game_pks"] = sorted(existing_pks | {int(game_pk)})
+    if game_date and game_date > last_game_date:
+        merged["last_game_date"] = game_date
+
+    total_pitches = old_pitches + game_pitches
+    total_pa = old_pa + game_pa
+    total_two_str_pitches = old_two_str_pitches + game_two_str_pitches
+    if total_pitches > 0:
+        merged["swstr_pct"] = round((merged.get("whiffs", 0) or 0) / total_pitches * 100, 1)
+        merged["csw_pct"] = round(
+            ((totals.get("csw_pct", 0) or 0) * old_pitches + (game_row.get("csw_pct", 0) or 0) * game_pitches)
+            / total_pitches,
+            1,
+        )
+        merged["strike_pct"] = round((merged.get("strikes", 0) or 0) / total_pitches * 100, 1)
+    if total_pa > 0:
+        merged["two_str_pct"] = round((merged.get("two_strike_pas", 0) or 0) / total_pa * 100, 1)
+    if total_two_str_pitches > 0:
+        merged["par_pct"] = round((merged.get("strikeouts_for_par", 0) or 0) / total_two_str_pitches * 100, 1)
+    return merged
 
 
 def _compute_season_totals(pitcher_id, start_date, end_date, level=DEFAULT_LEVEL):
@@ -483,6 +553,12 @@ def _build_pitcher_card_payload(date_str, pitcher_id, game_pk, level=DEFAULT_LEV
 
     season_year = int(date_str[:4])
     dual = _compute_dual_season_totals(pitcher_id, season_year)
+    card_game = dict(result.get("result") or {})
+    card_game["date"] = date_str
+    if level == DEFAULT_LEVEL:
+        dual["mlb"] = _merge_current_game_into_totals(dual["mlb"], card_game, date_str)
+    elif level == "aaa":
+        dual["milb"] = _merge_current_game_into_totals(dual["milb"], card_game, date_str)
     result["season_totals_mlb"] = dual["mlb"]
     result["season_totals_milb"] = dual["milb"]
     result["season_totals_primary"] = dual["primary"]
@@ -510,6 +586,7 @@ def _build_player_page_payload(
     end_date,
     level=DEFAULT_LEVEL,
     preloaded_df=None,
+    include_dual_totals=True,
 ):
     """Return the fully-enriched player-page payload used by both the endpoint
     and the warmup cron paths."""
@@ -535,12 +612,56 @@ def _build_player_page_payload(
         computed = compute_player_page(df, pitcher_id)
         result = computed if computed is not None else dict(empty)
 
-    dual = _compute_dual_season_totals(pitcher_id, season_year)
-    result["season_totals_mlb"] = dual["mlb"]
-    result["season_totals_milb"] = dual["milb"]
-    result["season_totals_primary"] = dual["primary"]
-    result["errors"] = dual["errors"]
+    if include_dual_totals:
+        dual = _compute_dual_season_totals(pitcher_id, season_year)
+        result["season_totals_mlb"] = dual["mlb"]
+        result["season_totals_milb"] = dual["milb"]
+        result["season_totals_primary"] = dual["primary"]
+        result["errors"] = dual["errors"]
+    else:
+        # Cron warmups need to make the game log hot first. The full dual
+        # MLB/MiLB totals path can fan out into per-pitcher minor-league PBP
+        # calls, which is too expensive for a batch of yesterday's pitchers.
+        summary = result.get("results_summary") or {}
+        result["season_totals_mlb"] = summary if level == DEFAULT_LEVEL and summary else None
+        result["season_totals_milb"] = summary if level == "aaa" and summary else None
+        result["season_totals_primary"] = level if summary else None
+        result["errors"] = []
     return result
+
+
+def _warm_player_page_cache_for_pitchers(
+    pitcher_ids,
+    start_date,
+    end_date,
+    level=DEFAULT_LEVEL,
+    preloaded_df=None,
+    include_dual_totals=True,
+):
+    """Overwrite stable player-page cache entries for a small pitcher set."""
+    suffix = "_custom" if is_custom_season_range(start_date, end_date) else ""
+    warmed = 0
+    skipped = 0
+    for pid in sorted({int(p) for p in (pitcher_ids or []) if p is not None}):
+        agg_key = f"player_v2_{level}_{pid}_s{CARD_SCHEMA_VERSION}{suffix}"
+        try:
+            result = _build_player_page_payload(
+                pid,
+                start_date,
+                end_date,
+                level=level,
+                preloaded_df=preloaded_df if level == DEFAULT_LEVEL else None,
+                include_dual_totals=include_dual_totals,
+            )
+            if result is not None:
+                set_agg_cache(agg_key, result)
+                warmed += 1
+            else:
+                skipped += 1
+        except Exception as e:
+            print(f"[PlayerPageWarm/{level}] Error computing player {pid}: {e}")
+            skipped += 1
+    return warmed, skipped
 
 @app.get("/api/pitcher-card")
 def pitcher_card(date: str = Query(...), pitcher_id: int = Query(...), game_pk: int = Query(...), level: str = Query(DEFAULT_LEVEL)):
@@ -791,6 +912,7 @@ def cron_warmup_daily_players(request: Request, level: str = Query(DEFAULT_LEVEL
                     end_date,
                     level=lv,
                     preloaded_df=df if lv == DEFAULT_LEVEL else None,
+                    include_dual_totals=False,
                 )
                 if result is not None:
                     set_agg_cache(agg_key, result)
@@ -1001,6 +1123,11 @@ def cron_warmup_live_cards(request: Request, level: str = Query(DEFAULT_LEVEL)):
         season_start = f"{current_year}-03-25"
         totals_end = _resolve_end_date("")
 
+        # Stable player-page caches do not include today's date in the key, so
+        # their Redis entries will otherwise stay stale until the next daily
+        # warmup. Clear the affected pitchers before rebuilding live payloads.
+        invalidate_pitcher_related_caches(pids_to_cache, affected_level=lv)
+
         cards_live = 0
         cards_final = 0
 
@@ -1022,6 +1149,26 @@ def cron_warmup_live_cards(request: Request, level: str = Query(DEFAULT_LEVEL)):
             except Exception as e:
                 print(f"[LiveCards/{lv}] Card error {pid}/{gpk}: {e}")
 
+        # Refresh the game-log/player-page cache too. For MLB we fetch the
+        # season range once and reuse it for all active/just-left pitchers;
+        # AAA keeps the existing full-MiLB compose path per pitcher.
+        player_pages_warmed = 0
+        player_pages_skipped = 0
+        try:
+            season_df = None
+            if lv == DEFAULT_LEVEL:
+                season_df = fetch_date_range(season_start, totals_end, level=lv)
+            player_pages_warmed, player_pages_skipped = _warm_player_page_cache_for_pitchers(
+                pids_to_cache,
+                season_start,
+                totals_end,
+                level=lv,
+                preloaded_df=season_df,
+                include_dual_totals=False,
+            )
+        except Exception as e:
+            print(f"[LiveCards/{lv}] Player page warm error: {e}")
+
         # 7. Update state in Redis
         #    - Save current active set for next run's comparison
         #    - Add just_left pitchers to done set
@@ -1033,6 +1180,8 @@ def cron_warmup_live_cards(request: Request, level: str = Query(DEFAULT_LEVEL)):
             "status": "ok", "date": today, "level": lv,
             "cards_live": cards_live,
             "cards_final": cards_final,
+            "player_pages_warmed": player_pages_warmed,
+            "player_pages_skipped": player_pages_skipped,
             "active_pitchers": len(active_pids),
             "just_left": len(just_left),
             "done_pitchers": len(new_done),

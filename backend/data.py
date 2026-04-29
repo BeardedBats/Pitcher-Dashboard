@@ -50,7 +50,9 @@ _override_version = 0  # Incremented on every save/remove to bust agg caches
 # v14: full-MiLB player-page totals first check the Stats API MiLB game log;
 #     MLB-only pitchers skip the expensive AAA season search and any old
 #     misclassified MiLB totals are invalidated.
-CARD_SCHEMA_VERSION = 14
+# v15: season totals and card results carry game_pks/raw counters so cards can
+#     safely merge the current/live game when a stable season cache is stale.
+CARD_SCHEMA_VERSION = 15
 
 # Allowed level values. New levels must be added here and exposed via the
 # frontend `level` state and any cron schedules.
@@ -1732,6 +1734,7 @@ def compute_player_page(df, pitcher_id):
         total_strikeouts_par = sum(g.get("strikeouts_for_par", 0) for g in game_log)
         results_summary = {
             "games": len(game_log),
+            "game_pks": sorted(g.get("game_pk") for g in game_log if g.get("game_pk") is not None),
             "ip": f"{total_ip_thirds // 3}.{total_ip_thirds % 3}",
             "hits": sum(g.get("hits", 0) for g in game_log),
             "bbs": sum(g.get("bbs", 0) for g in game_log),
@@ -1750,6 +1753,10 @@ def compute_player_page(df, pitcher_id):
             "par_pct": round(total_strikeouts_par / total_two_str_pitches * 100, 1) if total_two_str_pitches > 0 else 0,
             "ip_thirds": total_ip_thirds,
             "pitches": total_pitches,
+            "pa_count": total_pa_count,
+            "two_strike_pas": total_two_str_pas,
+            "two_strike_pitches": total_two_str_pitches,
+            "strikeouts_for_par": total_strikeouts_par,
             "wins": sum(1 for g in game_log if g.get("decision") == "W"),
             "losses": sum(1 for g in game_log if g.get("decision") == "L"),
         }
