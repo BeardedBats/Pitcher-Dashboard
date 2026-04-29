@@ -44,7 +44,13 @@ _override_version = 0  # Incremented on every save/remove to bust agg caches
 # v12: AAA player pages rebuild from the season range feed instead of
 #     Savant's broken per-pitcher minors query, fixing MiLB ID collisions and
 #     collapsing per-pitch rows back to one row per pitch type.
-CARD_SCHEMA_VERSION = 12
+# v13: MLB Stats API gameLog responses are defensively filtered by returned
+#     sport.id, fixing MLB games being misclassified as MiLB games and
+#     poisoning dual-level player-page caches.
+# v14: full-MiLB player-page totals first check the Stats API MiLB game log;
+#     MLB-only pitchers skip the expensive AAA season search and any old
+#     misclassified MiLB totals are invalidated.
+CARD_SCHEMA_VERSION = 14
 
 # Allowed level values. New levels must be added here and exposed via the
 # frontend `level` state and any cron schedules.
@@ -815,10 +821,23 @@ def fetch_pitcher_milb_game_log(pitcher_id, season_year, sport_ids=MILB_NON_STAT
     sport IDs. Uses the MLB Stats API gameLog stats endpoint. Cached briefly
     (12h) so a recently-promoted pitcher's new games appear without manual
     cache clears, but we don't re-hit per request."""
+    allowed_sport_ids = {
+        int(s.strip()) for s in str(sport_ids).split(",") if s.strip().isdigit()
+    }
     cache_key = f"milb_game_log:{pitcher_id}:{season_year}:{sport_ids}"
     redis_val = redis_get(cache_key)
     if redis_val is not None:
-        return redis_val
+        filtered = []
+        for g in redis_val:
+            sport_id = g.get("sport_id")
+            if sport_id is None:
+                continue
+            try:
+                if not allowed_sport_ids or int(sport_id) in allowed_sport_ids:
+                    filtered.append(g)
+            except (TypeError, ValueError):
+                continue
+        return filtered
     url = (
         "https://statsapi.mlb.com/api/v1/people/"
         f"{pitcher_id}/stats?stats=gameLog&group=pitching"
@@ -831,13 +850,16 @@ def fetch_pitcher_milb_game_log(pitcher_id, season_year, sport_ids=MILB_NON_STAT
         games = []
         for stats_block in data.get("stats", []):
             for split in stats_block.get("splits", []):
+                sport_id = split.get("sport", {}).get("id")
+                if sport_id is not None and allowed_sport_ids and int(sport_id) not in allowed_sport_ids:
+                    continue
                 gpk = split.get("game", {}).get("gamePk")
                 if gpk is None:
                     continue
                 games.append({
                     "game_pk": int(gpk),
                     "game_date": split.get("date"),
-                    "sport_id": split.get("sport", {}).get("id"),
+                    "sport_id": sport_id,
                 })
         # Dedupe in case of doubleheader splits returning the same game_pk twice
         seen, unique = set(), []
@@ -913,6 +935,15 @@ def fetch_pitcher_full_milb_season(pitcher_id, season_year):
             "incomplete": bool,  # any AA games failed to fetch
         }
     """
+    milb_games = fetch_pitcher_milb_game_log(pitcher_id, season_year, MILB_AFFILIATED_SPORT_IDS)
+    if not milb_games:
+        return pd.DataFrame(), {
+            "fetched_games_aa": 0,
+            "failed_games_aa": 0,
+            "had_lower_levels": False,
+            "incomplete": False,
+        }
+
     statcast_df = fetch_pitcher_season(pitcher_id, season_year, level="aaa")
     aa_df, fetched_aa, failed_aa = fetch_pitcher_aa_below_pbp(pitcher_id, season_year)
 
