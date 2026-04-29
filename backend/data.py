@@ -54,7 +54,9 @@ _override_version = 0  # Incremented on every save/remove to bust agg caches
 #     safely merge the current/live game when a stable season cache is stale.
 # v16: player/card payloads include explicit `available_levels`; frontend
 #     level pills no longer infer MiLB availability from stale totals alone.
-CARD_SCHEMA_VERSION = 16
+# v17: pitcher-results rows include `innings_appeared` (distinct innings the
+#     pitcher threw a pitch in), used as an ER-sort tiebreaker.
+CARD_SCHEMA_VERSION = 17
 
 # Allowed level values. New levels must be added here and exposed via the
 # frontend `level` state and any cron schedules.

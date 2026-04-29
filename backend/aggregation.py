@@ -396,6 +396,7 @@ def aggregate_pitcher_results(date_str, game_pk=None, level="mlb", df=None):
         called_strikes = int(gdf["is_called_strike"].sum())
         strikes_total = int(gdf["type"].isin(_STRIKE_TYPES).sum()) if "type" in gdf.columns else 0
         appearance_order = int(gdf["at_bat_number"].min()) if "at_bat_number" in gdf.columns and gdf["at_bat_number"].notna().any() else 999
+        innings_appeared = int(gdf["inning"].nunique()) if "inning" in gdf.columns and gdf["inning"].notna().any() else 0
         events_df = gdf.dropna(subset=["events"])
         events_df = events_df[events_df["events"] != ""]
         ev_col = events_df["events"] if not events_df.empty else pd.Series(dtype=str)
@@ -418,6 +419,7 @@ def aggregate_pitcher_results(date_str, game_pk=None, level="mlb", df=None):
             "par_pct": round(strikeouts_for_par / two_strike_pitches * 100, 1) if two_strike_pitches > 0 else 0,
             "pitches": total_pitches, "hrs": hrs,
             "appearance_order": appearance_order,
+            "innings_appeared": innings_appeared,
             "home_team": home_team, "away_team": away_team,
             "velo": velo, "velo_pitch": velo_pitch, "velo_ext": velo_ext,
         }

@@ -72,9 +72,14 @@ export default function PitcherResultsTable({ data, date, onPitcherClick, spOnly
         if (typeof av === "string") return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
         const primary = sortDir === "asc" ? av - bv : bv - av;
         if (primary === 0 && sortKey === "er") {
+          // Tiebreakers (in order): IP desc, innings_appeared asc, team Z→A
           const aip = ipToNumeric(a.ip);
           const bip = ipToNumeric(b.ip);
-          return bip - aip; // higher IP first on ER tie
+          if (aip !== bip) return bip - aip;
+          const aia = a.innings_appeared || 0;
+          const bia = b.innings_appeared || 0;
+          if (aia !== bia) return aia - bia;
+          return (b.team || "").localeCompare(a.team || "");
         }
         return primary;
       });
