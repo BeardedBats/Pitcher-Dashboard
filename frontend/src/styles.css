@@ -739,6 +739,7 @@ a.pitcher-name.pitcher-sp-highlight { color: #ffc277; }
 
 /* ======== VISUALS ROW ======== */
 .card-visuals-section { margin-top: 14px; }
+.card-regular-season { margin-top: 14px; }
 .sz-mode-select-row { display: flex; justify-content: flex-start; margin-bottom: 8px; }
 .sz-mode-select {
   background: #3d427b; color: var(--text); border: 1px solid transparent;

@@ -12,7 +12,8 @@ import { classifyBIPQuality } from "../utils/pitchFilters";
  *  - gameFilter: "all" | game_pk string
  *  - isMobile: boolean for mobile responsive design
  */
-export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobile, selectedPitchType, onPitchTypeClick }) {
+export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobile, selectedPitchTypes, onPitchTypeClick, onClearSelection }) {
+  const hasSelection = selectedPitchTypes && selectedPitchTypes.size > 0;
   const resultData = useMemo(() => {
     if (!pitches || pitches.length === 0) return [];
 
@@ -160,6 +161,7 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
     }
     if (batterFilter === "L") fp = fp.filter(p => p.stand === "L");
     else if (batterFilter === "R") fp = fp.filter(p => p.stand === "R");
+    if (hasSelection) fp = fp.filter(p => selectedPitchTypes.has(p.pitch_name));
 
     for (const p of fp) {
       if (!p.pitch_name) continue;
@@ -219,7 +221,7 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
       weak_pct: totalBIP > 0 ? Math.round((totalWeakBIP / totalBIP) * 100) : 0,
       hard_pct: totalBIP > 0 ? Math.round((totalHardBIP / totalBIP) * 100) : 0,
     };
-  }, [pitches, batterFilter, gameFilter, resultData]);
+  }, [pitches, batterFilter, gameFilter, resultData, hasSelection, selectedPitchTypes]);
 
   if (resultData.length === 0) return <div className="no-data">No result data available.</div>;
 
@@ -262,7 +264,7 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
       </thead>
       <tbody>
         {resultData.map((r, i) => {
-          const isDimmedRow = selectedPitchType && r.pitch_name !== selectedPitchType;
+          const isDimmedRow = hasSelection && !selectedPitchTypes.has(r.pitch_name);
           return (
           <tr key={i}
               className={onPitchTypeClick ? "clickable-row" : ""}
@@ -288,7 +290,7 @@ export default function ResultsTable({ pitches, batterFilter, gameFilter, isMobi
           );
         })}
         {totals && (
-          <tr className="pp-total-row" style={{ ...(isMobile ? { position: "sticky", bottom: 0, zIndex: 2 } : {}), cursor: selectedPitchType && onPitchTypeClick ? "pointer" : undefined }} onClick={() => selectedPitchType && onPitchTypeClick && onPitchTypeClick(selectedPitchType)}>
+          <tr className="pp-total-row" style={{ ...(isMobile ? { position: "sticky", bottom: 0, zIndex: 2 } : {}), cursor: hasSelection && onClearSelection ? "pointer" : undefined }} onClick={() => hasSelection && onClearSelection && onClearSelection()}>
             {cols.map((c, colIdx) => (
               <td key={c.key}
                   className={`${c.dividerRight ? "col-divider-right" : ""}${isMobile && colIdx === 0 ? " mobile-sticky-col" : ""}`}

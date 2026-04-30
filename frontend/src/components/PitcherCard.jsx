@@ -8,9 +8,10 @@ import ResultsTable from "./ResultsTable";
 import UsageTable from "./UsageTable";
 import VelocityTrend from "./VelocityTrend";
 import VelocityTrendV2 from "./VelocityTrendV2";
+import RegularSeasonTable from "./RegularSeasonTable";
 import { PITCH_COLORS, PITCH_DESC_COLORS, RESULT_COLORS, CARD_PITCH_DATA_COLUMNS, displayAbbrev, displayTeamAbbrev, getOpponentTierColor } from "../constants";
 import { getResultColor } from "../utils/formatting";
-import { fetchSeasonAverages, fetchPitcherSchedule } from "../utils/api";
+import { fetchSeasonAverages, fetchPitcherSchedule, fetchPlayerPage } from "../utils/api";
 import { classifyPitchResult, isRunScored, isStrikeoutPitch, isBallInPlay, classifyBIPQuality, classifyBattedBallFull, getTooltipResult, getPADescriptionSpans, isCIOrErrorEvent, RESULT_FILTER_OPTIONS, RESULT_QUICK_ACTIONS } from "../utils/pitchFilters";
 import { vpToZoomCoord } from "../utils/desktopZoom";
 
@@ -72,7 +73,7 @@ function computeInningStats(pas, pitcherId) {
   return { ip, hits, bbs, ks, hrs, runs, pitches: totalPitches };
 }
 
-export default function PitcherCard({ cardData, date, linescoreData, onGameClick, onReclassify, onPlayerClick, isMobile, level = "mlb" }) {
+export default function PitcherCard({ cardData, date, linescoreData, onGameClick, onNavigateToCard, onReclassify, onPlayerClick, isMobile, level = "mlb" }) {
   if (!cardData) return null;
   const { name, team, hand, opponent, pitches, sz_top, sz_bot,
     pitch_table, pitch_table_vs_l, pitch_table_vs_r, result, pitcher_id,
@@ -134,8 +135,13 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
 
   // Cross-component pitch hover highlight (shared between SZ plots and movement plot)
   const [crossHoverPitch, setCrossHoverPitch] = useState(null);
-  // Pitch type selected by clicking a row in the pitch data table
-  const [selectedPitchType, setSelectedPitchType] = useState(null);
+  // Pitch types selected by clicking rows in the pitch data / results / usage
+  // tables. A non-empty Set filters the totals row in those tables AND the
+  // pitches displayed in the strikezone / movement plots. Empty = no filter.
+  // When a toggle would result in every available pitch being selected, we
+  // collapse back to empty (matching the user expectation that "all selected
+  // is the same as none selected").
+  const [selectedPitchTypes, setSelectedPitchTypes] = useState(() => new Set());
 
   // Pitch-type filter for plots (null = all selected on init)
   const [pitchTypeFilter, setPitchTypeFilter] = useState(null);
@@ -215,6 +221,20 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
     }
   }, [name, date, level]);
 
+  // Fetch the player-page payload so we can render the Regular Season game
+  // log + season totals at the bottom of the card. The endpoint is already
+  // cached server-side, so this is cheap after the first request.
+  const [playerPageData, setPlayerPageData] = useState(null);
+  useEffect(() => {
+    if (!pitcher_id) return;
+    let cancelled = false;
+    const startDate = date ? `${date.slice(0, 4)}-03-25` : "2026-03-25";
+    fetchPlayerPage(pitcher_id, startDate, level)
+      .then(d => { if (!cancelled) setPlayerPageData(d); })
+      .catch(() => { if (!cancelled) setPlayerPageData(null); });
+    return () => { cancelled = true; };
+  }, [pitcher_id, level, date]);
+
   // Select correct pitch table based on batter filter
   const activePitchTable = useMemo(() => {
     let table;
@@ -257,6 +277,23 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
     return [...types].sort();
   }, [pitches]);
 
+  // Toggle a pitch in the row-click selection. If toggling causes every
+  // available pitch to be selected, clear the set instead — "all selected"
+  // and "none selected" are equivalent (both mean: don't filter).
+  const toggleSelectedPitch = (type) => {
+    if (!type) return;
+    setSelectedPitchTypes(prev => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      if (availablePitchTypes.length > 0 && availablePitchTypes.every(t => next.has(t))) {
+        return new Set();
+      }
+      return next;
+    });
+  };
+  const clearSelectedPitches = () => setSelectedPitchTypes(new Set());
+
   // Lazy-init pitch type filter to all types
   const effectivePitchTypeFilter = useMemo(() => {
     if (pitchTypeFilter === null) return new Set(availablePitchTypes);
@@ -269,15 +306,19 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
     return resultFilter;
   }, [resultFilter]);
 
-  // Filter pitches for plots: batter hand + pitch type + result + contact quality
+  // Filter pitches for plots: batter hand + pitch type + row selection + result + contact quality
   const filteredPitches = useMemo(() => {
     if (!pitches) return [];
     let fp = pitches;
     if (batterFilter === "L") fp = fp.filter(p => p.stand === "L");
     else if (batterFilter === "R") fp = fp.filter(p => p.stand === "R");
-    // Apply pitch type filter
+    // Apply pitch type filter (dropdown)
     if (pitchTypeFilter !== null) {
       fp = fp.filter(p => effectivePitchTypeFilter.has(p.pitch_name));
+    }
+    // Apply row-click selection (additional filter, intersected with dropdown)
+    if (selectedPitchTypes.size > 0) {
+      fp = fp.filter(p => selectedPitchTypes.has(p.pitch_name));
     }
     // Apply contact quality filter (Hard BIP / Weak BIP) — only balls in play
     if (contactFilter !== "all") {
@@ -307,7 +348,7 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
       });
     }
     return fp;
-  }, [pitches, batterFilter, pitchTypeFilter, effectivePitchTypeFilter, contactFilter, resultFilter, effectiveResultFilter]);
+  }, [pitches, batterFilter, pitchTypeFilter, effectivePitchTypeFilter, selectedPitchTypes, contactFilter, resultFilter, effectiveResultFilter]);
 
   return (
     <div className="card">
@@ -519,23 +560,26 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
               sortable={false}
               showChange={true} seasonAvgs={seasonAvgs}
               batterFilter={batterFilter} isMobile={isMobile}
-              selectedPitchType={selectedPitchType}
-              onPitchTypeClick={(type) => setSelectedPitchType(prev => prev === type ? null : type)} />
+              selectedPitchTypes={selectedPitchTypes}
+              onPitchTypeClick={toggleSelectedPitch}
+              onClearSelection={clearSelectedPitches} />
             {loadingAvgs && <div className="loading-avgs"><div className="loading-bars loading-bars-sm"><div className="loading-bar" /><div className="loading-bar" /><div className="loading-bar" /></div></div>}
           </div>
         )}
         {metricsView === "results" && (
           <div className="metrics-card">
             <ResultsTable pitches={pitches} batterFilter={batterFilter} gameFilter="all" isMobile={isMobile}
-              selectedPitchType={selectedPitchType}
-              onPitchTypeClick={(type) => setSelectedPitchType(prev => prev === type ? null : type)} />
+              selectedPitchTypes={selectedPitchTypes}
+              onPitchTypeClick={toggleSelectedPitch}
+              onClearSelection={clearSelectedPitches} />
           </div>
         )}
         {metricsView === "usage" && (
           <div className="metrics-card">
             <UsageTable pitches={pitches} batterFilter={batterFilter} gameFilter="all" isMobile={isMobile}
-              selectedPitchType={selectedPitchType}
-              onPitchTypeClick={(type) => setSelectedPitchType(prev => prev === type ? null : type)} />
+              selectedPitchTypes={selectedPitchTypes}
+              onPitchTypeClick={toggleSelectedPitch}
+              onClearSelection={clearSelectedPitches} />
           </div>
         )}
         {metricsView === "velocity-trend" && (
@@ -956,22 +1000,36 @@ export default function PitcherCard({ cardData, date, linescoreData, onGameClick
             {(batterFilter === "all" || batterFilter === "L") && (
               <div className="viz-card">
                 <div className="viz-card-label">vs LHB</div>
-                <StrikeZonePlot pitches={filteredPitches} szTop={sz_top} szBot={sz_bot} stand="L" colorMode={szColorMode} onReclassify={onReclassify} isMobile={isMobile} highlightPitch={crossHoverPitch} highlightType={!crossHoverPitch ? selectedPitchType : null} onPitchHover={setCrossHoverPitch} />
+                <StrikeZonePlot pitches={filteredPitches} szTop={sz_top} szBot={sz_bot} stand="L" colorMode={szColorMode} onReclassify={onReclassify} isMobile={isMobile} highlightPitch={crossHoverPitch} highlightType={null} onPitchHover={setCrossHoverPitch} />
               </div>
             )}
             {(batterFilter === "all" || batterFilter === "R") && (
               <div className="viz-card">
                 <div className="viz-card-label">vs RHB</div>
-                <StrikeZonePlot pitches={filteredPitches} szTop={sz_top} szBot={sz_bot} stand="R" colorMode={szColorMode} onReclassify={onReclassify} isMobile={isMobile} highlightPitch={crossHoverPitch} highlightType={!crossHoverPitch ? selectedPitchType : null} onPitchHover={setCrossHoverPitch} />
+                <StrikeZonePlot pitches={filteredPitches} szTop={sz_top} szBot={sz_bot} stand="R" colorMode={szColorMode} onReclassify={onReclassify} isMobile={isMobile} highlightPitch={crossHoverPitch} highlightType={null} onPitchHover={setCrossHoverPitch} />
               </div>
             )}
         </div>
           <div className="viz-card">
             <div className="viz-card-label">Pitch Movement</div>
-            <MovementPlot pitches={filteredPitches} hand={hand} onReclassify={onReclassify} isMobile={isMobile} highlightPitch={crossHoverPitch} highlightType={!crossHoverPitch ? selectedPitchType : null} onPitchHover={setCrossHoverPitch} />
+            <MovementPlot pitches={filteredPitches} hand={hand} onReclassify={onReclassify} isMobile={isMobile} highlightPitch={crossHoverPitch} highlightType={null} onPitchHover={setCrossHoverPitch} />
           </div>
         </div>
       </div>
+
+      {/* ===== Regular Season game log + season totals ===== */}
+      {playerPageData && (
+        <div className="card-regular-season">
+          <RegularSeasonTable
+            data={playerPageData}
+            level={level}
+            pitcherId={pitcher_id}
+            displayAbbrev={(abbr) => level === "aaa" ? displayAbbrev(abbr) : displayTeamAbbrev(abbr, level)}
+            buildCardHref={(d, gpk) => level === "aaa" ? `#aaa/card/${d}/${pitcher_id}/${gpk}` : `#card/${d}/${pitcher_id}/${gpk}`}
+            onGameClick={onNavigateToCard}
+          />
+        </div>
+      )}
     </div>
   );
 }

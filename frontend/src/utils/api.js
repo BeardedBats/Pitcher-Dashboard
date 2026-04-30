@@ -87,6 +87,14 @@ export async function fetchPitcherSeasonTotals(pitcherId, startDate = "2026-03-2
   return res.json();
 }
 
+export async function fetchPlayerPage(pitcherId, startDate = "2026-03-25", level = "mlb") {
+  const params = new URLSearchParams({ pitcher_id: pitcherId, start_date: startDate });
+  if (level && level !== "mlb") params.set("level", level);
+  const res = await fetch(`${BASE}/api/player-page?${params}`);
+  if (!res.ok) throw new Error("Failed to fetch player page");
+  return res.json();
+}
+
 // Linescore endpoint is level-agnostic — game_pks are globally unique across MLB and AAA.
 export async function fetchGameLinescore(gamePk) {
   const res = await fetch(`${BASE}/api/game-linescore?game_pk=${gamePk}`);

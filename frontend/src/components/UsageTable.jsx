@@ -43,7 +43,8 @@ function emptyTypeRec() {
   };
 }
 
-export default function UsageTable({ pitches, gameFilter, isMobile, selectedPitchType, onPitchTypeClick }) {
+export default function UsageTable({ pitches, gameFilter, isMobile, selectedPitchTypes, onPitchTypeClick, onClearSelection }) {
+  const hasSelection = selectedPitchTypes && selectedPitchTypes.size > 0;
   const { rows, totals } = useMemo(() => {
     if (!pitches || pitches.length === 0) return { rows: [], totals: null };
 
@@ -104,7 +105,9 @@ export default function UsageTable({ pitches, gameFilter, isMobile, selectedPitc
     }
     rows.sort((a, b) => b._count - a._count);
 
+    const inSelection = (name) => !hasSelection || selectedPitchTypes.has(name);
     const sumBy = (fn) => rows.reduce((s, row) => {
+      if (!inSelection(row.pitch_name)) return s;
       const rec = byType.get(row.pitch_name);
       return s + (rec ? fn(rec) : 0);
     }, 0);
@@ -125,7 +128,7 @@ export default function UsageTable({ pitches, gameFilter, isMobile, selectedPitc
 
     const totals = {
       pitch_name: "Total",
-      count: rows.reduce((s, r) => s + r.count, 0),
+      count: rows.reduce((s, r) => inSelection(r.pitch_name) ? s + r.count : s, 0),
       par_pct: totalTwoStrAll > 0 ? Math.round((totalKsTwoStrAll / totalTwoStrAll) * 100) : null,
       firstpitch_pct_l: pct(totalFirstPitchL, totalL),
       early_pct_l: pct(totalEarlyL, totalL),
@@ -140,7 +143,7 @@ export default function UsageTable({ pitches, gameFilter, isMobile, selectedPitc
     };
 
     return { rows, totals };
-  }, [pitches, gameFilter]);
+  }, [pitches, gameFilter, hasSelection, selectedPitchTypes]);
 
   if (rows.length === 0) return <div className="no-data">No usage data available.</div>;
 
@@ -237,7 +240,7 @@ export default function UsageTable({ pitches, gameFilter, isMobile, selectedPitc
       </thead>
       <tbody>
         {rows.map((r, i) => {
-          const isDimmedRow = selectedPitchType && r.pitch_name !== selectedPitchType;
+          const isDimmedRow = hasSelection && !selectedPitchTypes.has(r.pitch_name);
           return (
             <tr key={i}
                 className={onPitchTypeClick ? "clickable-row" : ""}
@@ -263,7 +266,7 @@ export default function UsageTable({ pitches, gameFilter, isMobile, selectedPitc
           );
         })}
         {totals && (
-          <tr className="pp-total-row" style={{ ...(isMobile ? { position: "sticky", bottom: 0, zIndex: 2 } : {}), cursor: selectedPitchType && onPitchTypeClick ? "pointer" : undefined }} onClick={() => selectedPitchType && onPitchTypeClick && onPitchTypeClick(selectedPitchType)}>
+          <tr className="pp-total-row" style={{ ...(isMobile ? { position: "sticky", bottom: 0, zIndex: 2 } : {}), cursor: hasSelection && onClearSelection ? "pointer" : undefined }} onClick={() => hasSelection && onClearSelection && onClearSelection()}>
             {cols.map((c, colIdx) => (
               <td key={c.key}
                   className={`${c.dividerRight ? "col-divider-right" : ""}${isMobile && colIdx === 0 ? " mobile-sticky-col" : ""}`}

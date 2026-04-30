@@ -30,7 +30,11 @@ const IHB_ARM_SIDE_TYPES = ["Four-Seamer", "Sinker", "Changeup"];
 
 const MOBILE_HIDE_COLS = ["hand", "team", "opponent"];
 
-export default function PitchDataTable({ data, date, onPitcherClick, columns, splitByTeam, spOnly, pitcherHand, sortable = true, showChange, seasonAvgs, batterFilter, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, selectedPitchType, onPitchTypeClick, level = "mlb", onSortedRowsChange }) {
+export default function PitchDataTable({ data, date, onPitcherClick, columns, splitByTeam, spOnly, pitcherHand, sortable = true, showChange, seasonAvgs, batterFilter, isMobile, sortKey: sortKeyProp, onSortKeyChange, sortDir: sortDirProp, onSortDirChange, selectedPitchTypes, onPitchTypeClick, onClearSelection, level = "mlb", onSortedRowsChange }) {
+  // selectedPitchTypes is a Set of pitch names; a non-empty set means rows
+  // not in the set are dimmed and the totals row aggregates only selected
+  // rows. Empty set / undefined means no selection (table behaves as before).
+  const hasSelection = selectedPitchTypes && selectedPitchTypes.size > 0;
   const [sortKeyLocal, setSortKeyLocal] = useState(null);
   const [sortDirLocal, setSortDirLocal] = useState("asc");
   const sortKey = onSortKeyChange ? sortKeyProp : sortKeyLocal;
@@ -445,7 +449,7 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
           </thead>
           <tbody>
             {rows.map((r, i) => {
-              const isDimmedRow = selectedPitchType && r.pitch_name !== selectedPitchType;
+              const isDimmedRow = hasSelection && !selectedPitchTypes.has(r.pitch_name);
               return (
               <tr key={i} className={[onPitcherClick ? "clickable-row" : "", onPitchTypeClick ? "clickable-row" : ""].filter(Boolean).join(" ")}
                   style={isDimmedRow ? { opacity: 0.4 } : undefined}
@@ -463,10 +467,11 @@ export default function PitchDataTable({ data, date, onPitcherClick, columns, sp
               );
             })}
             {(() => {
-              const t = computeTotals(rows);
+              const totalRows = hasSelection ? rows.filter(r => selectedPitchTypes.has(r.pitch_name)) : rows;
+              const t = computeTotals(totalRows);
               if (!t) return null;
               return (
-                <tr className="pp-total-row" style={{ ...(isMobile ? { position: "sticky", bottom: 0, zIndex: 2 } : {}), cursor: selectedPitchType && onPitchTypeClick ? "pointer" : undefined }} onClick={() => selectedPitchType && onPitchTypeClick && onPitchTypeClick(selectedPitchType)}>
+                <tr className="pp-total-row" style={{ ...(isMobile ? { position: "sticky", bottom: 0, zIndex: 2 } : {}), cursor: hasSelection && onClearSelection ? "pointer" : undefined }} onClick={() => hasSelection && onClearSelection && onClearSelection()}>
                   {activeCols.map(c => {
                     let val;
                     if (c.key === "pitch_name") val = <span className="pp-total-label">Total</span>;

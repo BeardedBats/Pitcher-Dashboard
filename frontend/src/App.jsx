@@ -948,7 +948,7 @@ export default function App() {
                 }}
               />
             </div>
-            <PitcherCard cardData={cardData} date={date} linescoreData={linescoreData} isMobile={isMobile} level={level} onPlayerClick={(id, e) => navigateToPlayer(id, null, e)} onGameClick={(e) => {
+            <PitcherCard cardData={cardData} date={date} linescoreData={linescoreData} isMobile={isMobile} level={level} onPlayerClick={(id, e) => navigateToPlayer(id, null, e)} onNavigateToCard={navigateToGameCard} onGameClick={(e) => {
               const gamePk = cardData?.result?.game_pk || selectedGame;
               const pitcherId = cardData?.result?.pitcher_id;
               if (isNewWindowClick(e) && gamePk && date && pitcherId) {
